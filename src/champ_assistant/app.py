@@ -243,6 +243,23 @@ class ChampAssistant:
                 keys.append(champ.key)
         return keys
 
+    # -- Live data updates ------------------------------------------------
+
+    def update_champions(self, champions: dict[int, Champion]) -> None:
+        """Replace the champion lookup table and re-render the latest view.
+
+        Called once at startup after Data Dragon returns the full ~170-champ
+        list. Without this we'd be limited to the hardcoded ~30-champ
+        bootstrap dict and the UI would show "Champion #89" for anything
+        outside that subset.
+        """
+        if not champions:
+            return
+        self.champions = champions
+        if self._latest_session is not None:
+            view = self._build_view(self._latest_session)
+            self._push_view(view)
+
     # -- Refresh hook (UI Ctrl+R) -----------------------------------------
 
     def _on_refresh_requested(self) -> None:

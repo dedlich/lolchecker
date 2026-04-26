@@ -145,6 +145,43 @@ def test_overlay_status_bar_reflects_handle_event(assistant) -> None:  # type: i
     assert assistant.overlay.status_bar.state == "connected"
 
 
+def test_update_champions_resolves_previously_unknown_enemy(qtbot, champions) -> None:  # type: ignore[no-untyped-def]
+    """A session that references champion ids missing from the bootstrap dict
+    should fall back to numeric placeholders, then resolve once Data Dragon
+    delivers the full roster."""
+    overlay = MainOverlay()
+    qtbot.addWidget(overlay)
+    seen: list[SessionView] = []
+    a = ChampAssistant(
+        source=FixtureLcuSource(FIXTURES_DIR, interval=0.0),
+        overlay=overlay,
+        counters=load_counters(DATA_DIR / "counters.json"),
+        tiers=load_tiers(DATA_DIR / "tiers.json"),
+        tags=load_tags(DATA_DIR / "tags.json"),
+        champions={},  # start empty — every enemy is "unknown"
+        view_callback=seen.append,
+    )
+
+    raw = json.loads((FIXTURES_DIR / "04_my_turn_top.json").read_text())
+    a.handle_event({"type": "session", "data": raw})
+    pre = seen[-1]
+    assert pre.enemy_names == {}  # nothing resolved yet
+
+    # Now hydrate the champion table the way the prefetch task would.
+    a.update_champions(champions)
+    post = seen[-1]
+    assert "Garen" in post.enemy_names.values()
+
+
+def test_update_champions_with_empty_dict_is_noop(assistant, champions) -> None:  # type: ignore[no-untyped-def]
+    """Empty fetch (network failure → empty dict) must not wipe the existing table."""
+    raw = json.loads((FIXTURES_DIR / "04_my_turn_top.json").read_text())
+    assistant.handle_event({"type": "session", "data": raw})
+    snapshot = dict(assistant.champions)
+    assistant.update_champions({})
+    assert assistant.champions == snapshot
+
+
 def test_refresh_shortcut_rebuilds_view(assistant) -> None:  # type: ignore[no-untyped-def]
     raw = json.loads((FIXTURES_DIR / "04_my_turn_top.json").read_text())
     assistant.handle_event({"type": "session", "data": raw})

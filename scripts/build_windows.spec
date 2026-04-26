@@ -28,8 +28,10 @@ a = Analysis(
         (str(ROOT / "data" / "counters.json"), "data"),
         (str(ROOT / "data" / "tiers.json"), "data"),
         (str(ROOT / "data" / "tags.json"), "data"),
-        # Updater script — sits next to the exe in the bundle root.
-        (str(ROOT / "scripts" / "update.bat"), "."),
+        # NB: scripts/update.bat is NOT bundled here — PyInstaller datas
+        # land under _internal/ in one-folder mode, not next to the exe.
+        # The build workflow copies update.bat into dist/champ-assistant/
+        # alongside champ-assistant.exe so users can click it.
         # Demo fixtures so --dry-run works in the packaged exe (default
         # FIXTURE_DIR resolves under _MEIPASS/tests/fixtures/sessions).
         # Skip 12_corrupt.json — it's a parser-robustness test asset, not
@@ -62,6 +64,7 @@ a = Analysis(
         "champ_assistant.advisor.composition",
         "champ_assistant.advisor.picks",
         "champ_assistant.advisor.claude",
+        "champ_assistant.update_check",
         "champ_assistant.ui",
         "champ_assistant.ui.overlay",
         "champ_assistant.ui.enemy_row",

@@ -156,10 +156,10 @@ def _run_with_ui(args: argparse.Namespace) -> int:
     # not-yet-running loop. asyncio.create_task() (and TaskManager.spawn,
     # which wraps it) would raise here because there's no running loop yet.
     consumer = loop.create_task(assistant.run(), name="orchestrator-run")
-    # Background side-tasks: champion icon prefetch + update notifier.
+    # Background side-tasks: champion data + icon prefetch + update notifier.
     icon_task = loop.create_task(
-        _prefetch_champion_icons(overlay, args.data_dir),
-        name="icon-prefetch",
+        _hydrate_champions_and_icons(overlay, assistant, args.data_dir),
+        name="champion-prefetch",
     )
     update_task = loop.create_task(
         _check_and_notify_update(overlay), name="update-check"
@@ -175,22 +175,42 @@ def _run_with_ui(args: argparse.Namespace) -> int:
     return 0
 
 
-async def _prefetch_champion_icons(overlay: MainOverlay, data_dir: Path) -> None:
-    """Fetch champion portraits from Data Dragon and hand them to the overlay."""
+async def _hydrate_champions_and_icons(
+    overlay: MainOverlay, assistant: ChampAssistant, data_dir: Path
+) -> None:
+    """Fetch the full champion list + portraits from Data Dragon at startup.
+
+    The hardcoded _STARTER_CHAMPIONS bootstrap dict only covers ~30 champs;
+    real champ-select sessions reference any of ~170. Without this, enemies
+    outside the bootstrap appear as "Champion #<id>" with no icon. We fetch
+    the live roster (cached on disk for a week), update the orchestrator's
+    champions table, then prefetch every icon in parallel.
+    """
     from champ_assistant.data.datadragon import DataDragon
 
+    log = logging.getLogger(__name__)
     cache_dir = data_dir.parent / "ddragon_cache"
-    keys = sorted({c.key for c in _STARTER_CHAMPIONS})
     try:
         async with DataDragon(cache_dir) as dd:
             try:
                 patch = await dd.fetch_latest_patch()
             except Exception:  # noqa: BLE001
-                patch = "14.8.1"  # fallback if Riot is offline
-            logging.getLogger(__name__).info("icon_prefetch_start patch=%s n=%d", patch, len(keys))
+                patch = "14.8.1"
+            log.info("ddragon_patch=%s", patch)
+
+            try:
+                champions = await dd.fetch_champions(patch)
+                assistant.update_champions(champions)
+                log.info("champions_loaded count=%d", len(champions))
+            except Exception:  # noqa: BLE001
+                log.exception("champions_fetch_failed")
+                champions = {c.id: c for c in _STARTER_CHAMPIONS}
+
+            keys = sorted({c.key for c in champions.values()})
+            log.info("icon_prefetch_start patch=%s keys=%d", patch, len(keys))
             icons_bytes = await dd.prefetch_icons(patch, keys)
     except Exception:  # noqa: BLE001
-        logging.getLogger(__name__).exception("icon_prefetch_failed")
+        log.exception("hydrate_failed")
         return
 
     # Convert PNG bytes → scaled QPixmap on the Qt thread.
@@ -208,7 +228,7 @@ async def _prefetch_champion_icons(overlay: MainOverlay, data_dir: Path) -> None
             QtCore.TransformationMode.SmoothTransformation,
         )
     overlay.set_champion_icons(pixmaps)
-    logging.getLogger(__name__).info("icon_prefetch_done loaded=%d", len(pixmaps))
+    log.info("icon_prefetch_done loaded=%d", len(pixmaps))
 
 
 async def _check_and_notify_update(overlay: MainOverlay) -> None:
