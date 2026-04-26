@@ -1,0 +1,3 @@
+{ "phase": "BAN_PICK", "myTeam": [
+  // intentionally malformed — parser robustness fixture
+  { "cellId": 0, "championId":
