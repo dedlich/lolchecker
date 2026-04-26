@@ -28,6 +28,8 @@ a = Analysis(
         (str(ROOT / "data" / "counters.json"), "data"),
         (str(ROOT / "data" / "tiers.json"), "data"),
         (str(ROOT / "data" / "tags.json"), "data"),
+        # Updater script — sits next to the exe in the bundle root.
+        (str(ROOT / "scripts" / "update.bat"), "."),
         # Demo fixtures so --dry-run works in the packaged exe (default
         # FIXTURE_DIR resolves under _MEIPASS/tests/fixtures/sessions).
         # Skip 12_corrupt.json — it's a parser-robustness test asset, not

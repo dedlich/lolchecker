@@ -35,6 +35,7 @@ logger = logging.getLogger(__name__)
 DDRAGON_BASE = "https://ddragon.leagueoflegends.com"
 VERSIONS_URL = f"{DDRAGON_BASE}/api/versions.json"
 CHAMPIONS_URL_TEMPLATE = f"{DDRAGON_BASE}/cdn/{{patch}}/data/en_US/champion.json"
+CHAMPION_ICON_URL_TEMPLATE = f"{DDRAGON_BASE}/cdn/{{patch}}/img/champion/{{key}}.png"
 
 
 class DataDragonError(Exception):
@@ -146,3 +147,58 @@ class DataDragon:
 
         self.cache.set(cache_key, result, expire=self.TTL_CHAMPIONS)
         return result
+
+    # -- Icons -----------------------------------------------------------
+
+    async def fetch_champion_icon(self, patch: str, champion_key: str) -> bytes:
+        """Return PNG bytes for the champion portrait, cached on disk."""
+        cache_key = f"ddragon:icon:{patch}:{champion_key}"
+        cached = self.cache.get(cache_key)
+        if cached is not None:
+            return cached
+
+        if self._client is None:
+            raise RuntimeError("DataDragon must be used as an async context manager")
+
+        url = CHAMPION_ICON_URL_TEMPLATE.format(patch=patch, key=champion_key)
+        try:
+            response = await self._client.get(url)
+            response.raise_for_status()
+            data = response.content
+        except httpx.HTTPError as exc:
+            raise DataDragonError(
+                f"icon fetch failed for {champion_key} on {patch}: {exc}"
+            ) from exc
+
+        self.cache.set(cache_key, data, expire=self.TTL_CHAMPIONS)
+        return data
+
+    async def prefetch_icons(
+        self,
+        patch: str,
+        champion_keys: list[str],
+        *,
+        concurrency: int = 8,
+    ) -> dict[str, bytes]:
+        """Fetch every icon in parallel; return key → PNG bytes.
+
+        Failed icons are skipped (logged, not raised) so a single 404
+        doesn't take down the whole prefetch.
+        """
+        import asyncio
+
+        sem = asyncio.Semaphore(concurrency)
+
+        async def one(key: str) -> tuple[str, bytes | None]:
+            async with sem:
+                try:
+                    return key, await self.fetch_champion_icon(patch, key)
+                except DataDragonError as exc:
+                    logger.warning(
+                        "ddragon_icon_skipped",
+                        extra={"champion": key, "error": str(exc)},
+                    )
+                    return key, None
+
+        results = await asyncio.gather(*(one(k) for k in champion_keys))
+        return {k: data for k, data in results if data is not None}

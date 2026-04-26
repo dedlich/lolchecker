@@ -78,6 +78,71 @@ def test_team_member_accepts_lcu_camelcase_keys() -> None:
     assert tm.assigned_position == "BOT"
 
 
+def test_session_phase_falls_back_to_timer_phase() -> None:
+    """Real LCU sessions often have phase only inside timer."""
+    raw = {
+        "localPlayerCellId": 0,
+        "myTeam": [],
+        "theirTeam": [],
+        "timer": {"phase": "BAN_PICK", "adjustedTimeLeftInPhase": 12000},
+    }
+    session = ChampSelectSession.model_validate(raw)
+    assert session.phase == "BAN_PICK"
+
+
+def test_session_top_level_phase_wins_over_timer() -> None:
+    raw = {
+        "phase": "GAME_STARTING",
+        "myTeam": [],
+        "theirTeam": [],
+        "timer": {"phase": "FINALIZATION"},
+    }
+    session = ChampSelectSession.model_validate(raw)
+    assert session.phase == "GAME_STARTING"
+
+
+def test_session_ignores_unknown_top_level_fields() -> None:
+    """Real LCU payloads carry dozens of extras (actions, bans, chatDetails…)."""
+    raw = {
+        "phase": "BAN_PICK",
+        "myTeam": [],
+        "theirTeam": [],
+        "actions": [[]],
+        "bans": {"myTeamBans": [], "numBans": 6},
+        "chatDetails": {"chatRoomName": "x", "chatRoomPassword": "y"},
+        "isCustomGame": False,
+        "skipChampionSelect": False,
+        "trades": [],
+    }
+    ChampSelectSession.model_validate(raw)  # must not raise
+
+
+def test_team_member_tolerates_null_ints() -> None:
+    """LCU sometimes sends championId=null in transitional phases."""
+    tm = TeamMember.model_validate(
+        {"cellId": None, "championId": None, "summonerId": None}
+    )
+    assert tm.cell_id == -1
+    assert tm.champion_id == 0
+    assert tm.summoner_id is None
+
+
+def test_team_member_tolerates_empty_position_and_extras() -> None:
+    raw = {
+        "cellId": 0,
+        "championId": 86,
+        "assignedPosition": "",
+        "championPickIntent": 0,
+        "puuid": "abc",
+        "spell1Id": 4,
+        "team": 1,
+        "wardSkinId": -1,
+    }
+    tm = TeamMember.model_validate(raw)
+    assert tm.cell_id == 0
+    assert tm.assigned_position is None
+
+
 def test_session_parses_full_lcu_payload() -> None:
     raw = {
         "phase": "BAN_PICK",

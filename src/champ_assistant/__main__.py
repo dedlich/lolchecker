@@ -156,14 +156,74 @@ def _run_with_ui(args: argparse.Namespace) -> int:
     # not-yet-running loop. asyncio.create_task() (and TaskManager.spawn,
     # which wraps it) would raise here because there's no running loop yet.
     consumer = loop.create_task(assistant.run(), name="orchestrator-run")
+    # Background side-tasks: champion icon prefetch + update notifier.
+    icon_task = loop.create_task(
+        _prefetch_champion_icons(overlay, args.data_dir),
+        name="icon-prefetch",
+    )
+    update_task = loop.create_task(
+        _check_and_notify_update(overlay), name="update-check"
+    )
 
     try:
         with loop:
             loop.run_forever()
     finally:
-        consumer.cancel()
+        for t in (consumer, icon_task, update_task):
+            t.cancel()
         crash.uninstall()
     return 0
+
+
+async def _prefetch_champion_icons(overlay: MainOverlay, data_dir: Path) -> None:
+    """Fetch champion portraits from Data Dragon and hand them to the overlay."""
+    from champ_assistant.data.datadragon import DataDragon
+
+    cache_dir = data_dir.parent / "ddragon_cache"
+    keys = sorted({c.key for c in _STARTER_CHAMPIONS})
+    try:
+        async with DataDragon(cache_dir) as dd:
+            try:
+                patch = await dd.fetch_latest_patch()
+            except Exception:  # noqa: BLE001
+                patch = "14.8.1"  # fallback if Riot is offline
+            logging.getLogger(__name__).info("icon_prefetch_start patch=%s n=%d", patch, len(keys))
+            icons_bytes = await dd.prefetch_icons(patch, keys)
+    except Exception:  # noqa: BLE001
+        logging.getLogger(__name__).exception("icon_prefetch_failed")
+        return
+
+    # Convert PNG bytes → scaled QPixmap on the Qt thread.
+    from PyQt6.QtCore import Qt as QtCore
+    from PyQt6.QtGui import QPixmap
+
+    pixmaps: dict[str, QPixmap] = {}
+    for key, data in icons_bytes.items():
+        pm = QPixmap()
+        if not pm.loadFromData(data):
+            continue
+        pixmaps[key] = pm.scaled(
+            32, 32,
+            QtCore.AspectRatioMode.KeepAspectRatio,
+            QtCore.TransformationMode.SmoothTransformation,
+        )
+    overlay.set_champion_icons(pixmaps)
+    logging.getLogger(__name__).info("icon_prefetch_done loaded=%d", len(pixmaps))
+
+
+async def _check_and_notify_update(overlay: MainOverlay) -> None:
+    """One-shot startup check; if a newer release exists, surface it in the status bar."""
+    from champ_assistant import __version__
+    from champ_assistant.update_check import check_for_update
+
+    info = await check_for_update(__version__)
+    if info is None:
+        return
+    bar = overlay.status_bar
+    base_text = f"Update: {info['tag']} verfügbar — {info['url']}"
+    bar._label.setText(base_text)
+    bar._label.setStyleSheet("color: #4A9EFF; padding: 0 8px;")
+    logging.getLogger(__name__).info("update_available tag=%s url=%s", info["tag"], info["url"])
 
 
 async def _run_headless(args: argparse.Namespace) -> int:

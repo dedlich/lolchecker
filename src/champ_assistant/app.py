@@ -160,6 +160,7 @@ class ChampAssistant:
 
         enemy_counters = self._compute_enemy_counters(session)
         enemy_names = self._compute_enemy_names(session)
+        enemy_keys = self._compute_enemy_keys(session)
         suggestions, gaps = self._compute_picks(session)
 
         return SessionView(
@@ -169,6 +170,7 @@ class ChampAssistant:
             suggestions=suggestions,
             gaps=gaps,
             enemy_names=enemy_names,
+            enemy_keys=enemy_keys,
         )
 
     def _compute_enemy_counters(
@@ -198,6 +200,16 @@ class ChampAssistant:
             if champ is not None:
                 names[enemy.champion_id] = champ.name
         return names
+
+    def _compute_enemy_keys(self, session: ChampSelectSession) -> dict[int, str]:
+        keys: dict[int, str] = {}
+        for enemy in session.their_team:
+            if enemy.champion_id == 0:
+                continue
+            champ = self.champions.get(enemy.champion_id)
+            if champ is not None:
+                keys[enemy.champion_id] = champ.key
+        return keys
 
     def _compute_picks(
         self, session: ChampSelectSession

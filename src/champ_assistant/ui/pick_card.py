@@ -2,17 +2,24 @@
 from __future__ import annotations
 
 from PyQt6.QtCore import Qt
+from PyQt6.QtGui import QPixmap
 from PyQt6.QtWidgets import QFrame, QHBoxLayout, QLabel, QVBoxLayout
 
 from ..advisor.picks import PickSuggestion
 from . import styles
 from .widgets import TierBadge
 
+ICON_SIZE = 28
+
 
 class PickCard(QFrame):
-    """Card showing one suggested pick: champion + tier + score + reasons."""
+    """Card showing one suggested pick: icon + champion + tier + score + reasons."""
 
-    def __init__(self, suggestion: PickSuggestion) -> None:
+    def __init__(
+        self,
+        suggestion: PickSuggestion,
+        icon: QPixmap | None = None,
+    ) -> None:
         super().__init__()
         self.setProperty("card", True)
         self.suggestion = suggestion
@@ -23,6 +30,17 @@ class PickCard(QFrame):
 
         head = QHBoxLayout()
         head.setSpacing(8)
+
+        if icon is not None and not icon.isNull():
+            icon_label = QLabel()
+            icon_label.setFixedSize(ICON_SIZE, ICON_SIZE)
+            icon_label.setPixmap(icon)
+            icon_label.setStyleSheet(
+                f"background-color: {styles.BG_PRIMARY}; "
+                f"border-radius: {styles.RADIUS}px; "
+                f"border: 1px solid {styles.BORDER};"
+            )
+            head.addWidget(icon_label)
 
         name = QLabel(suggestion.champion_key)
         name.setStyleSheet(

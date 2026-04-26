@@ -28,3 +28,6 @@ class SessionView(BaseModel):
     gaps: list[CompositionGap] = Field(default_factory=list)
     enemy_names: dict[int, str] = Field(default_factory=dict)
     """Map champion id → display name (filled from Data Dragon by integration)."""
+
+    enemy_keys: dict[int, str] = Field(default_factory=dict)
+    """Map champion id → string key (e.g. 86 → "Garen") for icon lookup."""

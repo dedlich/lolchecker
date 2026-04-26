@@ -19,7 +19,7 @@ in a normal window which is friendlier to headless / pytest-qt).
 from __future__ import annotations
 
 from PyQt6.QtCore import Qt, pyqtSignal
-from PyQt6.QtGui import QKeySequence, QShortcut
+from PyQt6.QtGui import QKeySequence, QPixmap, QShortcut
 from PyQt6.QtWidgets import QFrame, QLabel, QMainWindow, QVBoxLayout, QWidget
 
 from . import styles
@@ -123,6 +123,11 @@ class MainOverlay(QMainWindow):
 
         self.setStyleSheet(styles.global_stylesheet())
 
+        # Champion icon cache (string key like "Garen" → scaled QPixmap).
+        # Filled asynchronously by the icon-prefetch task in __main__.
+        self._champion_icons: dict[str, QPixmap] = {}
+        self._last_view: SessionView | None = None
+
     @property
     def status_bar(self) -> ConnectionStatusBar:
         return self._status_bar
@@ -131,10 +136,26 @@ class MainOverlay(QMainWindow):
     def enemy_rows(self) -> list[EnemyRow]:
         return list(self._enemy_rows)
 
+    def set_champion_icons(self, icons: dict[str, QPixmap]) -> None:
+        """Inject prefetched champion icons (key → scaled QPixmap).
+
+        Called by the icon-prefetch task once it finishes. If a session view
+        was already rendered, re-render it so the icons appear immediately.
+        """
+        self._champion_icons.update(icons)
+        if self._last_view is not None:
+            self.update_view(self._last_view)
+
     def update_view(self, view: SessionView) -> None:
+        self._last_view = view
         self._status_bar.set_state(view.connection_state)
         self._update_enemies(view)
         self._update_picks(view)
+
+    def _icon_for_key(self, key: str | None) -> QPixmap | None:
+        if not key:
+            return None
+        return self._champion_icons.get(key)
 
     def _update_enemies(self, view: SessionView) -> None:
         their_team = view.session.their_team if view.session else []
@@ -142,8 +163,9 @@ class MainOverlay(QMainWindow):
             if i < len(their_team):
                 member = their_team[i]
                 name = view.enemy_names.get(member.champion_id) if member.champion_id else None
+                key = view.enemy_keys.get(member.champion_id) if member.champion_id else None
                 counters = view.enemy_counters.get(member.cell_id, [])
-                row.set_data(member, name, counters)
+                row.set_data(member, name, counters, icon=self._icon_for_key(key))
             else:
                 row.clear()
 
@@ -161,4 +183,5 @@ class MainOverlay(QMainWindow):
 
         self._no_picks_label.hide()
         for s in view.suggestions:
-            self._picks_container.addWidget(PickCard(s))
+            icon = self._icon_for_key(s.champion_key)
+            self._picks_container.addWidget(PickCard(s, icon=icon))

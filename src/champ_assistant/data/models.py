@@ -12,7 +12,7 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 # --- Roles -----------------------------------------------------------------
 
@@ -125,15 +125,30 @@ class TeamMember(BaseModel):
     parse via ``model_validate(raw_lcu_dict)`` without manual mapping.
     LCU position tokens (MIDDLE/BOTTOM/UTILITY) are normalized to the
     domain values (MID/BOT/SUPPORT).
+
+    All fields are forgiving: real LCU payloads sometimes include
+    ``null`` values for ints during transitional phases, and slots
+    without an assigned position carry the empty string. Defaults
+    cover those cases without forcing a parse failure.
     """
 
-    model_config = ConfigDict(frozen=True, populate_by_name=True)
+    model_config = ConfigDict(frozen=True, populate_by_name=True, extra="ignore")
 
-    cell_id: int = Field(alias="cellId")
+    cell_id: int = Field(default=-1, alias="cellId")
     champion_id: int = Field(default=0, alias="championId")  # 0 = not picked yet
     summoner_id: int | None = Field(default=None, alias="summonerId")
     assigned_position: Role | None = Field(default=None, alias="assignedPosition")
     locked: bool = False
+
+    @field_validator("cell_id", mode="before")
+    @classmethod
+    def _coerce_cell_id(cls, value: Any) -> Any:
+        return -1 if value is None else value
+
+    @field_validator("champion_id", mode="before")
+    @classmethod
+    def _coerce_champion_id(cls, value: Any) -> Any:
+        return 0 if value is None else value
 
     @field_validator("assigned_position", mode="before")
     @classmethod
@@ -148,14 +163,35 @@ class TeamMember(BaseModel):
 
 
 class ChampSelectSession(BaseModel):
-    """Normalized champ-select state derived from the LCU session payload."""
+    """Normalized champ-select state derived from the LCU session payload.
 
-    model_config = ConfigDict(frozen=True, populate_by_name=True)
+    Real LCU sessions (recent client versions) often only carry the
+    phase inside ``timer.phase`` rather than at the top level, plus
+    dozens of fields we don't care about (actions, bans, chatDetails,
+    entitledFeatureState, …). The model_validator below pulls phase
+    out of the timer when needed; ``extra="ignore"`` swallows the rest.
+    """
 
-    phase: str
+    model_config = ConfigDict(frozen=True, populate_by_name=True, extra="ignore")
+
+    phase: str = ""
     local_player_cell_id: int = Field(default=-1, alias="localPlayerCellId")
     my_team: list[TeamMember] = Field(default_factory=list, alias="myTeam")
     their_team: list[TeamMember] = Field(default_factory=list, alias="theirTeam")
+
+    @model_validator(mode="before")
+    @classmethod
+    def _hydrate_phase_from_timer(cls, data: Any) -> Any:
+        if not isinstance(data, dict):
+            return data
+        # Top-level "phase" wins; otherwise fall back to timer.phase.
+        if not data.get("phase"):
+            timer = data.get("timer")
+            if isinstance(timer, dict):
+                timer_phase = timer.get("phase")
+                if isinstance(timer_phase, str) and timer_phase:
+                    data = {**data, "phase": timer_phase}
+        return data
 
     @property
     def me(self) -> TeamMember | None:
