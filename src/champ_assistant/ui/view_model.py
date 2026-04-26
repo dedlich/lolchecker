@@ -12,7 +12,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from ..advisor.composition import CompositionGap
 from ..advisor.picks import PickSuggestion
-from ..data.models import ChampSelectSession, CounterEntry
+from ..data.models import ChampionBuild, ChampSelectSession, CounterEntry
 
 ConnectionState = Literal["disconnected", "waiting", "connected", "reconnecting"]
 
@@ -38,3 +38,7 @@ class SessionView(BaseModel):
 
     enemy_role_overridden: set[int] = Field(default_factory=set)
     """cell_ids whose role comes from a manual user override (not auto)."""
+
+    suggestion_builds: dict[str, ChampionBuild] = Field(default_factory=dict)
+    """Map champion key → recommended build (runes/items/summoners) for the
+    suggestions in this view. PickCard renders this when present."""

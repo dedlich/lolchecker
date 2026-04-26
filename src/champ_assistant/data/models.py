@@ -114,6 +114,28 @@ class TagsData(BaseModel):
         return self.tags.get(champion_key, [])
 
 
+class ChampionBuild(BaseModel):
+    """Recommended runes / items / summoner spells for a champion in a role."""
+
+    model_config = ConfigDict(frozen=True, extra="ignore")
+
+    runes: list[str] = Field(default_factory=list)
+    items: list[str] = Field(default_factory=list)
+    summoners: list[str] = Field(default_factory=list)
+
+
+class BuildLibrary(BaseModel):
+    """Indexed by champion key → role → build."""
+
+    model_config = ConfigDict(frozen=True, extra="ignore")
+
+    patch: str | None = None
+    builds: dict[str, dict[Role, ChampionBuild]] = Field(default_factory=dict)
+
+    def build_for(self, champion_key: str, role: Role) -> ChampionBuild | None:
+        return self.builds.get(champion_key, {}).get(role)
+
+
 # --- Live champ-select session -------------------------------------------
 
 

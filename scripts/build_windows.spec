@@ -28,6 +28,7 @@ a = Analysis(
         (str(ROOT / "data" / "counters.json"), "data"),
         (str(ROOT / "data" / "tiers.json"), "data"),
         (str(ROOT / "data" / "tags.json"), "data"),
+        (str(ROOT / "data" / "builds.json"), "data"),
         # NB: scripts/update.bat is NOT bundled here — PyInstaller datas
         # land under _internal/ in one-folder mode, not next to the exe.
         # The build workflow copies update.bat into dist/champ-assistant/

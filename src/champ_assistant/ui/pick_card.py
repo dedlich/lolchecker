@@ -6,6 +6,7 @@ from PyQt6.QtGui import QPixmap
 from PyQt6.QtWidgets import QFrame, QHBoxLayout, QLabel, QVBoxLayout
 
 from ..advisor.picks import PickSuggestion
+from ..data.models import ChampionBuild
 from . import styles
 from .widgets import TierBadge
 
@@ -13,12 +14,13 @@ ICON_SIZE = 28
 
 
 class PickCard(QFrame):
-    """Card showing one suggested pick: icon + champion + tier + score + reasons."""
+    """Card showing one suggested pick: icon + champion + tier + score + reasons + build."""
 
     def __init__(
         self,
         suggestion: PickSuggestion,
         icon: QPixmap | None = None,
+        build: ChampionBuild | None = None,
     ) -> None:
         super().__init__()
         self.setProperty("card", True)
@@ -26,7 +28,7 @@ class PickCard(QFrame):
 
         outer = QVBoxLayout(self)
         outer.setContentsMargins(10, 8, 10, 8)
-        outer.setSpacing(4)
+        outer.setSpacing(3)
 
         head = QHBoxLayout()
         head.setSpacing(8)
@@ -66,3 +68,30 @@ class PickCard(QFrame):
 
         outer.addLayout(head)
         outer.addWidget(reasons)
+
+        if build is not None:
+            self._add_build_lines(outer, build)
+
+    @staticmethod
+    def _add_build_lines(outer: QVBoxLayout, build: ChampionBuild) -> None:
+        """Three compact lines for runes / items / summoners. Empty fields skipped."""
+        if build.runes:
+            runes_label = QLabel("🛡  " + " · ".join(build.runes))
+            runes_label.setStyleSheet(
+                f"color: {styles.TIER_A}; font-size: 11px;"
+            )
+            runes_label.setWordWrap(True)
+            outer.addWidget(runes_label)
+        if build.items:
+            items_label = QLabel("⚔  " + " → ".join(build.items))
+            items_label.setStyleSheet(
+                f"color: {styles.TIER_S}; font-size: 11px;"
+            )
+            items_label.setWordWrap(True)
+            outer.addWidget(items_label)
+        if build.summoners:
+            summ_label = QLabel("✨  " + " · ".join(build.summoners))
+            summ_label.setStyleSheet(
+                f"color: {styles.TEXT_MUTED}; font-size: 11px;"
+            )
+            outer.addWidget(summ_label)

@@ -193,4 +193,5 @@ class MainOverlay(QMainWindow):
         self._no_picks_label.hide()
         for s in view.suggestions:
             icon = self._icon_for_key(s.champion_key)
-            self._picks_container.addWidget(PickCard(s, icon=icon))
+            build = view.suggestion_builds.get(s.champion_key)
+            self._picks_container.addWidget(PickCard(s, icon=icon, build=build))

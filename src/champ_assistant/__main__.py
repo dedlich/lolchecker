@@ -21,8 +21,14 @@ from PyQt6.QtWidgets import QApplication
 # __package__, which would break `from .app import ...`. Absolute imports
 # work in both modes — `python -m champ_assistant` AND a frozen exe.
 from champ_assistant.app import ChampAssistant
-from champ_assistant.data.loader import load_counters, load_tags, load_tiers
-from champ_assistant.data.models import Champion
+from champ_assistant.data.loader import (
+    DataLoadError,
+    load_builds,
+    load_counters,
+    load_tags,
+    load_tiers,
+)
+from champ_assistant.data.models import BuildLibrary, Champion
 from champ_assistant.lcu.sources import FixtureLcuSource, LcuSource, RealLcuSource
 from champ_assistant.safety import CrashHandler
 from champ_assistant.ui.overlay import MainOverlay
@@ -120,6 +126,14 @@ def _starter_champion_index() -> dict[int, Champion]:
 
 
 def _build_assistant(args: argparse.Namespace, overlay: MainOverlay) -> ChampAssistant:
+    # Builds are optional — older bundles may not ship builds.json. Default
+    # to an empty BuildLibrary so PickCards render without runes/items.
+    builds: BuildLibrary
+    try:
+        builds = load_builds(args.data_dir / "builds.json")
+    except DataLoadError:
+        builds = BuildLibrary()
+
     return ChampAssistant(
         source=_make_source(args),
         overlay=overlay,
@@ -127,6 +141,7 @@ def _build_assistant(args: argparse.Namespace, overlay: MainOverlay) -> ChampAss
         tiers=load_tiers(args.data_dir / "tiers.json"),
         tags=load_tags(args.data_dir / "tags.json"),
         champions=_starter_champion_index(),
+        builds=builds,
     )
 
 

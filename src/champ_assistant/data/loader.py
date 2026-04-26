@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from .models import CounterMatrix, TagsData, TierList
+from .models import BuildLibrary, CounterMatrix, TagsData, TierList
 
 
 class DataLoadError(Exception):
@@ -46,3 +46,11 @@ def load_tags(path: Path) -> TagsData:
         return TagsData.model_validate_json(text)
     except Exception as exc:
         raise DataLoadError(f"Invalid tags file {path}: {exc}") from exc
+
+
+def load_builds(path: Path) -> BuildLibrary:
+    text = _read_json_text(path)
+    try:
+        return BuildLibrary.model_validate_json(text)
+    except Exception as exc:
+        raise DataLoadError(f"Invalid builds file {path}: {exc}") from exc

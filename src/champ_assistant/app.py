@@ -21,6 +21,8 @@ from .advisor.composition import CompositionGap, analyze_composition
 from .advisor.counters import find_counters
 from .advisor.picks import PickSuggestion, suggest_picks
 from .data.models import (
+    BuildLibrary,
+    ChampionBuild,
     ChampSelectSession,
     Champion,
     CounterMatrix,
@@ -99,6 +101,7 @@ class ChampAssistant:
         tiers: TierList,
         tags: TagsData,
         champions: dict[int, Champion],
+        builds: BuildLibrary | None = None,
         view_callback: Callable[[SessionView], None] | None = None,
     ) -> None:
         self.source = source
@@ -107,6 +110,7 @@ class ChampAssistant:
         self.tiers = tiers
         self.tags = tags
         self.champions = champions
+        self.builds = builds or BuildLibrary()
         # Allow tests to observe view updates without going through Qt.
         self._view_callback = view_callback
 
@@ -203,6 +207,18 @@ class ChampAssistant:
         enemy_roles = self._compute_enemy_roles(session)
         suggestions, gaps = self._compute_picks(session)
 
+        # Look up the recommended build for each suggestion in the local
+        # player's role. Falls back to {} silently when builds aren't seeded.
+        my_role: Role | None = None
+        if session.me is not None:
+            my_role = session.me.assigned_position
+        suggestion_builds: dict[str, ChampionBuild] = {}
+        if my_role is not None:
+            for s in suggestions:
+                build = self.builds.build_for(s.champion_key, my_role)
+                if build is not None:
+                    suggestion_builds[s.champion_key] = build
+
         return SessionView(
             connection_state=self._connection_state,
             session=session,
@@ -213,6 +229,7 @@ class ChampAssistant:
             enemy_keys=enemy_keys,
             enemy_roles=enemy_roles,
             enemy_role_overridden=set(self._enemy_role_overrides.keys()),
+            suggestion_builds=suggestion_builds,
         )
 
     def _resolve_enemy_role(
