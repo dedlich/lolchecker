@@ -1,4 +1,28 @@
 {
-  "$schema": "v0",
-  "tags": {}
+  "tags": {
+    "Garen": ["Fighter", "Tank", "Engage"],
+    "Darius": ["Fighter", "Tank", "Bruiser"],
+    "Vayne": ["Marksman", "Late-Game", "Hyper-Carry"],
+    "Camille": ["Fighter", "Diver", "Lane-Bully"],
+    "KSante": ["Tank", "Engage", "Late-Game"],
+    "Sett": ["Fighter", "Bruiser", "Engage"],
+    "Hecarim": ["Fighter", "Diver", "Engage"],
+    "Viego": ["Fighter", "Assassin", "Skirmisher"],
+    "Lee Sin": ["Fighter", "Skirmisher", "Early-Game"],
+    "Nidalee": ["Assassin", "Skirmisher", "Early-Game"],
+    "Nautilus": ["Tank", "Engage", "Crowd-Control"],
+    "Yasuo": ["Fighter", "Assassin", "Skirmisher"],
+    "Annie": ["Mage", "Burst", "Crowd-Control"],
+    "Malzahar": ["Mage", "Lockdown", "Wave-Clear"],
+    "Galio": ["Mage", "Tank", "Engage"],
+    "Vex": ["Mage", "Burst", "Anti-Mobility"],
+    "Caitlyn": ["Marksman", "Lane-Bully", "Range"],
+    "Jinx": ["Marksman", "Hyper-Carry", "Late-Game"],
+    "MissFortune": ["Marksman", "Burst", "AoE"],
+    "Ezreal": ["Marksman", "Poke", "Safe"],
+    "Lulu": ["Enchanter", "Peel", "Buff"],
+    "Thresh": ["Tank", "Engage", "Crowd-Control"],
+    "Soraka": ["Enchanter", "Heal", "Sustain"],
+    "Leona": ["Tank", "Engage", "Crowd-Control"]
+  }
 }

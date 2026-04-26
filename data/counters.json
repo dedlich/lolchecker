@@ -1,5 +1,57 @@
 {
-  "$schema": "v0",
   "patch": null,
-  "matrix": {}
+  "matrix": {
+    "Garen": {
+      "TOP": [
+        {
+          "champion": "Darius",
+          "score": 8.0,
+          "tier": "S",
+          "notes": {
+            "lane_phase": "Q at level 1, all-in level 6 with R reset potential",
+            "spike": "Lvl 6 + Triforce",
+            "items": ["Black Cleaver", "Plated Steelcaps"],
+            "trade_pattern": "Bait Garen Q, walk back, all-in once it's down"
+          }
+        },
+        {
+          "champion": "Vayne",
+          "score": 6.5,
+          "tier": "A",
+          "notes": {
+            "lane_phase": "Kite with Q + condemn into wall",
+            "spike": "Blade of the Ruined King",
+            "items": ["Berserker's Greaves", "Blade of the Ruined King"],
+            "trade_pattern": "Stay max range, %HP damage shreds tankiness"
+          }
+        }
+      ]
+    },
+    "Yasuo": {
+      "MID": [
+        {
+          "champion": "Annie",
+          "score": 7.5,
+          "tier": "S",
+          "notes": {
+            "lane_phase": "Stack passive, threaten R",
+            "spike": "Lvl 6 with Tibbers + 4 stack stun",
+            "items": ["Sorcerer's Shoes", "Liandry's Anguish"],
+            "trade_pattern": "Stun on engage attempt, point-blank R deletes him"
+          }
+        },
+        {
+          "champion": "Malzahar",
+          "score": 7.0,
+          "tier": "S",
+          "notes": {
+            "lane_phase": "E + Q poke from range",
+            "spike": "Lvl 6 R locks him out of windwall escape",
+            "items": ["Sorcerer's Shoes", "Liandry's Anguish", "Banshee's Veil"],
+            "trade_pattern": "R suppresses through Wind Wall — uncounterable lockdown"
+          }
+        }
+      ]
+    }
+  }
 }

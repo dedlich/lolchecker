@@ -1,11 +1,40 @@
 {
-  "$schema": "v0",
   "patch": null,
   "tiers": {
-    "TOP": [],
-    "JUNGLE": [],
-    "MID": [],
-    "BOT": [],
-    "SUPPORT": []
+    "TOP": [
+      {"champion": "Darius", "tier": "S+"},
+      {"champion": "KSante", "tier": "S"},
+      {"champion": "Camille", "tier": "S"},
+      {"champion": "Garen", "tier": "A"},
+      {"champion": "Sett", "tier": "A"}
+    ],
+    "JUNGLE": [
+      {"champion": "Hecarim", "tier": "S+"},
+      {"champion": "Viego", "tier": "S"},
+      {"champion": "Lee Sin", "tier": "S"},
+      {"champion": "Nidalee", "tier": "A"},
+      {"champion": "Nautilus", "tier": "A"}
+    ],
+    "MID": [
+      {"champion": "Yasuo", "tier": "S"},
+      {"champion": "Annie", "tier": "A"},
+      {"champion": "Malzahar", "tier": "A"},
+      {"champion": "Galio", "tier": "A"},
+      {"champion": "Vex", "tier": "B"}
+    ],
+    "BOT": [
+      {"champion": "Caitlyn", "tier": "S+"},
+      {"champion": "Jinx", "tier": "S"},
+      {"champion": "MissFortune", "tier": "S"},
+      {"champion": "Ezreal", "tier": "A"},
+      {"champion": "Vayne", "tier": "A"}
+    ],
+    "SUPPORT": [
+      {"champion": "Lulu", "tier": "S+"},
+      {"champion": "Nautilus", "tier": "S"},
+      {"champion": "Thresh", "tier": "S"},
+      {"champion": "Soraka", "tier": "A"},
+      {"champion": "Leona", "tier": "A"}
+    ]
   }
 }
