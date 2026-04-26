@@ -20,11 +20,22 @@ import asyncio
 import json
 import logging
 import random
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable
 from pathlib import Path
 from typing import Any, Protocol, runtime_checkable
 
-from .lockfile import LockfileError, LockfileNotFound, find_lockfile, parse_lockfile
+from .client import LcuClient, LcuClientError
+from .events import LcuEventStream
+from .lockfile import (
+    LockfileError,
+    LockfileInfo,
+    LockfileNotFound,
+    find_lockfile,
+    parse_lockfile,
+)
+
+CHAMP_SELECT_REST_PATH = "/lol-champ-select/v1/session"
+CHAMP_SELECT_WS_TOPIC = "OnJsonApiEvent_lol-champ-select_v1_session"
 
 logger = logging.getLogger(__name__)
 
@@ -130,12 +141,32 @@ class FixtureLcuSource:
         return not self._closed
 
 
-class RealLcuSource:
-    """Polls the lockfile, surfaces lifecycle events.
+ClientFactory = Callable[[LockfileInfo], LcuClient]
+StreamFactory = Callable[[LockfileInfo, list[str]], LcuEventStream]
 
-    Phase 2d ships the lifecycle layer only (waiting / connected /
-    disconnected). Phase 6 (Integration) plugs ``LcuClient`` + ``LcuEventStream``
-    in to emit ``{"type": "session", ...}`` events from a live client.
+
+def _default_client_factory(lockfile: LockfileInfo) -> LcuClient:
+    return LcuClient(lockfile)
+
+
+def _default_stream_factory(lockfile: LockfileInfo, topics: list[str]) -> LcuEventStream:
+    return LcuEventStream(lockfile, topics)
+
+
+class RealLcuSource:
+    """Live LCU watcher: lockfile poll → REST initial state → WS event stream.
+
+    Outer loop: detect the League client via the lockfile and surface
+    waiting / connected / disconnected lifecycle events.
+
+    Inner loop (when connected): open an :class:`LcuClient`, GET the current
+    champ-select session for the initial snapshot, then subscribe to
+    ``OnJsonApiEvent_lol-champ-select_v1_session`` via :class:`LcuEventStream`
+    for live updates. A concurrent lockfile watcher closes the stream as soon
+    as the client process exits.
+
+    LcuClient and LcuEventStream are constructed via injectable factories
+    so unit tests can substitute fakes without standing up a real LCU server.
     """
 
     DEFAULT_POLL_INTERVAL = 1.0
@@ -148,12 +179,16 @@ class RealLcuSource:
         env: dict[str, str] | None = None,
         home: Path | None = None,
         extra: list[Path] | None = None,
+        client_factory: ClientFactory = _default_client_factory,
+        stream_factory: StreamFactory = _default_stream_factory,
     ) -> None:
         self.poll_interval = poll_interval
         self._platform = platform
         self._env = env
         self._home = home
         self._extra = extra
+        self._client_factory = client_factory
+        self._stream_factory = stream_factory
         self._closed = False
 
     @property
@@ -173,8 +208,7 @@ class RealLcuSource:
                     home=self._home,
                     extra=self._extra,
                 )
-                # Validate parseability before claiming "connected".
-                parse_lockfile(lockfile_path)
+                lockfile_info = parse_lockfile(lockfile_path)
             except LockfileNotFound:
                 if was_connected:
                     yield {"type": "disconnected"}
@@ -200,12 +234,96 @@ class RealLcuSource:
                 yield {"type": "connected"}
                 was_connected = True
 
-            # Phase 6: open LcuClient + LcuEventStream here and yield
-            # {"type": "session", "data": ...} events. For now we just monitor
-            # the lockfile so the lifecycle is observable.
-            while not self._closed and lockfile_path.is_file():
-                if not await self._sleep_unless_closed(self.poll_interval):
-                    return
+            try:
+                async for event in self._stream_sessions(lockfile_info, lockfile_path):
+                    if self._closed:
+                        return
+                    yield event
+            except Exception as exc:
+                # Anything unexpected from the stream: log + drop back to
+                # the outer reconnect loop. The stream is responsible for
+                # retrying transient WS issues itself.
+                logger.warning(
+                    "lcu_stream_failed",
+                    extra={"error_type": type(exc).__name__, "error": str(exc)},
+                )
+
+            # Stream ended → emit disconnect, then poll for the client again.
+            if was_connected and not self._closed:
+                yield {"type": "disconnected"}
+                was_connected = False
+            if not await self._sleep_unless_closed(self.poll_interval):
+                return
+
+    async def _stream_sessions(
+        self, lockfile: LockfileInfo, lockfile_path: Path
+    ) -> AsyncIterator[dict[str, Any]]:
+        """Yield ``{"type": "session", "data": ...}`` from REST + WS until
+        the client closes (lockfile vanishes, WS Delete event, or close())."""
+        async with self._client_factory(lockfile) as client:
+            async for event in self._fetch_initial_session(client):
+                yield event
+
+            stream = self._stream_factory(lockfile, [CHAMP_SELECT_WS_TOPIC])
+            watcher = asyncio.create_task(self._watch_lockfile(lockfile_path, stream))
+            try:
+                async with stream:
+                    async for raw in stream:
+                        if self._closed:
+                            return
+                        payload = raw.get("payload") or {}
+                        evt_type = payload.get("eventType")
+                        data = payload.get("data")
+                        if evt_type in ("Update", "Create") and isinstance(data, dict):
+                            yield {"type": "session", "data": data}
+                        elif evt_type == "Delete":
+                            # Champ select ended. Outer loop will keep polling
+                            # the lockfile (client is still up) and re-subscribe
+                            # for the next session.
+                            return
+            finally:
+                watcher.cancel()
+                try:
+                    await watcher
+                except (asyncio.CancelledError, Exception):  # noqa: BLE001
+                    pass
+
+    async def _fetch_initial_session(
+        self, client: LcuClient
+    ) -> AsyncIterator[dict[str, Any]]:
+        """GET the current champ-select session. 404 / errors are swallowed —
+        the user may simply not be in champ select right now; WS will pick up
+        the next session whenever it starts."""
+        try:
+            response = await client.get(CHAMP_SELECT_REST_PATH)
+        except LcuClientError as exc:
+            logger.info("lcu_initial_get_failed", extra={"error": str(exc)})
+            return
+        if response.status_code == 200:
+            try:
+                yield {"type": "session", "data": response.json()}
+            except ValueError as exc:
+                logger.warning("lcu_initial_get_not_json", extra={"error": str(exc)})
+        elif response.status_code != 404:
+            logger.info(
+                "lcu_initial_get_unexpected_status",
+                extra={"status": response.status_code},
+            )
+
+    async def _watch_lockfile(
+        self, lockfile_path: Path, stream: LcuEventStream
+    ) -> None:
+        """Close the WS stream when the client shuts down or we're closing.
+
+        Triggers on either: (a) the lockfile has vanished (client process
+        exited), or (b) ``self._closed`` was set externally. Either way the
+        running stream needs to exit so the parent generator can return.
+        """
+        while True:
+            await asyncio.sleep(self.poll_interval)
+            if self._closed or not lockfile_path.is_file():
+                await stream.close()
+                return
 
     async def _sleep_unless_closed(self, seconds: float) -> bool:
         try:

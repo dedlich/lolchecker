@@ -5,11 +5,115 @@ import asyncio
 import json
 import logging
 import random
+from collections.abc import AsyncIterator
 from pathlib import Path
+from typing import Any
 
+import httpx
 import pytest
 
+from champ_assistant.lcu.events import LcuEventStream
+from champ_assistant.lcu.lockfile import LockfileInfo
 from champ_assistant.lcu.sources import FixtureLcuSource, LcuSource, RealLcuSource
+
+
+# --- Fake LcuClient / LcuEventStream factories ----------------------------
+
+
+class _FakeResponse:
+    def __init__(self, status_code: int, payload: Any | None = None) -> None:
+        self.status_code = status_code
+        self._payload = payload
+
+    def json(self) -> Any:
+        if self._payload is None:
+            raise ValueError("no JSON")
+        return self._payload
+
+
+class FakeLcuClient:
+    """Stand-in for LcuClient — records GETs, replies from a script."""
+
+    def __init__(self, get_responses: list[_FakeResponse | Exception] | None = None) -> None:
+        self._get_responses = list(get_responses or [])
+        self.gets: list[str] = []
+        self.entered = False
+        self.exited = False
+
+    async def __aenter__(self) -> "FakeLcuClient":
+        self.entered = True
+        return self
+
+    async def __aexit__(self, *exc: object) -> None:
+        self.exited = True
+
+    async def get(self, path: str, **kwargs: Any) -> _FakeResponse:
+        self.gets.append(path)
+        if not self._get_responses:
+            return _FakeResponse(404)
+        result = self._get_responses.pop(0)
+        if isinstance(result, BaseException):
+            raise result
+        return result
+
+
+class FakeEventStream:
+    """Stand-in for LcuEventStream — yields scripted WS events."""
+
+    def __init__(self, events: list[dict[str, Any]] | None = None) -> None:
+        self._events = list(events or [])
+        self._closed = False
+        self._cond = asyncio.Event()
+
+    async def __aenter__(self) -> "FakeEventStream":
+        return self
+
+    async def __aexit__(self, *exc: object) -> None:
+        await self.close()
+
+    async def close(self) -> None:
+        self._closed = True
+        self._cond.set()
+
+    async def __aiter__(self) -> AsyncIterator[dict[str, Any]]:
+        for ev in self._events:
+            if self._closed:
+                return
+            yield ev
+        # After scripted events, hang until close() is called.
+        await self._cond.wait()
+
+
+def make_factories(
+    *,
+    get_responses: list[Any] | None = None,
+    ws_events: list[dict[str, Any]] | None = None,
+):
+    """Return (client_factory, stream_factory, fake_client_ref, fake_stream_ref)."""
+    state: dict[str, Any] = {"client": None, "stream": None}
+
+    def client_factory(_lf: LockfileInfo) -> FakeLcuClient:
+        c = FakeLcuClient(get_responses)
+        state["client"] = c
+        return c
+
+    def stream_factory(_lf: LockfileInfo, _topics: list[str]) -> FakeEventStream:
+        s = FakeEventStream(ws_events)
+        state["stream"] = s
+        return s
+
+    return client_factory, stream_factory, state
+
+
+def _session_event(phase: str = "BAN_PICK", event_type: str = "Update") -> dict[str, Any]:
+    return {
+        "topic": "OnJsonApiEvent_lol-champ-select_v1_session",
+        "payload": {
+            "data": {"phase": phase},
+            "eventType": event_type,
+            "uri": "/lol-champ-select/v1/session",
+        },
+    }
 
 
 def _write_session(path: Path, name: str, phase: str = "BAN_PICK") -> Path:
@@ -151,8 +255,15 @@ async def test_real_source_yields_waiting_when_no_lockfile(tmp_path: Path) -> No
 
 @pytest.mark.asyncio
 async def test_real_source_yields_connected_when_lockfile_appears(tmp_path: Path) -> None:
+    cf, sf, _ = make_factories(get_responses=[_FakeResponse(404)])
     src = RealLcuSource(
-        poll_interval=0.001, platform="darwin", env={}, home=tmp_path, extra=[tmp_path / "lock"]
+        poll_interval=0.001,
+        platform="darwin",
+        env={},
+        home=tmp_path,
+        extra=[tmp_path / "lock"],
+        client_factory=cf,
+        stream_factory=sf,
     )
 
     async def deliver_lockfile() -> None:
@@ -177,12 +288,19 @@ async def test_real_source_yields_disconnected_when_lockfile_removed(tmp_path: P
     lock = tmp_path / "lock"
     lock.write_text("LeagueClient:1:64144:abc:https", encoding="utf-8")
 
+    cf, sf, _ = make_factories(get_responses=[_FakeResponse(404)])
     src = RealLcuSource(
-        poll_interval=0.001, platform="darwin", env={}, home=tmp_path, extra=[lock]
+        poll_interval=0.01,
+        platform="darwin",
+        env={},
+        home=tmp_path,
+        extra=[lock],
+        client_factory=cf,
+        stream_factory=sf,
     )
 
     async def remove_lockfile() -> None:
-        await asyncio.sleep(0.02)
+        await asyncio.sleep(0.05)
         lock.unlink()
 
     remover = asyncio.create_task(remove_lockfile())
@@ -234,5 +352,222 @@ async def test_real_source_close_exits_cleanly(tmp_path: Path) -> None:
     await asyncio.sleep(0.01)
     await src.close()
     n = await asyncio.wait_for(task, timeout=1.0)
+    assert n >= 1
+    assert src.closed is True
+
+
+# ---------------------------------------------------------------------------
+# RealLcuSource — live session streaming (REST + WS)
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_initial_get_yields_session_event(tmp_path: Path) -> None:
+    """REST GET returns a session → emit it before subscribing."""
+    lock = tmp_path / "lock"
+    lock.write_text("LeagueClient:1:64144:abc:https", encoding="utf-8")
+
+    cf, sf, state = make_factories(
+        get_responses=[_FakeResponse(200, {"phase": "BAN_PICK", "myTeam": []})],
+    )
+    src = RealLcuSource(
+        poll_interval=0.05,
+        platform="darwin",
+        env={},
+        home=tmp_path,
+        extra=[lock],
+        client_factory=cf,
+        stream_factory=sf,
+    )
+
+    received: list[dict[str, Any]] = []
+    async for event in src.events():
+        received.append(event)
+        if event.get("type") == "session":
+            await src.close()
+
+    types = [e["type"] for e in received]
+    assert "session" in types
+    session = next(e for e in received if e["type"] == "session")
+    assert session["data"] == {"phase": "BAN_PICK", "myTeam": []}
+    # GET was made against the right path.
+    assert state["client"].gets == ["/lol-champ-select/v1/session"]
+
+
+@pytest.mark.asyncio
+async def test_ws_update_event_yields_session(tmp_path: Path) -> None:
+    """A WS Update event after the initial GET produces a session event."""
+    lock = tmp_path / "lock"
+    lock.write_text("LeagueClient:1:64144:abc:https", encoding="utf-8")
+
+    cf, sf, _ = make_factories(
+        get_responses=[_FakeResponse(404)],  # not in champ select yet
+        ws_events=[_session_event(phase="BAN_PICK", event_type="Update")],
+    )
+    src = RealLcuSource(
+        poll_interval=0.05,
+        platform="darwin",
+        env={},
+        home=tmp_path,
+        extra=[lock],
+        client_factory=cf,
+        stream_factory=sf,
+    )
+
+    received: list[dict[str, Any]] = []
+    async for event in src.events():
+        received.append(event)
+        if event.get("type") == "session":
+            await src.close()
+
+    sessions = [e for e in received if e["type"] == "session"]
+    assert len(sessions) == 1
+    assert sessions[0]["data"]["phase"] == "BAN_PICK"
+
+
+@pytest.mark.asyncio
+async def test_ws_delete_event_ends_stream(tmp_path: Path) -> None:
+    """A WS Delete event ends the inner stream; outer loop yields disconnected
+    only when the lockfile vanishes (Delete alone = champ select ended, client
+    still up)."""
+    lock = tmp_path / "lock"
+    lock.write_text("LeagueClient:1:64144:abc:https", encoding="utf-8")
+
+    cf, sf, _ = make_factories(
+        get_responses=[_FakeResponse(404), _FakeResponse(404)],  # two reconnect cycles
+        ws_events=[_session_event(event_type="Delete")],
+    )
+    src = RealLcuSource(
+        poll_interval=0.01,
+        platform="darwin",
+        env={},
+        home=tmp_path,
+        extra=[lock],
+        client_factory=cf,
+        stream_factory=sf,
+    )
+
+    received: list[str] = []
+    async for event in src.events():
+        received.append(event["type"])
+        # After connect → Delete → disconnect → reconnect, close on second connected.
+        if received.count("connected") >= 2:
+            await src.close()
+            break
+
+    # We expect at least: connected, disconnected, connected
+    assert received.count("connected") >= 2
+    assert "disconnected" in received
+
+
+@pytest.mark.asyncio
+async def test_lockfile_vanishing_kills_stream(tmp_path: Path) -> None:
+    """If the lockfile disappears mid-stream the watcher closes the stream."""
+    lock = tmp_path / "lock"
+    lock.write_text("LeagueClient:1:64144:abc:https", encoding="utf-8")
+
+    cf, sf, state = make_factories(
+        get_responses=[_FakeResponse(404)],
+        ws_events=[],  # stream hangs after init
+    )
+    src = RealLcuSource(
+        poll_interval=0.02,
+        platform="darwin",
+        env={},
+        home=tmp_path,
+        extra=[lock],
+        client_factory=cf,
+        stream_factory=sf,
+    )
+
+    async def consume() -> list[str]:
+        result: list[str] = []
+        async for event in src.events():
+            result.append(event["type"])
+            if event["type"] == "disconnected":
+                await src.close()
+                break
+        return result
+
+    consumer = asyncio.create_task(consume())
+    # Wait for stream to start, then yank the lockfile.
+    await asyncio.sleep(0.1)
+    lock.unlink()
+    received = await asyncio.wait_for(consumer, timeout=2.0)
+
+    assert "connected" in received
+    assert "disconnected" in received
+
+
+@pytest.mark.asyncio
+async def test_initial_get_500_is_swallowed_ws_still_works(tmp_path: Path) -> None:
+    """REST 5xx errors don't kill the source — WS still subscribes."""
+    lock = tmp_path / "lock"
+    lock.write_text("LeagueClient:1:64144:abc:https", encoding="utf-8")
+
+    request = httpx.Request("GET", "https://127.0.0.1/x")
+    cf, sf, _ = make_factories(
+        get_responses=[
+            httpx.HTTPStatusError(
+                "500", request=request, response=httpx.Response(500, request=request)
+            ),
+        ],
+        ws_events=[_session_event(phase="WS_BACKUP")],
+    )
+    # Wrap the httpx error in our LcuClientError type so the source's catch matches.
+    from champ_assistant.lcu.client import LcuClientError
+    cf2, sf2, _ = make_factories(
+        get_responses=[LcuClientError("500 retries exhausted")],
+        ws_events=[_session_event(phase="WS_BACKUP")],
+    )
+    src = RealLcuSource(
+        poll_interval=0.05,
+        platform="darwin",
+        env={},
+        home=tmp_path,
+        extra=[lock],
+        client_factory=cf2,
+        stream_factory=sf2,
+    )
+
+    received: list[dict[str, Any]] = []
+    async for event in src.events():
+        received.append(event)
+        if event.get("type") == "session":
+            await src.close()
+
+    sessions = [e for e in received if e["type"] == "session"]
+    assert len(sessions) == 1
+    assert sessions[0]["data"]["phase"] == "WS_BACKUP"
+
+
+@pytest.mark.asyncio
+async def test_close_during_streaming_exits_promptly(tmp_path: Path) -> None:
+    """close() while inside the WS stream returns control within poll_interval."""
+    lock = tmp_path / "lock"
+    lock.write_text("LeagueClient:1:64144:abc:https", encoding="utf-8")
+
+    cf, sf, _ = make_factories(
+        get_responses=[_FakeResponse(404)],
+        ws_events=[],  # hangs after init
+    )
+    src = RealLcuSource(
+        poll_interval=0.02,
+        platform="darwin",
+        env={},
+        home=tmp_path,
+        extra=[lock],
+        client_factory=cf,
+        stream_factory=sf,
+    )
+
+    async def consume() -> int:
+        n = 0
+        async for event in src.events():
+            n += 1
+            if event["type"] == "connected":
+                await src.close()
+        return n
+
+    n = await asyncio.wait_for(consume(), timeout=2.0)
     assert n >= 1
     assert src.closed is True
