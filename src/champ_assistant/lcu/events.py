@@ -138,9 +138,11 @@ class LcuEventStream:
                 continue
 
             backoff = self._reconnect_initial  # success → reset
+            logger.info("ws_connected", extra={"topics": list(self.subscriptions)})
             try:
                 for topic in self.subscriptions:
                     await self._ws.send(json.dumps([OP_SUBSCRIBE, topic]))
+                    logger.info("ws_subscribe_sent", extra={"topic": topic})
 
                 async for raw in self._ws:
                     if self._closed:

@@ -260,11 +260,16 @@ class RealLcuSource:
     ) -> AsyncIterator[dict[str, Any]]:
         """Yield ``{"type": "session", "data": ...}`` from REST + WS until
         the client closes (lockfile vanishes, WS Delete event, or close())."""
+        logger.info(
+            "lcu_stream_open",
+            extra={"port": lockfile.port, "protocol": lockfile.protocol},
+        )
         async with self._client_factory(lockfile) as client:
             async for event in self._fetch_initial_session(client):
                 yield event
 
             stream = self._stream_factory(lockfile, [CHAMP_SELECT_WS_TOPIC])
+            logger.info("lcu_ws_subscribe", extra={"topic": CHAMP_SELECT_WS_TOPIC})
             watcher = asyncio.create_task(self._watch_lockfile(lockfile_path, stream))
             try:
                 async with stream:
@@ -273,13 +278,22 @@ class RealLcuSource:
                             return
                         payload = raw.get("payload") or {}
                         evt_type = payload.get("eventType")
+                        uri = payload.get("uri")
                         data = payload.get("data")
+                        logger.debug(
+                            "lcu_ws_event",
+                            extra={"event_type": evt_type, "uri": uri,
+                                   "has_data": isinstance(data, dict)},
+                        )
                         if evt_type in ("Update", "Create") and isinstance(data, dict):
+                            logger.info(
+                                "lcu_session_yielded",
+                                extra={"event_type": evt_type,
+                                       "phase": data.get("phase")},
+                            )
                             yield {"type": "session", "data": data}
                         elif evt_type == "Delete":
-                            # Champ select ended. Outer loop will keep polling
-                            # the lockfile (client is still up) and re-subscribe
-                            # for the next session.
+                            logger.info("lcu_session_ended_via_delete")
                             return
             finally:
                 watcher.cancel()
@@ -287,6 +301,7 @@ class RealLcuSource:
                     await watcher
                 except (asyncio.CancelledError, Exception):  # noqa: BLE001
                     pass
+                logger.info("lcu_stream_closed")
 
     async def _fetch_initial_session(
         self, client: LcuClient
@@ -294,21 +309,24 @@ class RealLcuSource:
         """GET the current champ-select session. 404 / errors are swallowed —
         the user may simply not be in champ select right now; WS will pick up
         the next session whenever it starts."""
+        logger.info("lcu_initial_get_request", extra={"path": CHAMP_SELECT_REST_PATH})
         try:
             response = await client.get(CHAMP_SELECT_REST_PATH)
         except LcuClientError as exc:
-            logger.info("lcu_initial_get_failed", extra={"error": str(exc)})
+            logger.warning("lcu_initial_get_failed", extra={"error": str(exc)})
             return
+        logger.info("lcu_initial_get_response", extra={"status": response.status_code})
         if response.status_code == 200:
             try:
-                yield {"type": "session", "data": response.json()}
+                data = response.json()
             except ValueError as exc:
                 logger.warning("lcu_initial_get_not_json", extra={"error": str(exc)})
-        elif response.status_code != 404:
+                return
             logger.info(
-                "lcu_initial_get_unexpected_status",
-                extra={"status": response.status_code},
+                "lcu_initial_session_yielded",
+                extra={"phase": data.get("phase") if isinstance(data, dict) else None},
             )
+            yield {"type": "session", "data": data}
 
     async def _watch_lockfile(
         self, lockfile_path: Path, stream: LcuEventStream

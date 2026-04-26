@@ -8,6 +8,8 @@ from __future__ import annotations
 import argparse
 import asyncio
 import logging
+import logging.handlers
+import os
 import sys
 from pathlib import Path
 
@@ -191,6 +193,46 @@ async def _run_headless(args: argparse.Namespace) -> int:
     return 0
 
 
+def _log_directory() -> Path:
+    """Per-platform log directory."""
+    if sys.platform.startswith("win"):
+        base = os.environ.get("LOCALAPPDATA") or str(Path.home() / "AppData" / "Local")
+        return Path(base) / "ChampAssistant" / "logs"
+    return Path.home() / ".champ-assistant" / "logs"
+
+
+def _setup_file_logger(level: int = logging.DEBUG) -> Path:
+    """Add a rotating file handler so we have visibility in the frozen exe.
+
+    The exe is built with console=False (no stdout/stderr in a windowed app),
+    so without file logging there's no way to diagnose runtime issues. Every
+    LCU call, WS event, and orchestrator state transition lands here.
+    """
+    log_dir = _log_directory()
+    log_dir.mkdir(parents=True, exist_ok=True)
+    log_file = log_dir / "app.log"
+
+    handler = logging.handlers.RotatingFileHandler(
+        str(log_file),
+        maxBytes=5_000_000,
+        backupCount=2,
+        encoding="utf-8",
+    )
+    handler.setFormatter(
+        logging.Formatter(
+            "%(asctime)s %(levelname)-8s %(name)s: %(message)s",
+            datefmt="%Y-%m-%d %H:%M:%S",
+        )
+    )
+    handler.setLevel(level)
+
+    root = logging.getLogger()
+    root.addHandler(handler)
+    if root.level > level:
+        root.setLevel(level)
+    return log_file
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
@@ -199,6 +241,8 @@ def main(argv: list[str] | None = None) -> int:
         level=args.log_level,
         format="%(asctime)s %(levelname)s %(name)s: %(message)s",
     )
+    log_file = _setup_file_logger()
+    logging.getLogger(__name__).info("startup log_file=%s args=%r", log_file, vars(args))
 
     if not args.dry_run and not args.no_ui:
         # Live mode (LCU) without UI doesn't make sense for users; allow with --no-ui.
