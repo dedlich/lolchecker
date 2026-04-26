@@ -24,10 +24,20 @@ a = Analysis(
     pathex=[str(ROOT / "src")],
     binaries=[],
     datas=[
-        # Bundle the static data files at the bundle root under "data/".
+        # Static data — counters / tier list / tags read at runtime.
         (str(ROOT / "data" / "counters.json"), "data"),
         (str(ROOT / "data" / "tiers.json"), "data"),
         (str(ROOT / "data" / "tags.json"), "data"),
+        # Demo fixtures so --dry-run works in the packaged exe (default
+        # FIXTURE_DIR resolves under _MEIPASS/tests/fixtures/sessions).
+        # Skip 12_corrupt.json — it's a parser-robustness test asset, not
+        # a usable session.
+        (str(ROOT / "tests" / "fixtures" / "sessions" / "01_ban_phase.json"),
+         "tests/fixtures/sessions"),
+        (str(ROOT / "tests" / "fixtures" / "sessions" / "02_early_picks.json"),
+         "tests/fixtures/sessions"),
+        (str(ROOT / "tests" / "fixtures" / "sessions" / "04_my_turn_top.json"),
+         "tests/fixtures/sessions"),
     ],
     hiddenimports=[
         # Subpackages PyInstaller may not auto-detect from string-based imports.

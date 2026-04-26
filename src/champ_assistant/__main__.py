@@ -136,6 +136,14 @@ def _run_with_ui(args: argparse.Namespace) -> int:
     overlay.show()
 
     crash = CrashHandler()
+    # Surface any swallowed exception in the status bar so silent failures
+    # (orchestrator dying, source raising during init, etc.) are visible
+    # instead of leaving the UI stuck on "Disconnected" forever.
+    def _on_crash(msg: str) -> None:
+        bar = overlay.status_bar
+        bar._label.setText(f"Error: {msg[:80]}")
+        bar._label.setStyleSheet("color: #FF6B6B; padding: 0 8px;")
+    crash.subscribe(_on_crash)
 
     loop = qasync.QEventLoop(qt_app)
     asyncio.set_event_loop(loop)
