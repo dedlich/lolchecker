@@ -65,6 +65,9 @@ addopts = [
     "-ra",
     "--strict-markers",
     "--strict-config",
+    # Soak tests are opt-in — run explicitly with `pytest tests/soak`.
+    # Default CI / dev runs skip them since they take minutes / hours.
+    "--ignore=tests/soak",
 ]
 timeout = 30
 markers = [
