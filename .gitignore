@@ -1,0 +1,61 @@
+# --- Python ---
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# --- Virtualenvs ---
+.venv/
+venv/
+env/
+
+# --- Build / dist ---
+build/
+dist/
+*.egg-info/
+*.egg
+.eggs/
+pip-wheel-metadata/
+
+# --- Tests / coverage ---
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
+.hypothesis/
+.tox/
+.mypy_cache/
+.ruff_cache/
+
+# --- Profiling / memory ---
+*.prof
+*.svg
+memray-*.bin
+
+# --- Editors / IDE ---
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# --- OS ---
+.DS_Store
+Thumbs.db
+
+# --- Project ---
+.env
+.env.local
+*.log
+logs/
+crashes/
+
+# --- Cache dirs ---
+.cache/
+.diskcache/
+
+# --- PyInstaller ---
+*.manifest
+*.spec.bak

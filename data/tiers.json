@@ -1,0 +1,11 @@
+{
+  "$schema": "v0",
+  "patch": null,
+  "tiers": {
+    "TOP": [],
+    "JUNGLE": [],
+    "MID": [],
+    "BOT": [],
+    "SUPPORT": []
+  }
+}
