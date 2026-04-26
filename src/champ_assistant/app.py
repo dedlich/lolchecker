@@ -32,12 +32,48 @@ from .data.models import (
 
 # Standard draft pick order — Riot fixes the role assignment to cell order in
 # ranked, but the LCU only echoes assignedPosition for *my* team. We infer the
-# enemy team's roles from their index within their_team.
+# enemy team's roles from their index within their_team as a last resort.
 _DRAFT_ROLE_ORDER: list[Role] = ["TOP", "JUNGLE", "MID", "BOT", "SUPPORT"]
 
 
 def _role_at_index(i: int) -> Role | None:
     return _DRAFT_ROLE_ORDER[i] if 0 <= i < len(_DRAFT_ROLE_ORDER) else None
+
+
+def infer_role_from_tags(tags: list[str]) -> Role | None:
+    """Heuristic role guess from Data Dragon's champion tags.
+
+    Riot's tags ({Assassin, Fighter, Mage, Marksman, Support, Tank}) are
+    playstyle labels, not lanes — so the mapping is approximate. Hand-curated
+    priority order based on common pick distribution; user can override.
+    """
+    s = set(tags)
+    if "Marksman" in s:
+        return "BOT"
+    if "Support" in s:
+        return "SUPPORT"
+    # Pure tank without fighter chops → typically SUPPORT (Leona, Naut, Alistar)
+    if "Tank" in s and "Fighter" not in s:
+        return "SUPPORT"
+    # Tank + Fighter → top-lane bruisers (Garen, Maokai, Sett)
+    if "Tank" in s and "Fighter" in s:
+        return "TOP"
+    # Pure mage → mid (Annie, Lux without support, Veigar)
+    if "Mage" in s and "Assassin" not in s and "Fighter" not in s:
+        return "MID"
+    # Assassin + Fighter → jungle (Kha'Zix, Viego, Nidalee)
+    if "Assassin" in s and "Fighter" in s:
+        return "JUNGLE"
+    # Pure assassin → mid (Zed, Talon, Akali)
+    if "Assassin" in s:
+        return "MID"
+    # Pure fighter → top (Darius, Aatrox, Camille)
+    if "Fighter" in s:
+        return "TOP"
+    # Mage + Assassin (LeBlanc, Diana) → mid
+    if "Mage" in s:
+        return "MID"
+    return None
 from .lcu.sources import LcuSource
 from .ui.overlay import MainOverlay
 from .ui.view_model import ConnectionState, SessionView
@@ -76,6 +112,9 @@ class ChampAssistant:
 
         self._latest_session: ChampSelectSession | None = None
         self._connection_state: ConnectionState = "disconnected"
+        # Per-cell manual role overrides for the enemy team. cell_id → Role.
+        # Cleared when a session is reset (disconnect / different game).
+        self._enemy_role_overrides: dict[int, Role] = {}
 
         # Wire UI: refresh shortcut re-renders the latest session view.
         self.overlay.refresh_requested.connect(self._on_refresh_requested)
@@ -161,6 +200,7 @@ class ChampAssistant:
         enemy_counters = self._compute_enemy_counters(session)
         enemy_names = self._compute_enemy_names(session)
         enemy_keys = self._compute_enemy_keys(session)
+        enemy_roles = self._compute_enemy_roles(session)
         suggestions, gaps = self._compute_picks(session)
 
         return SessionView(
@@ -171,7 +211,29 @@ class ChampAssistant:
             gaps=gaps,
             enemy_names=enemy_names,
             enemy_keys=enemy_keys,
+            enemy_roles=enemy_roles,
+            enemy_role_overridden=set(self._enemy_role_overrides.keys()),
         )
+
+    def _resolve_enemy_role(
+        self, enemy: TeamMember, index: int, champion: Champion | None
+    ) -> Role | None:
+        """Resolve an enemy slot's role with this priority:
+        1. Manual override (user clicked the role label in the UI)
+        2. assigned_position from the LCU (rare — usually empty for the enemy)
+        3. Tag-based heuristic from the picked champion's Data Dragon tags
+        4. Cell-order fallback (TOP/JUNGLE/MID/BOT/SUPPORT by index)
+        """
+        override = self._enemy_role_overrides.get(enemy.cell_id)
+        if override is not None:
+            return override
+        if enemy.assigned_position is not None:
+            return enemy.assigned_position
+        if champion is not None:
+            inferred = infer_role_from_tags(champion.tags)
+            if inferred is not None:
+                return inferred
+        return _role_at_index(index)
 
     def _compute_enemy_counters(
         self, session: ChampSelectSession
@@ -180,15 +242,28 @@ class ChampAssistant:
         for i, enemy in enumerate(session.their_team):
             if enemy.champion_id == 0:
                 continue
-            role = enemy.assigned_position or _role_at_index(i)
-            if role is None:
-                continue
             champ = self.champions.get(enemy.champion_id)
-            if champ is None:
+            role = self._resolve_enemy_role(enemy, i, champ)
+            if role is None or champ is None:
                 continue
             result[enemy.cell_id] = find_counters(
                 champ.key, role, self.counters, limit=3
             )
+        return result
+
+    def _compute_enemy_roles(
+        self, session: ChampSelectSession
+    ) -> dict[int, Role]:
+        """Resolved role per enemy cell — surfaces to the UI for the role label."""
+        result: dict[int, Role] = {}
+        for i, enemy in enumerate(session.their_team):
+            champ = (
+                self.champions.get(enemy.champion_id)
+                if enemy.champion_id else None
+            )
+            role = self._resolve_enemy_role(enemy, i, champ)
+            if role is not None:
+                result[enemy.cell_id] = role
         return result
 
     def _compute_enemy_names(self, session: ChampSelectSession) -> dict[int, str]:
@@ -244,6 +319,42 @@ class ChampAssistant:
         return keys
 
     # -- Live data updates ------------------------------------------------
+
+    def cycle_enemy_role_override(self, cell_id: int) -> Role | None:
+        """Advance the manual override for an enemy cell through the cycle:
+        none → TOP → JUNGLE → MID → BOT → SUPPORT → none.
+
+        Returns the new override value (or None when cleared). Triggers a
+        re-render of the latest cached view so counters/suggestions update
+        instantly.
+        """
+        cycle: list[Role | None] = [
+            None, "TOP", "JUNGLE", "MID", "BOT", "SUPPORT",
+        ]
+        current = self._enemy_role_overrides.get(cell_id)
+        try:
+            next_index = (cycle.index(current) + 1) % len(cycle)
+        except ValueError:
+            next_index = 1  # current wasn't in cycle, restart at TOP
+        next_role = cycle[next_index]
+        if next_role is None:
+            self._enemy_role_overrides.pop(cell_id, None)
+        else:
+            self._enemy_role_overrides[cell_id] = next_role
+        if self._latest_session is not None:
+            view = self._build_view(self._latest_session)
+            self._push_view(view)
+        return next_role
+
+    def set_enemy_role_override(self, cell_id: int, role: Role | None) -> None:
+        """Direct setter for tests / programmatic control."""
+        if role is None:
+            self._enemy_role_overrides.pop(cell_id, None)
+        else:
+            self._enemy_role_overrides[cell_id] = role
+        if self._latest_session is not None:
+            view = self._build_view(self._latest_session)
+            self._push_view(view)
 
     def update_champions(self, champions: dict[int, Champion]) -> None:
         """Replace the champion lookup table and re-render the latest view.

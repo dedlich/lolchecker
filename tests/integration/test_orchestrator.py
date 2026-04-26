@@ -145,6 +145,84 @@ def test_overlay_status_bar_reflects_handle_event(assistant) -> None:  # type: i
     assert assistant.overlay.status_bar.state == "connected"
 
 
+def test_tag_inference_overrides_cell_order_for_enemy_role(qtbot, champions) -> None:  # type: ignore[no-untyped-def]
+    """A pure Marksman in the TOP cell (5) should still be classified as BOT
+    via tag inference (cell-order would have said TOP)."""
+    overlay = MainOverlay()
+    qtbot.addWidget(overlay)
+    a = ChampAssistant(
+        source=FixtureLcuSource(FIXTURES_DIR, interval=0.0),
+        overlay=overlay,
+        counters=load_counters(DATA_DIR / "counters.json"),
+        tiers=load_tiers(DATA_DIR / "tiers.json"),
+        tags=load_tags(DATA_DIR / "tags.json"),
+        champions=champions,
+    )
+    raw = {
+        "phase": "BAN_PICK",
+        "localPlayerCellId": 0,
+        "myTeam": [{"cellId": 0, "championId": 86, "assignedPosition": "TOP"}],
+        "theirTeam": [
+            # cell 5 = TOP by cell-order, but championId 21 (Miss Fortune)
+            # is tagged Marksman → should resolve to BOT.
+            {"cellId": 5, "championId": 21},
+        ],
+    }
+    view = a.handle_event({"type": "session", "data": raw})
+    assert view.enemy_roles[5] == "BOT"
+    assert 5 not in view.enemy_role_overridden  # auto-inference, not manual
+
+
+def test_manual_override_takes_priority_and_is_marked(qtbot, champions) -> None:  # type: ignore[no-untyped-def]
+    overlay = MainOverlay()
+    qtbot.addWidget(overlay)
+    a = ChampAssistant(
+        source=FixtureLcuSource(FIXTURES_DIR, interval=0.0),
+        overlay=overlay,
+        counters=load_counters(DATA_DIR / "counters.json"),
+        tiers=load_tiers(DATA_DIR / "tiers.json"),
+        tags=load_tags(DATA_DIR / "tags.json"),
+        champions=champions,
+    )
+    raw = {
+        "phase": "BAN_PICK", "localPlayerCellId": 0,
+        "myTeam": [{"cellId": 0, "championId": 86, "assignedPosition": "TOP"}],
+        "theirTeam": [{"cellId": 5, "championId": 21}],  # Miss Fortune (Marksman) → auto-resolves to BOT
+    }
+    a.handle_event({"type": "session", "data": raw})
+
+    a.set_enemy_role_override(5, "TOP")  # contradicts auto-inference
+    # set_enemy_role_override re-renders; check the overlay's last view.
+    last = overlay._last_view  # type: ignore[attr-defined]
+    assert last is not None
+    assert last.enemy_roles[5] == "TOP"
+    assert 5 in last.enemy_role_overridden
+
+
+def test_cycle_enemy_role_advances_through_all_roles(qtbot, champions) -> None:  # type: ignore[no-untyped-def]
+    overlay = MainOverlay()
+    qtbot.addWidget(overlay)
+    a = ChampAssistant(
+        source=FixtureLcuSource(FIXTURES_DIR, interval=0.0),
+        overlay=overlay,
+        counters=load_counters(DATA_DIR / "counters.json"),
+        tiers=load_tiers(DATA_DIR / "tiers.json"),
+        tags=load_tags(DATA_DIR / "tags.json"),
+        champions=champions,
+    )
+    raw = {
+        "phase": "BAN_PICK", "localPlayerCellId": 0,
+        "myTeam": [{"cellId": 0, "championId": 86, "assignedPosition": "TOP"}],
+        "theirTeam": [{"cellId": 5, "championId": 21}],
+    }
+    a.handle_event({"type": "session", "data": raw})
+
+    cycle_observed = []
+    for _ in range(7):  # full cycle is 6 (None + 5 roles); 7 wraps around
+        cycle_observed.append(a.cycle_enemy_role_override(5))
+    assert cycle_observed == ["TOP", "JUNGLE", "MID", "BOT", "SUPPORT", None, "TOP"]
+
+
 def test_update_champions_resolves_previously_unknown_enemy(qtbot, champions) -> None:  # type: ignore[no-untyped-def]
     """A session that references champion ids missing from the bootstrap dict
     should fall back to numeric placeholders, then resolve once Data Dragon

@@ -59,6 +59,7 @@ def test_update_view_renders_enemies() -> None:
         connection_state="connected",
         session=session,
         enemy_names={86: "Garen", 64: "Lee Sin"},
+        enemy_roles={5: "TOP", 6: "JUNGLE"},
         enemy_counters={
             5: [
                 CounterEntry(champion="Darius", score=8.0, tier="S"),
@@ -70,7 +71,7 @@ def test_update_view_renders_enemies() -> None:
 
     rows = overlay.enemy_rows
     assert "Garen" in rows[0]._champion_label.text()
-    assert "TOP" in rows[0]._role_label.text()
+    assert "TOP" in rows[0]._role_button.text()
     assert "Darius" in rows[0]._counters_label.text()
 
     assert "Lee Sin" in rows[1]._champion_label.text()

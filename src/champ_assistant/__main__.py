@@ -135,6 +135,8 @@ def _run_with_ui(args: argparse.Namespace) -> int:
 
     overlay = MainOverlay()
     assistant = _build_assistant(args, overlay)
+    # Wire the clickable enemy-role badge to the orchestrator's cycle method.
+    overlay.enemy_role_clicked.connect(assistant.cycle_enemy_role_override)
     overlay.show()
 
     crash = CrashHandler()

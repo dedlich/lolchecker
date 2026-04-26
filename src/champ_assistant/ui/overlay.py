@@ -34,6 +34,7 @@ class MainOverlay(QMainWindow):
     HOTKEY_REFRESH = "Ctrl+R"
 
     refresh_requested = pyqtSignal()
+    enemy_role_clicked = pyqtSignal(int)  # cell_id of the clicked enemy slot
 
     def __init__(
         self,
@@ -84,6 +85,7 @@ class MainOverlay(QMainWindow):
         self._enemy_rows: list[EnemyRow] = []
         for _ in range(5):
             row = EnemyRow()
+            row.role_clicked.connect(self.enemy_role_clicked.emit)
             self._enemy_rows.append(row)
             enemy_layout.addWidget(row)
 
@@ -165,7 +167,14 @@ class MainOverlay(QMainWindow):
                 name = view.enemy_names.get(member.champion_id) if member.champion_id else None
                 key = view.enemy_keys.get(member.champion_id) if member.champion_id else None
                 counters = view.enemy_counters.get(member.cell_id, [])
-                row.set_data(member, name, counters, icon=self._icon_for_key(key))
+                resolved_role = view.enemy_roles.get(member.cell_id, "")
+                role_overridden = member.cell_id in view.enemy_role_overridden
+                row.set_data(
+                    member, name, counters,
+                    icon=self._icon_for_key(key),
+                    resolved_role=resolved_role,
+                    role_overridden=role_overridden,
+                )
             else:
                 row.clear()
 
