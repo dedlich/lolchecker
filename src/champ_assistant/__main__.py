@@ -19,7 +19,6 @@ from .data.loader import load_counters, load_tags, load_tiers
 from .data.models import Champion
 from .lcu.sources import FixtureLcuSource, LcuSource, RealLcuSource
 from .safety import CrashHandler
-from .tasks import TaskManager
 from .ui.overlay import MainOverlay
 
 def _resource_root() -> Path:
@@ -133,14 +132,16 @@ def _run_with_ui(args: argparse.Namespace) -> int:
     overlay.show()
 
     crash = CrashHandler()
-    tasks = TaskManager()
 
     loop = qasync.QEventLoop(qt_app)
     asyncio.set_event_loop(loop)
     crash.install(loop=loop)
     qt_app.aboutToQuit.connect(loop.stop)
 
-    consumer = tasks.spawn(assistant.run(), name="orchestrator-run")
+    # Schedule the orchestrator runner via loop.create_task — works on a
+    # not-yet-running loop. asyncio.create_task() (and TaskManager.spawn,
+    # which wraps it) would raise here because there's no running loop yet.
+    consumer = loop.create_task(assistant.run(), name="orchestrator-run")
 
     try:
         with loop:

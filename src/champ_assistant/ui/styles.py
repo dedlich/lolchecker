@@ -18,7 +18,10 @@ TIER_B = TEXT_MUTED
 TIER_C = TEXT_MUTED
 TIER_D = TEXT_MUTED
 
-FONT_FAMILY = "Inter, -apple-system, Segoe UI, sans-serif"
+# Order: native first (SF Pro on macOS, Segoe UI on Windows), Inter as a
+# nice-to-have fallback if the user has it installed. Putting "Inter" first
+# triggers Qt's missing-font warning on default systems.
+FONT_FAMILY = "-apple-system, Segoe UI, Inter, sans-serif"
 SPACING_GRID = 8
 RADIUS = 6
 
