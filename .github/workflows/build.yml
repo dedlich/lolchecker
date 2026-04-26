@@ -1,0 +1,43 @@
+name: build-windows
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install package + build deps
+        shell: pwsh
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev,build]"
+
+      - name: Build Windows executable
+        shell: pwsh
+        run: |
+          pyinstaller scripts/build_windows.spec --noconfirm --clean
+
+      - name: Smoke-test the built exe (--help)
+        shell: pwsh
+        run: |
+          .\dist\champ-assistant\champ-assistant.exe --help
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: champ-assistant-windows-${{ github.sha }}
+          path: dist/champ-assistant/
+          retention-days: 30

@@ -22,8 +22,20 @@ from .safety import CrashHandler
 from .tasks import TaskManager
 from .ui.overlay import MainOverlay
 
-DEFAULT_FIXTURE_DIR = Path(__file__).resolve().parents[2] / "tests" / "fixtures" / "sessions"
-DEFAULT_DATA_DIR = Path(__file__).resolve().parents[2] / "data"
+def _resource_root() -> Path:
+    """Repo root in dev, bundle root in a PyInstaller frozen exe.
+
+    PyInstaller sets ``sys.frozen`` and exposes the unpacked bundle path via
+    ``sys._MEIPASS``. From source, fall back to the repo root inferred from
+    this file's location.
+    """
+    if getattr(sys, "frozen", False) and hasattr(sys, "_MEIPASS"):
+        return Path(sys._MEIPASS)
+    return Path(__file__).resolve().parents[2]
+
+
+DEFAULT_FIXTURE_DIR = _resource_root() / "tests" / "fixtures" / "sessions"
+DEFAULT_DATA_DIR = _resource_root() / "data"
 
 
 # Hardcoded starter dict for Phase 6. Phase 7 replaces this with a live
