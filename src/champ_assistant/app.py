@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Callable
+from pathlib import Path
 
 from .advisor.composition import CompositionGap, analyze_composition
 from .advisor.counters import find_counters
@@ -107,7 +108,11 @@ class ChampAssistant:
             try:
                 self._latest_session = ChampSelectSession.model_validate(data)
             except Exception as exc:
-                logger.warning("session_parse_failed", extra={"error": repr(exc)})
+                # Pydantic's ValidationError has a useful __str__ — put it in
+                # the message itself, not just extra= which vanishes through
+                # our default formatter.
+                logger.warning("session_parse_failed: %s", exc)
+                self._dump_failed_payload(data)
                 return self._push_view(SessionView(connection_state=self._connection_state))
             self._connection_state = "connected"
             view = self._build_view(self._latest_session)
@@ -117,6 +122,29 @@ class ChampAssistant:
             return self._push_view(SessionView(connection_state=self._connection_state))
 
         return self._push_view(view)
+
+    @staticmethod
+    def _dump_failed_payload(data: object) -> None:
+        """Write the raw payload that Pydantic rejected to a JSON file next
+        to the rotating log handler so we have a real-world fixture to fix
+        the model with."""
+        try:
+            import json as _json
+            from datetime import datetime
+            log_dir: Path | None = None
+            for h in logging.getLogger().handlers:
+                base = getattr(h, "baseFilename", None)
+                if base:
+                    log_dir = Path(base).parent
+                    break
+            if log_dir is None:
+                return
+            stamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+            dump = log_dir / f"failed_payload_{stamp}.json"
+            dump.write_text(_json.dumps(data, indent=2, default=str), encoding="utf-8")
+            logger.warning("session_parse_failed_payload_dumped: %s", dump)
+        except Exception:  # noqa: BLE001
+            logger.exception("payload_dump_failed")
 
     def _push_view(self, view: SessionView) -> SessionView:
         self.overlay.update_view(view)
