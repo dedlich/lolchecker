@@ -14,12 +14,16 @@ from pathlib import Path
 import qasync
 from PyQt6.QtWidgets import QApplication
 
-from .app import ChampAssistant
-from .data.loader import load_counters, load_tags, load_tiers
-from .data.models import Champion
-from .lcu.sources import FixtureLcuSource, LcuSource, RealLcuSource
-from .safety import CrashHandler
-from .ui.overlay import MainOverlay
+# Absolute imports (not relative) so PyInstaller can run this file directly
+# as the entry point. PyInstaller executes __main__.py without setting
+# __package__, which would break `from .app import ...`. Absolute imports
+# work in both modes — `python -m champ_assistant` AND a frozen exe.
+from champ_assistant.app import ChampAssistant
+from champ_assistant.data.loader import load_counters, load_tags, load_tiers
+from champ_assistant.data.models import Champion
+from champ_assistant.lcu.sources import FixtureLcuSource, LcuSource, RealLcuSource
+from champ_assistant.safety import CrashHandler
+from champ_assistant.ui.overlay import MainOverlay
 
 def _resource_root() -> Path:
     """Repo root in dev, bundle root in a PyInstaller frozen exe.
