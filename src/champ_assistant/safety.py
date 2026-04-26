@@ -1,25 +1,122 @@
 """Crash prevention layer.
 
-Phase 0 skeleton. Phase 1 wires up the global exception handler with tests.
-The CrashHandler must NEVER call sys.exit — degrade, log, surface to UI.
+Goals:
+  - Catch *all* unhandled exceptions (sync via ``sys.excepthook``,
+    async via ``loop.set_exception_handler``).
+  - Log them with a full traceback.
+  - Notify subscribers (the UI later wires a Qt signal here) so the user sees
+    a toast instead of a silent failure.
+  - **Never** call ``sys.exit`` — the app must keep running.
+
+Decoupled from Qt on purpose: ``safety`` is testable without ``pytest-qt``,
+and the UI module subscribes a Qt-signal emitter via :meth:`CrashHandler.subscribe`.
 """
 from __future__ import annotations
 
+import asyncio
+import logging
+import sys
+import traceback
+from collections.abc import Callable
+from types import TracebackType
 from typing import Any
+
+ExceptHook = Callable[[type[BaseException], BaseException, TracebackType | None], None]
+Subscriber = Callable[[str], None]
+
+logger = logging.getLogger(__name__)
 
 
 class CrashHandler:
-    """Global exception sink for sync + asyncio paths.
+    """Global sink for sync + asyncio uncaught exceptions."""
 
-    Real implementation (Phase 1) installs sys.excepthook and the asyncio
-    exception handler, and emits a Qt signal so the UI can show a toast.
-    """
+    def __init__(self) -> None:
+        self._subscribers: list[Subscriber] = []
+        self._original_excepthook: ExceptHook | None = None
+        self._installed_loop: asyncio.AbstractEventLoop | None = None
+        self._original_async_handler: Callable[..., Any] | None = None
+        # Pre-bind the methods so identity comparisons (`is`) work after install.
+        # `self._handle` would otherwise produce a fresh bound-method on every access.
+        self._sync_hook: ExceptHook = self._handle
+        self._async_hook: Callable[[asyncio.AbstractEventLoop, dict[str, Any]], None] = (
+            self._handle_async
+        )
 
-    def install(self) -> None:
-        raise NotImplementedError("Phase 1")
+    # -- Subscription --------------------------------------------------
 
-    def _handle(self, exc_type: type[BaseException], exc_value: BaseException, exc_tb: Any) -> None:
-        raise NotImplementedError("Phase 1")
+    def subscribe(self, callback: Subscriber) -> None:
+        self._subscribers.append(callback)
 
-    def _handle_async(self, loop: Any, context: dict[str, Any]) -> None:
-        raise NotImplementedError("Phase 1")
+    def unsubscribe(self, callback: Subscriber) -> None:
+        try:
+            self._subscribers.remove(callback)
+        except ValueError:
+            pass
+
+    # -- Lifecycle -----------------------------------------------------
+
+    def install(self, loop: asyncio.AbstractEventLoop | None = None) -> None:
+        """Install global hooks. Call once at startup, ideally with the qasync loop."""
+        self._original_excepthook = sys.excepthook
+        sys.excepthook = self._sync_hook
+
+        if loop is not None:
+            self._original_async_handler = loop.get_exception_handler()
+            loop.set_exception_handler(self._async_hook)
+            self._installed_loop = loop
+
+    def uninstall(self) -> None:
+        if self._original_excepthook is not None:
+            sys.excepthook = self._original_excepthook
+            self._original_excepthook = None
+        if self._installed_loop is not None:
+            self._installed_loop.set_exception_handler(self._original_async_handler)
+            self._installed_loop = None
+            self._original_async_handler = None
+
+    # -- Handlers ------------------------------------------------------
+
+    def _handle(
+        self,
+        exc_type: type[BaseException],
+        exc_value: BaseException,
+        exc_tb: TracebackType | None,
+    ) -> None:
+        # KeyboardInterrupt should still propagate so users can Ctrl+C.
+        if issubclass(exc_type, KeyboardInterrupt):
+            if self._original_excepthook is not None:
+                self._original_excepthook(exc_type, exc_value, exc_tb)
+            return
+
+        trace = "".join(traceback.format_exception(exc_type, exc_value, exc_tb))
+        logger.error("uncaught_exception", extra={"trace": trace})
+        self._notify(str(exc_value) or exc_type.__name__)
+        # Deliberately NOT calling sys.exit — graceful degradation only.
+
+    def _handle_async(
+        self,
+        loop: asyncio.AbstractEventLoop,
+        context: dict[str, Any],
+    ) -> None:
+        # Note: avoid the keys "message" and "asctime" in `extra` — stdlib
+        # logging reserves those on LogRecord and raises KeyError on collision.
+        detail = context.get("message", "Async error")
+        exc = context.get("exception")
+        if exc is not None:
+            trace = "".join(
+                traceback.format_exception(type(exc), exc, exc.__traceback__)
+            )
+            logger.error("async_exception", extra={"detail": detail, "trace": trace})
+        else:
+            logger.error("async_exception", extra={"detail": detail, "context": str(context)})
+        self._notify(str(exc) if exc else detail)
+
+    # -- Notification --------------------------------------------------
+
+    def _notify(self, message: str) -> None:
+        for cb in list(self._subscribers):
+            try:
+                cb(message)
+            except Exception:
+                # A misbehaving subscriber must not break the crash handler itself.
+                logger.exception("crash_subscriber_failed")
