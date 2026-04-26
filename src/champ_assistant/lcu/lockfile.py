@@ -12,10 +12,15 @@ clear errors, and *never* let the password reach a log.
 """
 from __future__ import annotations
 
+import logging
 import os
 import sys
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
+
+logger = logging.getLogger(__name__)
 
 
 class LockfileError(Exception):
@@ -72,6 +77,10 @@ def candidate_paths(
 
     paths: list[Path] = []
     if plat.startswith("win"):
+        # Riot's modern installer default — directly on C:\, not in Program Files.
+        # Most current League installs land here. Built from components rather
+        # than a raw string so .name resolves correctly on non-Windows test runners.
+        paths.append(Path("C:") / "Riot Games" / "League of Legends" / "lockfile")
         local_app = e.get("LOCALAPPDATA")
         if local_app:
             paths.append(Path(local_app) / "Riot Games" / "League of Legends" / "lockfile")
@@ -100,20 +109,85 @@ def candidate_paths(
     return unique
 
 
+_LEAGUE_PROCESS_NAMES = frozenset(
+    {"leagueclient", "leagueclient.exe", "leagueclientux", "leagueclientux.exe"}
+)
+
+
+def find_lockfile_via_process(
+    process_iter: Callable[[], Iterable[Any]] | None = None,
+) -> Path | None:
+    """Locate the lockfile by inspecting the running LeagueClient process.
+
+    Works regardless of where the user installed League — psutil exposes the
+    process's ``cwd`` (working directory == install dir), and the lockfile
+    sits next to ``LeagueClient.exe``.
+
+    Returns ``None`` if psutil isn't available, no LeagueClient process is
+    running, or the process can't be introspected (denied permissions,
+    short-lived process). Never raises — callers fall back to error paths.
+
+    ``process_iter`` is injectable for tests (default uses
+    ``psutil.process_iter``).
+    """
+    if process_iter is None:
+        try:
+            import psutil
+        except ImportError:
+            return None
+        process_iter = lambda: psutil.process_iter(["name", "cwd", "exe"])
+
+    try:
+        for proc in process_iter():
+            try:
+                info = getattr(proc, "info", None) or {}
+                name = (info.get("name") or "").lower()
+                if name not in _LEAGUE_PROCESS_NAMES:
+                    continue
+                # cwd is the install directory; lockfile sits next to the exe.
+                cwd = info.get("cwd")
+                if cwd:
+                    candidate = Path(cwd) / "lockfile"
+                    if candidate.is_file():
+                        return candidate
+                exe = info.get("exe")
+                if exe:
+                    candidate = Path(exe).parent / "lockfile"
+                    if candidate.is_file():
+                        return candidate
+            except Exception:  # noqa: BLE001 — psutil may throw NoSuchProcess / AccessDenied
+                continue
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("process_iter_failed", extra={"error": str(exc)})
+    return None
+
+
 def find_lockfile(
     *,
     platform: str | None = None,
     env: dict[str, str] | None = None,
     home: Path | None = None,
     extra: list[Path] | None = None,
+    process_iter: Callable[[], Iterable[Any]] | None = None,
 ) -> Path:
-    """Return the first existing lockfile path. Raises ``LockfileNotFound`` if none."""
+    """Return the first existing lockfile path. Raises ``LockfileNotFound`` if none.
+
+    Resolution order:
+      1. ``extra`` paths (test injection)
+      2. Platform-specific ``candidate_paths`` (well-known install locations)
+      3. psutil-based process discovery (any custom install dir)
+    """
     candidates = candidate_paths(platform=platform, env=env, home=home)
     if extra:
         candidates = list(extra) + candidates
     for p in candidates:
         if p.is_file():
             return p
+
+    via_process = find_lockfile_via_process(process_iter=process_iter)
+    if via_process is not None:
+        return via_process
+
     raise LockfileNotFound(
         "No lockfile found. Searched: " + ", ".join(str(p) for p in candidates)
     )

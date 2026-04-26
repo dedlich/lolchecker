@@ -21,6 +21,10 @@ dependencies = [
     "python-dotenv>=1.0",
     "keyring>=25",
     "structlog>=24.1",
+    # psutil — used as the fallback lockfile finder on Windows. Process
+    # introspection is the only reliable way to handle non-default
+    # installation directories.
+    "psutil>=5.9",
 ]
 
 [project.optional-dependencies]

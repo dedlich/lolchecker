@@ -15,6 +15,7 @@ from champ_assistant.lcu.lockfile import (
     LockfileNotFound,
     candidate_paths,
     find_lockfile,
+    find_lockfile_via_process,
     parse_lockfile,
     parse_lockfile_text,
 )
@@ -145,10 +146,18 @@ def test_candidates_windows_uses_localappdata() -> None:
         env={"LOCALAPPDATA": r"C:\Users\Dennis\AppData\Local"},
         home=Path(r"C:\Users\Dennis"),
     )
-    # First candidate honors LOCALAPPDATA
-    assert "Local" in str(paths[0])
-    assert paths[0].name == "lockfile"
+    # First candidate is Riot's modern default install directory.
+    assert paths[0] == Path("C:") / "Riot Games" / "League of Legends" / "lockfile"
+    # %LOCALAPPDATA% candidate must also be present.
+    assert any("Local" in str(p) and "Riot Games" in str(p) for p in paths)
     assert all(p.name == "lockfile" for p in paths)
+
+
+def test_candidates_windows_includes_riot_games_root() -> None:
+    """Riot's modern installer lands at C:\\Riot Games\\... — must be searched."""
+    paths = candidate_paths(platform="win32", env={}, home=Path(r"C:\Users\X"))
+    expected = Path("C:") / "Riot Games" / "League of Legends" / "lockfile"
+    assert expected in paths
 
 
 def test_candidates_windows_falls_back_when_no_localappdata() -> None:
@@ -227,3 +236,111 @@ def test_find_lockfile_extra_paths_take_priority(tmp_path: Path) -> None:
 
     found = find_lockfile(platform="darwin", env={}, home=tmp_path, extra=[primary])
     assert found == primary
+
+
+# ---------------------------------------------------------------------------
+# Process-based discovery (psutil fallback)
+# ---------------------------------------------------------------------------
+
+class _FakeProc:
+    def __init__(self, **info: object) -> None:
+        self.info = info
+
+
+def test_find_via_process_returns_lockfile_from_cwd(tmp_path: Path) -> None:
+    install = tmp_path / "RiotGames" / "League of Legends"
+    install.mkdir(parents=True)
+    (install / "lockfile").write_text(VALID_TEXT, encoding="utf-8")
+
+    procs = [
+        _FakeProc(name="explorer.exe", cwd="C:\\Windows"),
+        _FakeProc(name="LeagueClient.exe", cwd=str(install)),
+    ]
+    found = find_lockfile_via_process(process_iter=lambda: procs)
+    assert found == install / "lockfile"
+
+
+def test_find_via_process_falls_back_to_exe_dir(tmp_path: Path) -> None:
+    install = tmp_path / "alt" / "League of Legends"
+    install.mkdir(parents=True)
+    (install / "lockfile").write_text(VALID_TEXT, encoding="utf-8")
+
+    procs = [
+        _FakeProc(
+            name="LeagueClientUx.exe",
+            cwd=None,
+            exe=str(install / "LeagueClientUx.exe"),
+        )
+    ]
+    found = find_lockfile_via_process(process_iter=lambda: procs)
+    assert found == install / "lockfile"
+
+
+def test_find_via_process_returns_none_when_no_league() -> None:
+    procs = [
+        _FakeProc(name="chrome.exe", cwd="C:\\"),
+        _FakeProc(name="explorer.exe", cwd="C:\\Windows"),
+    ]
+    assert find_lockfile_via_process(process_iter=lambda: procs) is None
+
+
+def test_find_via_process_skips_lockfile_that_does_not_exist(tmp_path: Path) -> None:
+    procs = [_FakeProc(name="LeagueClient.exe", cwd=str(tmp_path / "nope"))]
+    assert find_lockfile_via_process(process_iter=lambda: procs) is None
+
+
+def test_find_via_process_swallows_per_proc_errors(tmp_path: Path) -> None:
+    install = tmp_path / "x"
+    install.mkdir()
+    (install / "lockfile").write_text(VALID_TEXT, encoding="utf-8")
+
+    class _Broken:
+        @property
+        def info(self) -> dict[str, object]:
+            raise RuntimeError("psutil access denied")
+
+    procs = [
+        _Broken(),
+        _FakeProc(name="LeagueClient.exe", cwd=str(install)),
+    ]
+    found = find_lockfile_via_process(process_iter=lambda: procs)
+    assert found == install / "lockfile"
+
+
+def test_find_lockfile_falls_back_to_process(tmp_path: Path) -> None:
+    """If candidate_paths come up empty, the process scan still finds it."""
+    install = tmp_path / "LoL"
+    install.mkdir()
+    lockfile = install / "lockfile"
+    lockfile.write_text(VALID_TEXT, encoding="utf-8")
+
+    procs = [_FakeProc(name="LeagueClient.exe", cwd=str(install))]
+    found = find_lockfile(
+        platform="darwin",
+        env={},
+        home=tmp_path,
+        process_iter=lambda: procs,
+    )
+    assert found == lockfile
+
+
+def test_find_lockfile_candidate_path_wins_over_process(tmp_path: Path) -> None:
+    """If a candidate path exists, we use that and skip the process scan."""
+    primary = tmp_path / "primary"
+    primary.write_text(VALID_TEXT, encoding="utf-8")
+
+    install = tmp_path / "via_proc"
+    install.mkdir()
+    (install / "lockfile").write_text(VALID_TEXT, encoding="utf-8")
+
+    called = {"count": 0}
+
+    def _spy() -> list[_FakeProc]:
+        called["count"] += 1
+        return [_FakeProc(name="LeagueClient.exe", cwd=str(install))]
+
+    found = find_lockfile(
+        platform="darwin", env={}, home=tmp_path, extra=[primary], process_iter=_spy
+    )
+    assert found == primary
+    assert called["count"] == 0  # process scan never invoked
