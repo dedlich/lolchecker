@@ -155,13 +155,11 @@ def _run_with_ui(args: argparse.Namespace) -> int:
     overlay.show()
 
     crash = CrashHandler()
-    # Surface any swallowed exception in the status bar so silent failures
-    # (orchestrator dying, source raising during init, etc.) are visible
-    # instead of leaving the UI stuck on "Disconnected" forever.
+    # Surface any swallowed exception in the info slot so silent failures
+    # (orchestrator dying, source raising during init, etc.) stay visible
+    # instead of being overwritten by the next connection-state refresh.
     def _on_crash(msg: str) -> None:
-        bar = overlay.status_bar
-        bar._label.setText(f"Error: {msg[:80]}")
-        bar._label.setStyleSheet("color: #FF6B6B; padding: 0 8px;")
+        overlay.status_bar.set_info(f"Error: {msg[:80]}", color="#FF6B6B")
     crash.subscribe(_on_crash)
 
     loop = qasync.QEventLoop(qt_app)
@@ -256,10 +254,10 @@ async def _check_and_notify_update(overlay: MainOverlay) -> None:
     info = await check_for_update(__version__)
     if info is None:
         return
-    bar = overlay.status_bar
-    base_text = f"Update: {info['tag']} verfügbar — {info['url']}"
-    bar._label.setText(base_text)
-    bar._label.setStyleSheet("color: #4A9EFF; padding: 0 8px;")
+    overlay.status_bar.set_info(
+        f"Update: {info['tag']} verfügbar  —  {info['url']}",
+        color="#4A9EFF",
+    )
     logging.getLogger(__name__).info("update_available tag=%s url=%s", info["tag"], info["url"])
 
 

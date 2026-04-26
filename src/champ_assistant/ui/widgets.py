@@ -23,14 +23,27 @@ _STATE_COLORS: dict[ConnectionState, str] = {
 
 
 class ConnectionStatusBar(QStatusBar):
-    """Bottom status bar showing the LCU connection state."""
+    """Bottom status bar with three independent slots:
+      _info_label    — left, persistent (update available, crash error, etc.)
+      _state_label   — right, connection state (overwritten on every refresh)
+
+    Without this split, the update notifier and crash subscriber both
+    wrote into the same widget the orchestrator overwrites on every
+    session refresh, so the user never saw the message.
+    """
 
     def __init__(self) -> None:
         super().__init__()
         self.setSizeGripEnabled(False)
-        self._label = QLabel("")
+
+        self._info_label = QLabel("")
+        self._info_label.setObjectName("statusInfoLabel")
+        self.addWidget(self._info_label, 1)
+
+        self._label = QLabel("")  # kept as `_label` for backwards-compat
         self._label.setObjectName("connectionStateLabel")
         self.addPermanentWidget(self._label)
+
         self.set_state("disconnected")
 
     def set_state(self, state: ConnectionState) -> None:
@@ -39,6 +52,16 @@ class ConnectionStatusBar(QStatusBar):
         color = _STATE_COLORS[state]
         self._label.setText(text)
         self._label.setStyleSheet(f"color: {color}; padding: 0 8px;")
+
+    def set_info(self, text: str, color: str | None = None) -> None:
+        """Persistent message in the left slot — survives state refreshes."""
+        self._info_label.setText(text)
+        c = color or _STATE_COLORS["connected"]
+        self._info_label.setStyleSheet(f"color: {c}; padding: 0 8px;")
+
+    def clear_info(self) -> None:
+        self._info_label.setText("")
+        self._info_label.setStyleSheet("")
 
     @property
     def state(self) -> ConnectionState:
