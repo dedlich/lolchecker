@@ -177,7 +177,9 @@ def test_candidates_windows_includes_program_files() -> None:
 def test_candidates_macos() -> None:
     paths = candidate_paths(platform="darwin", env={}, home=Path("/Users/me"))
     assert paths[0] == Path("/Applications/League of Legends.app/Contents/LoL/lockfile")
-    assert any("Library/Application Support" in str(p) for p in paths)
+    # as_posix() — str(Path(...)) uses backslashes on Windows runners, but the
+    # darwin path layout is logically the same regardless of host OS.
+    assert any("Library/Application Support" in p.as_posix() for p in paths)
 
 
 def test_candidates_linux_fallback() -> None:
