@@ -10,9 +10,9 @@ Conventions:
 """
 from __future__ import annotations
 
-from typing import Literal
+from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 # --- Roles -----------------------------------------------------------------
 
@@ -118,24 +118,44 @@ class TagsData(BaseModel):
 
 
 class TeamMember(BaseModel):
-    model_config = ConfigDict(frozen=True)
+    """Normalized champ-select team slot.
 
-    cell_id: int
-    champion_id: int = 0  # 0 means "not picked yet"
-    summoner_id: int | None = None
-    assigned_position: Role | None = None
+    Accepts both our snake_case names and the LCU's camelCase keys
+    (cellId / championId / summonerId / assignedPosition) so payloads
+    parse via ``model_validate(raw_lcu_dict)`` without manual mapping.
+    LCU position tokens (MIDDLE/BOTTOM/UTILITY) are normalized to the
+    domain values (MID/BOT/SUPPORT).
+    """
+
+    model_config = ConfigDict(frozen=True, populate_by_name=True)
+
+    cell_id: int = Field(alias="cellId")
+    champion_id: int = Field(default=0, alias="championId")  # 0 = not picked yet
+    summoner_id: int | None = Field(default=None, alias="summonerId")
+    assigned_position: Role | None = Field(default=None, alias="assignedPosition")
     locked: bool = False
+
+    @field_validator("assigned_position", mode="before")
+    @classmethod
+    def _normalize_position(cls, value: Any) -> Any:
+        if value is None or value == "":
+            return None
+        if isinstance(value, str):
+            normalized = normalize_role(value)
+            if normalized is not None:
+                return normalized
+        return value
 
 
 class ChampSelectSession(BaseModel):
     """Normalized champ-select state derived from the LCU session payload."""
 
-    model_config = ConfigDict(frozen=True)
+    model_config = ConfigDict(frozen=True, populate_by_name=True)
 
     phase: str
-    local_player_cell_id: int = -1
-    my_team: list[TeamMember] = Field(default_factory=list)
-    their_team: list[TeamMember] = Field(default_factory=list)
+    local_player_cell_id: int = Field(default=-1, alias="localPlayerCellId")
+    my_team: list[TeamMember] = Field(default_factory=list, alias="myTeam")
+    their_team: list[TeamMember] = Field(default_factory=list, alias="theirTeam")
 
     @property
     def me(self) -> TeamMember | None:

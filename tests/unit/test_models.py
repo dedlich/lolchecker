@@ -57,9 +57,43 @@ def test_team_member_defaults() -> None:
     assert tm.locked is False
 
 
-def test_team_member_rejects_bad_position() -> None:
+def test_team_member_normalizes_lcu_position() -> None:
+    """LCU sends MIDDLE/BOTTOM/UTILITY — model normalizes to MID/BOT/SUPPORT."""
+    assert TeamMember(cell_id=0, assigned_position="MIDDLE").assigned_position == "MID"
+    assert TeamMember(cell_id=0, assigned_position="BOTTOM").assigned_position == "BOT"
+    assert TeamMember(cell_id=0, assigned_position="UTILITY").assigned_position == "SUPPORT"
+
+
+def test_team_member_rejects_unknown_position() -> None:
     with pytest.raises(ValidationError):
-        TeamMember(cell_id=0, assigned_position="MIDDLE")  # type: ignore[arg-type]
+        TeamMember(cell_id=0, assigned_position="NOT_A_ROLE")  # type: ignore[arg-type]
+
+
+def test_team_member_accepts_lcu_camelcase_keys() -> None:
+    raw = {"cellId": 3, "championId": 86, "summonerId": 42, "assignedPosition": "BOTTOM"}
+    tm = TeamMember.model_validate(raw)
+    assert tm.cell_id == 3
+    assert tm.champion_id == 86
+    assert tm.summoner_id == 42
+    assert tm.assigned_position == "BOT"
+
+
+def test_session_parses_full_lcu_payload() -> None:
+    raw = {
+        "phase": "BAN_PICK",
+        "localPlayerCellId": 2,
+        "myTeam": [
+            {"cellId": 0, "championId": 86, "assignedPosition": "TOP"},
+            {"cellId": 2, "championId": 0, "assignedPosition": "MIDDLE"},
+        ],
+        "theirTeam": [
+            {"cellId": 5, "championId": 64, "assignedPosition": "JUNGLE"},
+        ],
+    }
+    session = ChampSelectSession.model_validate(raw)
+    assert session.local_player_cell_id == 2
+    assert session.my_team[1].assigned_position == "MID"
+    assert session.their_team[0].assigned_position == "JUNGLE"
 
 
 # ---------------------------------------------------------------------------

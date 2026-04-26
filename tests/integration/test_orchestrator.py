@@ -1,0 +1,182 @@
+"""Integration tests: wire LcuSource → ChampAssistant → MainOverlay end-to-end."""
+from __future__ import annotations
+
+import asyncio
+import json
+import os
+from pathlib import Path
+
+import pytest
+
+os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+
+from champ_assistant.app import ChampAssistant  # noqa: E402
+from champ_assistant.data.loader import (  # noqa: E402
+    load_counters,
+    load_tags,
+    load_tiers,
+)
+from champ_assistant.data.models import Champion  # noqa: E402
+from champ_assistant.lcu.sources import FixtureLcuSource  # noqa: E402
+from champ_assistant.ui.overlay import MainOverlay  # noqa: E402
+from champ_assistant.ui.view_model import SessionView  # noqa: E402
+
+
+REPO_ROOT = Path(__file__).resolve().parents[2]
+DATA_DIR = REPO_ROOT / "data"
+FIXTURES_DIR = REPO_ROOT / "tests" / "fixtures" / "sessions"
+
+
+@pytest.fixture
+def champions() -> dict[int, Champion]:
+    """Subset of champions referenced by the session fixtures + seed data."""
+    return {
+        86: Champion(id=86, key="Garen", name="Garen", tags=["Fighter", "Tank"]),
+        64: Champion(id=64, key="Lee Sin", name="Lee Sin", tags=["Fighter"]),
+        103: Champion(id=103, key="Ahri", name="Ahri", tags=["Mage"]),
+        22: Champion(id=22, key="Ashe", name="Ashe", tags=["Marksman"]),
+        412: Champion(id=412, key="Thresh", name="Thresh", tags=["Tank", "Engage"]),
+        60: Champion(id=60, key="Elise", name="Elise", tags=["Mage", "Assassin"]),
+        7: Champion(id=7, key="LeBlanc", name="LeBlanc", tags=["Assassin", "Mage"]),
+        145: Champion(id=145, key="Kaisa", name="Kai'Sa", tags=["Marksman"]),
+        53: Champion(id=53, key="Blitzcrank", name="Blitzcrank", tags=["Tank", "Engage"]),
+        21: Champion(id=21, key="MissFortune", name="Miss Fortune", tags=["Marksman"]),
+    }
+
+
+@pytest.fixture
+def assistant(qtbot, champions):  # type: ignore[no-untyped-def]
+    overlay = MainOverlay()
+    qtbot.addWidget(overlay)
+    seen_views: list[SessionView] = []
+    a = ChampAssistant(
+        source=FixtureLcuSource(FIXTURES_DIR, interval=0.0),
+        overlay=overlay,
+        counters=load_counters(DATA_DIR / "counters.json"),
+        tiers=load_tiers(DATA_DIR / "tiers.json"),
+        tags=load_tags(DATA_DIR / "tags.json"),
+        champions=champions,
+        view_callback=seen_views.append,
+    )
+    a._seen_views = seen_views  # type: ignore[attr-defined]
+    return a
+
+
+# ---------------------------------------------------------------------------
+# Lifecycle event handling
+# ---------------------------------------------------------------------------
+
+def test_waiting_event_sets_overlay_state(assistant) -> None:  # type: ignore[no-untyped-def]
+    view = assistant.handle_event({"type": "waiting_for_client"})
+    assert view.connection_state == "waiting"
+    assert assistant.overlay.status_bar.state == "waiting"
+
+
+def test_connected_event_without_session_yields_empty_view(assistant) -> None:  # type: ignore[no-untyped-def]
+    view = assistant.handle_event({"type": "connected"})
+    assert view.connection_state == "connected"
+    assert view.session is None
+    assert view.suggestions == []
+
+
+def test_disconnected_clears_session(assistant) -> None:  # type: ignore[no-untyped-def]
+    # First put a session in.
+    raw = json.loads((FIXTURES_DIR / "04_my_turn_top.json").read_text())
+    assistant.handle_event({"type": "session", "data": raw})
+    assert assistant._latest_session is not None
+    # Now disconnect.
+    view = assistant.handle_event({"type": "disconnected"})
+    assert view.connection_state == "disconnected"
+    assert assistant._latest_session is None
+
+
+def test_unknown_event_does_not_crash(assistant) -> None:  # type: ignore[no-untyped-def]
+    view = assistant.handle_event({"type": "definitely_not_a_real_event"})
+    assert view.connection_state == "disconnected"
+
+
+def test_malformed_session_event_is_logged_and_ignored(assistant) -> None:  # type: ignore[no-untyped-def]
+    view = assistant.handle_event({"type": "session", "data": "not a dict"})
+    # Stays in current state (disconnected initially), no crash.
+    assert view.connection_state == "disconnected"
+
+
+def test_session_parse_failure_does_not_crash(assistant) -> None:  # type: ignore[no-untyped-def]
+    view = assistant.handle_event(
+        {"type": "session", "data": {"phase": "BAN_PICK", "myTeam": "garbage"}}
+    )
+    assert view.session is None  # parse failed, stayed empty
+
+
+# ---------------------------------------------------------------------------
+# Full session → view pipeline
+# ---------------------------------------------------------------------------
+
+def test_session_event_builds_complete_view(assistant) -> None:  # type: ignore[no-untyped-def]
+    raw = json.loads((FIXTURES_DIR / "04_my_turn_top.json").read_text())
+    view = assistant.handle_event({"type": "session", "data": raw})
+
+    assert view.connection_state == "connected"
+    assert view.session is not None
+    assert view.session.local_player_cell_id == 0
+
+    # Enemies have names resolved from the champions dict.
+    assert view.enemy_names[86] == "Garen"
+    assert view.enemy_names[60] == "Elise"
+
+    # Garen TOP is in the seed counter matrix → expect counters for cell 5.
+    assert 5 in view.enemy_counters
+    assert any(c.champion == "Darius" for c in view.enemy_counters[5])
+
+    # Local player is TOP → suggestions exist (Darius + others from tier list).
+    assert len(view.suggestions) > 0
+    keys = [s.champion_key for s in view.suggestions]
+    assert "Darius" in keys
+
+    # Drafted champions are excluded from suggestions.
+    drafted_my_team_keys = {"Lee Sin", "Ahri", "Ashe", "Thresh"}
+    assert not (set(keys) & drafted_my_team_keys)
+
+
+def test_overlay_status_bar_reflects_handle_event(assistant) -> None:  # type: ignore[no-untyped-def]
+    assistant.handle_event({"type": "waiting_for_client"})
+    assert assistant.overlay.status_bar.state == "waiting"
+    assistant.handle_event({"type": "connected"})
+    assert assistant.overlay.status_bar.state == "connected"
+
+
+def test_refresh_shortcut_rebuilds_view(assistant) -> None:  # type: ignore[no-untyped-def]
+    raw = json.loads((FIXTURES_DIR / "04_my_turn_top.json").read_text())
+    assistant.handle_event({"type": "session", "data": raw})
+    snapshot_count = len(assistant._seen_views)  # type: ignore[attr-defined]
+    assistant._on_refresh_requested()
+    assert len(assistant._seen_views) == snapshot_count + 1  # type: ignore[attr-defined]
+
+
+# ---------------------------------------------------------------------------
+# End-to-end with FixtureLcuSource
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_run_consumes_fixture_source_to_completion(
+    qtbot, champions  # type: ignore[no-untyped-def]
+) -> None:
+    overlay = MainOverlay()
+    qtbot.addWidget(overlay)
+    seen: list[SessionView] = []
+    assistant = ChampAssistant(
+        source=FixtureLcuSource(FIXTURES_DIR, interval=0.0),
+        overlay=overlay,
+        counters=load_counters(DATA_DIR / "counters.json"),
+        tiers=load_tiers(DATA_DIR / "tiers.json"),
+        tags=load_tags(DATA_DIR / "tags.json"),
+        champions=champions,
+        view_callback=seen.append,
+    )
+    await asyncio.wait_for(assistant.run(), timeout=2.0)
+
+    types = [v.connection_state for v in seen]
+    assert "connected" in types
+    # 3 valid fixtures + the implicit "connected" lifecycle event = at least 3 views
+    sessions_seen = [v for v in seen if v.session is not None]
+    assert len(sessions_seen) >= 3
