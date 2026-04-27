@@ -121,11 +121,13 @@ class ScoreboardWidget(FloatingWidget):
         self._enemy_kills.setText(str(enemy.kills))
 
         delta = ally.items_value - enemy.items_value
-        sign = "+" if delta >= 0 else "−"
-        color = "#6BBBFF" if delta >= 0 else "#FF6B6B"
+        # Directional arrow + color makes the lead/deficit read at a glance.
+        arrow = "▲" if delta > 0 else ("▼" if delta < 0 else "·")
+        color = "#6BBBFF" if delta > 0 else ("#FF6B6B" if delta < 0 else "#888")
         self._gold_delta.setText(
             f"<span style='color:#888'>{_fmt_gold(ally.items_value)}</span>"
-            f"  <span style='color:{color}'>{sign}{_fmt_gold(abs(delta))}</span>"
+            f"  <span style='color:{color}; font-weight:800'>"
+            f"{arrow} {_fmt_gold(abs(delta))}</span>"
             f"  <span style='color:#888'>{_fmt_gold(enemy.items_value)}</span>"
         )
 

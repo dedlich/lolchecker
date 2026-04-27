@@ -92,8 +92,14 @@ class BanPanel(QFrame):
         self._rows.setSpacing(4)
         outer.addLayout(self._rows)
 
-        self._empty = QLabel("(no enemy data yet)")
-        self._empty.setStyleSheet(f"color: {styles.TEXT_MUTED}; font-size: 11px;")
+        self._empty = QLabel(
+            "Bans appear when the tier list + enemy profiles disagree on what to fear."
+        )
+        self._empty.setStyleSheet(
+            f"color: {styles.TEXT_MUTED}; font-size: {styles.FS_LABEL}px;"
+            f" padding: 6px 4px; font-style: italic;"
+        )
+        self._empty.setWordWrap(True)
         outer.addWidget(self._empty)
 
         self.hide()

@@ -181,9 +181,15 @@ class MainOverlay(QMainWindow):
         self._picks_container.setSpacing(6)
         picks_outer.addLayout(self._picks_container)
 
-        self._no_picks_label = QLabel("(no suggestions yet)")
+        self._no_picks_label = QLabel(
+            "Pick suggestions appear once enemies start locking in."
+        )
         self._no_picks_label.setProperty("role", "muted")
-        self._no_picks_label.setStyleSheet(f"color: {styles.TEXT_MUTED};")
+        self._no_picks_label.setStyleSheet(
+            f"color: {styles.TEXT_MUTED}; font-size: {styles.FS_LABEL}px;"
+            f" padding: 8px 4px; font-style: italic;"
+        )
+        self._no_picks_label.setWordWrap(True)
         picks_outer.addWidget(self._no_picks_label)
 
         cs_layout.addWidget(self._picks_panel, 1)
