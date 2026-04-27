@@ -131,27 +131,33 @@ class EnemyTrackerRow(QFrame):
         self.setProperty("role", "row")
 
         layout = QHBoxLayout(self)
-        layout.setContentsMargins(8, 6, 8, 6)
-        layout.setSpacing(10)
+        layout.setContentsMargins(10, 7, 10, 7)
+        layout.setSpacing(12)
 
         self._portrait = QLabel()
-        self._portrait.setFixedSize(28, 28)
+        self._portrait.setFixedSize(32, 32)
         self._portrait.setScaledContents(True)
         self._portrait.setStyleSheet(
             f"background-color: {styles.BG_PRIMARY};"
             f" border-radius: {styles.RADIUS_SMALL}px;"
+            f" border: 1px solid {styles.BORDER_FAINT};"
         )
         layout.addWidget(self._portrait)
 
         text_col = QVBoxLayout()
-        text_col.setSpacing(0)
+        text_col.setSpacing(1)
         text_col.setContentsMargins(0, 0, 0, 0)
         self._champion = QLabel("")
-        self._champion.setStyleSheet("font-weight: 600; font-size: 12px;")
+        self._champion.setStyleSheet(
+            f"font-weight: 700; font-size: {styles.FS_BODY}px;"
+            f" color: {styles.TEXT_PRIMARY};"
+        )
         text_col.addWidget(self._champion)
         self._summoner = QLabel("")
         self._summoner.setProperty("role", "muted")
-        self._summoner.setStyleSheet(f"color: {styles.TEXT_MUTED}; font-size: 10px;")
+        self._summoner.setStyleSheet(
+            f"color: {styles.TEXT_MUTED}; font-size: {styles.FS_CAPTION}px;"
+        )
         text_col.addWidget(self._summoner)
         layout.addLayout(text_col, 1)
 

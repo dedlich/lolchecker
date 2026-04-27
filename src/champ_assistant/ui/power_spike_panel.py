@@ -36,18 +36,23 @@ class PowerSpikePanel(QFrame):
         self._state_label = QLabel("")
         self._state_label.setStyleSheet(
             f"color: {styles.TEXT_MUTED}; font-family: {styles.FONT_MONO};"
-            " font-size: 11px;"
+            f" font-size: {styles.FS_LABEL}px;"
+            f" background-color: {styles.BG_TERTIARY};"
+            f" padding: 2px 8px; border-radius: {styles.RADIUS_SMALL}px;"
         )
         header.addWidget(self._state_label, 0, Qt.AlignmentFlag.AlignRight)
         outer.addLayout(header)
 
         self._headline = QLabel("")
         self._headline.setStyleSheet(
-            f"color: {styles.WARNING}; font-weight: 700; font-size: 14px;"
+            f"color: {styles.WARNING}; font-weight: 800;"
+            f" font-size: {styles.FS_HEADING}px; letter-spacing: 0.6px;"
         )
         outer.addWidget(self._headline)
         self._detail = QLabel("")
-        self._detail.setStyleSheet(f"color: {styles.TEXT_SECONDARY}; font-size: 11px;")
+        self._detail.setStyleSheet(
+            f"color: {styles.TEXT_SECONDARY}; font-size: {styles.FS_LABEL}px;"
+        )
         self._detail.setWordWrap(True)
         outer.addWidget(self._detail)
 
