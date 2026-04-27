@@ -425,15 +425,15 @@ async def test_ws_update_event_yields_session(tmp_path: Path) -> None:
 
 
 @pytest.mark.asyncio
-async def test_ws_delete_event_ends_stream(tmp_path: Path) -> None:
-    """A WS Delete event ends the inner stream; outer loop yields disconnected
-    only when the lockfile vanishes (Delete alone = champ select ended, client
-    still up)."""
+async def test_ws_delete_yields_session_ended_without_disconnect(tmp_path: Path) -> None:
+    """A WS Delete now soft-yields ``session_ended`` instead of tearing down
+    the whole stream. The orchestrator keeps the WS connection alive and
+    waits for the next session — no UI flicker between champ-select draws."""
     lock = tmp_path / "lock"
     lock.write_text("LeagueClient:1:64144:abc:https", encoding="utf-8")
 
     cf, sf, _ = make_factories(
-        get_responses=[_FakeResponse(404), _FakeResponse(404)],  # two reconnect cycles
+        get_responses=[_FakeResponse(404)],
         ws_events=[_session_event(event_type="Delete")],
     )
     src = RealLcuSource(
@@ -449,14 +449,15 @@ async def test_ws_delete_event_ends_stream(tmp_path: Path) -> None:
     received: list[str] = []
     async for event in src.events():
         received.append(event["type"])
-        # After connect → Delete → disconnect → reconnect, close on second connected.
-        if received.count("connected") >= 2:
+        if "session_ended" in received:
             await src.close()
             break
 
-    # We expect at least: connected, disconnected, connected
-    assert received.count("connected") >= 2
-    assert "disconnected" in received
+    assert "session_ended" in received
+    assert "connected" in received
+    # No outer-loop reconnect happened — the stream stayed open, so we
+    # should NOT see a disconnect bubble up from this event.
+    assert "disconnected" not in received
 
 
 @pytest.mark.asyncio

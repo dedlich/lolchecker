@@ -149,6 +149,15 @@ class ChampAssistant:
             self._connection_state = "disconnected"
             view = SessionView(connection_state="disconnected")
             self._latest_session = None
+        elif event_type == "session_ended":
+            # LCU emitted a Delete WS event for the champ-select session —
+            # current draft is over (dodge / phase rolled / lobby left) but
+            # the client is still alive. Clear our cached session but stay
+            # connected so the next session picks up without a UI flicker.
+            logger.info("session_ended_received clearing cached session")
+            self._latest_session = None
+            self._enemy_role_overrides.clear()
+            view = SessionView(connection_state=self._connection_state)
         elif event_type == "connected":
             logger.info("orchestrator_state state=connected")
             self._connection_state = "connected"

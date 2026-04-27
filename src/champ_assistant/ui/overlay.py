@@ -350,3 +350,9 @@ class MainOverlay(QMainWindow):
             self._persisted.collapsed = not self._body.isVisible()
             overlay_config.save(self._persisted)
         super().closeEvent(event)
+        # Tool windows + frameless flags don't always trigger Qt's "last
+        # window closed" path, so the QApplication can stay alive forever.
+        # Force the quit signal here — qasync's loop.stop is already wired
+        # to QApplication.aboutToQuit so this kicks the whole shutdown chain.
+        from PyQt6.QtWidgets import QApplication
+        QApplication.quit()

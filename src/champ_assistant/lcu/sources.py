@@ -293,8 +293,15 @@ class RealLcuSource:
                             )
                             yield {"type": "session", "data": data}
                         elif evt_type == "Delete":
+                            # The user dodged / champ select ended / phase
+                            # rolled over. The WS connection is fine — only
+                            # the *current session* is gone. Soft-signal it
+                            # so the orchestrator clears the cached session
+                            # without tearing the whole stream down (which
+                            # would cause a visible UI flicker before the
+                            # next champ select picks up).
                             logger.info("lcu_session_ended_via_delete")
-                            return
+                            yield {"type": "session_ended"}
             finally:
                 watcher.cancel()
                 try:

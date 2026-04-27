@@ -447,7 +447,8 @@ def _setup_file_logger(level: int = logging.INFO) -> Path:
     # Silence noisy third-party loggers — they fire a debug line per byte
     # of every HTTP body (icon prefetch alone produces ~30 MB of log noise).
     for noisy in ("httpcore", "httpx", "qasync", "asyncio",
-                  "PIL", "diskcache"):
+                  "PIL", "diskcache", "websockets", "websockets.client",
+                  "websockets.server"):
         logging.getLogger(noisy).setLevel(logging.WARNING)
     return log_file
 

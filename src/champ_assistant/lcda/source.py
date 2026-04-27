@@ -26,6 +26,10 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_POLL_INTERVAL = 2.0
 DEFAULT_STALE_AFTER = 6.0
+# When LCDA has been unreachable for a while (the user isn't in a game),
+# slow down the poll loop to one ping every 30s so we're not pegging
+# 127.0.0.1:2999 with a connect-timeout-storm.
+OFFLINE_BACKOFF_INTERVAL = 30.0
 
 
 @dataclass(frozen=True)
@@ -74,10 +78,19 @@ class LcdaSource:
         self._prev_items = 0
 
     async def run(self) -> None:
-        """Loop until ``close()`` is called."""
+        """Loop until ``close()`` is called.
+
+        Uses two cadences: the configured ``poll_interval`` while LCDA is
+        reachable, and ``OFFLINE_BACKOFF_INTERVAL`` (30s) once we've given
+        up after a stale window. This keeps localhost:2999 from drowning
+        in connect-timeout retries during champ select.
+        """
         while not self._closed:
             await self._tick()
-            await asyncio.sleep(self._poll_interval)
+            interval = (
+                self._poll_interval if self._was_alive else OFFLINE_BACKOFF_INTERVAL
+            )
+            await asyncio.sleep(interval)
 
     async def _tick(self) -> None:
         try:

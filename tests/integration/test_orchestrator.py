@@ -90,6 +90,22 @@ def test_disconnected_clears_session(assistant) -> None:  # type: ignore[no-unty
     assert assistant._latest_session is None
 
 
+def test_session_ended_clears_session_keeps_connection(assistant) -> None:  # type: ignore[no-untyped-def]
+    """LCU's WS Delete event now fires session_ended, which should clear
+    the cached session without dropping the connection state - prevents
+    UI flicker between consecutive custom-game champ selects."""
+    raw = json.loads((FIXTURES_DIR / "04_my_turn_top.json").read_text())
+    assistant.handle_event({"type": "session", "data": raw})
+    assert assistant._latest_session is not None
+    # Connection was set to connected by the session event; preserve it.
+    assert assistant._connection_state == "connected"
+
+    view = assistant.handle_event({"type": "session_ended"})
+    assert assistant._latest_session is None
+    assert view.connection_state == "connected"  # NOT disconnected
+    assert assistant._connection_state == "connected"
+
+
 def test_unknown_event_does_not_crash(assistant) -> None:  # type: ignore[no-untyped-def]
     view = assistant.handle_event({"type": "definitely_not_a_real_event"})
     assert view.connection_state == "disconnected"
