@@ -39,27 +39,29 @@ class TitleBar(QFrame):
         self.setFixedHeight(self.HEIGHT)
         self.setObjectName("titleBar")
         self.setStyleSheet(
-            f"#titleBar {{ background-color: {styles.BG_SECONDARY};"
+            f"#titleBar {{"
+            f" background: qlineargradient(x1:0, y1:0, x2:0, y2:1,"
+            f"  stop:0 {styles.BG_SECONDARY}, stop:1 {styles.BG_PRIMARY});"
             f" border-top-left-radius: {styles.RADIUS}px;"
             f" border-top-right-radius: {styles.RADIUS}px;"
-            f" border-bottom: 1px solid {styles.BORDER}; }}"
+            f" border-bottom: 1px solid {styles.BORDER_FAINT}; }}"
         )
 
         layout = QHBoxLayout(self)
-        layout.setContentsMargins(10, 0, 4, 0)
-        layout.setSpacing(6)
+        layout.setContentsMargins(12, 0, 6, 0)
+        layout.setSpacing(8)
 
         self._title = QLabel("Champ Assistant")
         self._title.setStyleSheet(
             f"color: {styles.TEXT_PRIMARY}; font-weight: 700;"
-            " font-size: 11px; letter-spacing: 0.3px;"
+            f" font-size: {styles.FS_LABEL}px; letter-spacing: 0.4px;"
         )
         layout.addWidget(self._title)
 
         self._version = QLabel("")
         self._version.setStyleSheet(
             f"color: {styles.TEXT_MUTED}; font-family: {styles.FONT_MONO};"
-            " font-size: 10px; padding-left: 6px;"
+            f" font-size: {styles.FS_CAPTION}px; padding-left: 4px;"
         )
         layout.addWidget(self._version, 1)
 

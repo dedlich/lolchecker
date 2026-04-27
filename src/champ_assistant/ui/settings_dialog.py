@@ -30,31 +30,31 @@ class SettingsDialog(QDialog):
     def __init__(self, parent=None) -> None:  # type: ignore[no-untyped-def]
         super().__init__(parent)
         self.setWindowTitle("Settings")
-        self.setMinimumWidth(420)
+        self.setMinimumWidth(460)
+        # Inherits styling from the global stylesheet (QLineEdit/QComboBox/
+        # QPushButton tokens) so we only need a backdrop hint here.
         self.setStyleSheet(
             f"QDialog {{ background-color: {styles.BG_PRIMARY}; }}"
-            f" QLabel {{ color: {styles.TEXT_PRIMARY};"
-            f" font-family: {styles.FONT_FAMILY}; }}"
-            f" QLineEdit, QComboBox {{ background-color: {styles.BG_SECONDARY};"
-            f" color: {styles.TEXT_PRIMARY}; border: 1px solid {styles.BORDER};"
-            f" border-radius: {styles.RADIUS_SMALL}px; padding: 4px 6px; }}"
-            f" QLineEdit:focus, QComboBox:focus {{ border-color: {styles.ACCENT}; }}"
         )
 
         outer = QVBoxLayout(self)
-        outer.setContentsMargins(16, 16, 16, 16)
-        outer.setSpacing(12)
+        outer.setContentsMargins(20, 18, 20, 18)
+        outer.setSpacing(14)
 
         title = QLabel("Settings")
-        title.setStyleSheet("font-size: 16px; font-weight: 700;")
+        title.setStyleSheet(
+            f"font-size: {styles.FS_TITLE}px; font-weight: 700;"
+            f" color: {styles.TEXT_PRIMARY}; letter-spacing: -0.2px;"
+        )
         outer.addWidget(title)
 
         # -- Riot API -----------------------------------------------------
         riot_section = QLabel("Riot Web API")
         riot_section.setObjectName("sectionTitle")
         riot_section.setStyleSheet(
-            f"color: {styles.TEXT_MUTED}; font-size: 11px; font-weight: 700;"
-            " text-transform: uppercase; letter-spacing: 0.8px;"
+            f"color: {styles.TEXT_MUTED}; font-size: {styles.FS_LABEL}px;"
+            " font-weight: 700; text-transform: uppercase; letter-spacing: 1.2px;"
+            " padding-top: 4px;"
         )
         outer.addWidget(riot_section)
 
@@ -127,21 +127,37 @@ class SettingsDialog(QDialog):
         self._llm_provider.currentIndexChanged.connect(self._refresh_llm_help)
         self._refresh_llm_help()
 
-        # -- Buttons ------------------------------------------------------
+        outer.addStretch(1)
+
+        # -- Buttons (Save accent, Cancel flat) -------------------------
         buttons = QDialogButtonBox(
             QDialogButtonBox.StandardButton.Save
             | QDialogButtonBox.StandardButton.Cancel
         )
         buttons.accepted.connect(self._on_save)
         buttons.rejected.connect(self.reject)
-        for btn in buttons.buttons():
-            btn.setStyleSheet(
-                f"QPushButton {{ background-color: {styles.BG_SECONDARY};"
-                f" color: {styles.TEXT_PRIMARY};"
+        save_btn = buttons.button(QDialogButtonBox.StandardButton.Save)
+        cancel_btn = buttons.button(QDialogButtonBox.StandardButton.Cancel)
+        if save_btn is not None:
+            save_btn.setStyleSheet(
+                f"QPushButton {{"
+                f" background: qlineargradient(x1:0, y1:0, x2:0, y2:1,"
+                f" stop:0 {styles.ACCENT_BRIGHT}, stop:1 {styles.ACCENT});"
+                f" color: white; border: none;"
+                f" border-radius: 6px; padding: 6px 18px;"
+                f" font-weight: 700; font-size: {styles.FS_BODY}px; }}"
+                f" QPushButton:hover {{ background: {styles.ACCENT_BRIGHT}; }}"
+                f" QPushButton:pressed {{ background: {styles.ACCENT}; }}"
+            )
+        if cancel_btn is not None:
+            cancel_btn.setStyleSheet(
+                f"QPushButton {{ background-color: transparent;"
+                f" color: {styles.TEXT_SECONDARY};"
                 f" border: 1px solid {styles.BORDER};"
-                f" border-radius: {styles.RADIUS_SMALL}px;"
-                f" padding: 4px 14px; }}"
-                f" QPushButton:hover {{ background-color: {styles.BG_ELEVATED}; }}"
+                f" border-radius: 6px; padding: 6px 16px;"
+                f" font-weight: 600; font-size: {styles.FS_BODY}px; }}"
+                f" QPushButton:hover {{ background-color: {styles.BG_TERTIARY};"
+                f" color: {styles.TEXT_PRIMARY}; }}"
             )
         outer.addWidget(buttons)
 
