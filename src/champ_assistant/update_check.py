@@ -179,8 +179,25 @@ if %RC% GEQ 8 (
     exit /b 1
 )
 
-echo [updater] starting new version...
-start "" "%INSTALL_DIR%\__EXE__"
+echo [updater] starting new version: %INSTALL_DIR%\__EXE__
+REM /D sets working directory explicitly; without it the new exe inherits
+REM the bat's cwd which the launcher doesn't always set. The empty "" is
+REM the start-window-title argument, required when /D is used.
+start "" /D "%INSTALL_DIR%" "%INSTALL_DIR%\__EXE__"
+if errorlevel 1 (
+    echo.
+    echo [updater] LAUNCH FAILED. Run %INSTALL_DIR%\__EXE__ manually.
+    pause
+    exit /b 2
+)
+
+REM Give Windows a moment to spin up the new process before we tear down
+REM the launcher console and staging dir.
+timeout /t 2 /nobreak >nul
+
+REM Mirror status into a restart log so the next app start can verify the
+REM update applied successfully (and we can diagnose silent failures).
+echo updated %DATE% %TIME% > "%~dp0restart.log"
 
 REM clean up staging + self-delete
 rmdir /S /Q "%STAGED_DIR%" 2>nul

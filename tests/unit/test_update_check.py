@@ -166,11 +166,13 @@ def test_write_sidecar_bat_renders_template(tmp_path: Path) -> None:
     )
     body = bat.read_text(encoding="ascii")
     # Sidecar must wait for the parent exe, swap files via robocopy with
-    # retries on file locks, relaunch, and self-delete.
+    # retries on file locks, relaunch with explicit /D working directory,
+    # and self-delete.
     assert "tasklist" in body
     assert "robocopy" in body
     assert "/R:5" in body
-    assert 'start "" "%INSTALL_DIR%\\champ-assistant.exe"' in body
+    assert '/D "%INSTALL_DIR%"' in body
+    assert '"%INSTALL_DIR%\\champ-assistant.exe"' in body
     assert "del \"%~f0\"" in body
 
 

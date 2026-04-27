@@ -65,7 +65,13 @@ class MainOverlay(QMainWindow):
             )
         self._is_frameless = frameless
         self._save_state = load_persisted_state
-        self.resize(self._persisted.width, self._persisted.height)
+        # Clamp the persisted height to the available screen height so the
+        # overlay never sticks past the bottom of the monitor (the bug from
+        # the 1366x768 laptop case).
+        target_w, target_h = self._clamp_to_screen(
+            self._persisted.width, self._persisted.height
+        )
+        self.resize(target_w, target_h)
 
         flags = self.windowFlags()
         if frameless:
@@ -325,7 +331,12 @@ class MainOverlay(QMainWindow):
                 geo.left() <= state.x <= geo.right() - 50
                 and geo.top() <= state.y <= geo.bottom() - 50
             ):
-                self.move(state.x, state.y)
+                # Nudge the window up if its bottom edge would clip past
+                # the screen bottom (e.g. saved on a bigger monitor, opened
+                # on a laptop screen).
+                bottom_overhang = (state.y + self.height()) - geo.bottom()
+                target_y = state.y - max(0, bottom_overhang) - 8
+                self.move(state.x, max(geo.top() + 8, target_y))
                 return
         # Fall back to anchored placement when the saved screen is gone.
         self._anchor_to_screen_edge(state.anchor)
@@ -340,6 +351,22 @@ class MainOverlay(QMainWindow):
             self.move(geo.left() + margin, geo.top() + margin)
         else:  # right (default)
             self.move(geo.right() - self.width() - margin, geo.top() + margin)
+
+    def _clamp_to_screen(self, want_w: int, want_h: int) -> tuple[int, int]:
+        """Cap requested size so we never exceed the available screen.
+
+        On a 1366x768 laptop with a 40px taskbar the usable height is ~728
+        which is less than the persisted default of 720 + chrome. Without
+        clamping, the bottom of the panel renders past the monitor.
+        """
+        screen = QGuiApplication.primaryScreen()
+        if screen is None:
+            return want_w, want_h
+        geo = screen.availableGeometry()
+        # Leave a small margin so the user can still grab the bottom edge.
+        max_w = max(280, geo.width() - 16)
+        max_h = max(360, geo.height() - 32)
+        return min(want_w, max_w), min(want_h, max_h)
 
     def closeEvent(self, event) -> None:  # type: ignore[no-untyped-def]
         if self._save_state:
