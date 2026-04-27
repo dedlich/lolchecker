@@ -10,6 +10,7 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from ..advisor.ban_suggestions import BanSuggestion
 from ..advisor.composition import CompositionGap
 from ..advisor.picks import PickSuggestion
 from ..data.models import ChampionBuild, ChampSelectSession, CounterEntry
@@ -47,3 +48,6 @@ class SessionView(BaseModel):
     enemy_profiles: dict[int, EnemyProfile] = Field(default_factory=dict)
     """Map enemy cell_id → fetched profile (mains, win-rate, streak) when
     a Riot API key is configured. Empty dict otherwise."""
+
+    ban_suggestions: list[BanSuggestion] = Field(default_factory=list)
+    """Top-N champions to ban, ranked by tier + enemy mains."""

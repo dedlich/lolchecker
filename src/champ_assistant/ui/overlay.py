@@ -33,6 +33,7 @@ from .. import overlay_config
 from ..lcda.source import LcdaSnapshot
 from . import styles
 from .enemy_row import EnemyRow
+from .ban_panel import BanPanel
 from .objective_panel import ObjectivePanel
 from .pick_card import PickCard
 from .power_spike_panel import PowerSpikePanel
@@ -187,6 +188,11 @@ class MainOverlay(QMainWindow):
         cs_layout.addWidget(self._picks_panel, 1)
         body_layout.addWidget(self._champselect_row)
 
+        # Ban suggestions sit below the side-by-side champ-select row at
+        # full width so the rows have room to breathe.
+        self._ban_panel = BanPanel()
+        body_layout.addWidget(self._ban_panel)
+
         self._power_spike_panel = PowerSpikePanel()
         body_layout.addWidget(self._power_spike_panel)
 
@@ -270,6 +276,9 @@ class MainOverlay(QMainWindow):
         self._status_bar.set_state(view.connection_state)
         self._update_enemies(view)
         self._update_picks(view)
+        self._ban_panel.update_suggestions(
+            view.ban_suggestions, self._icon_for_key,
+        )
 
     def _icon_for_key(self, key: str | None) -> QPixmap | None:
         if not key:

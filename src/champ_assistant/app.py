@@ -255,6 +255,15 @@ class ChampAssistant:
         # the next view rebuild will surface them.
         self._maybe_fetch_profiles(session)
 
+        from .advisor.ban_suggestions import suggest_bans
+        bans = suggest_bans(
+            session=session,
+            champions=self.champions,
+            tiers=self.tiers,
+            enemy_profiles=self._enemy_profiles_by_cell,  # type: ignore[arg-type]
+            limit=3,
+        )
+
         return SessionView(
             connection_state=self._connection_state,
             session=session,
@@ -267,6 +276,7 @@ class ChampAssistant:
             enemy_role_overridden=set(self._enemy_role_overrides.keys()),
             suggestion_builds=suggestion_builds,
             enemy_profiles=dict(self._enemy_profiles_by_cell),  # type: ignore[arg-type]
+            ban_suggestions=bans,
         )
 
     def _maybe_fetch_profiles(self, session: ChampSelectSession) -> None:

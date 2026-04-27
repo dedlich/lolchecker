@@ -62,6 +62,8 @@ a = Analysis(
         "champ_assistant.advisor.composition",
         "champ_assistant.advisor.picks",
         "champ_assistant.advisor.claude",
+        "champ_assistant.advisor.ban_suggestions",
+        "champ_assistant.ui.ban_panel",
         "champ_assistant.data.runtime_counters",
         "champ_assistant.update_check",
         "dotenv",
