@@ -189,12 +189,16 @@ def _run_with_ui(args: argparse.Namespace) -> int:
     # Wire the clickable enemy-role badge to the orchestrator's cycle method.
     overlay.enemy_role_clicked.connect(assistant.cycle_enemy_role_override)
 
-    # Apply Runes: wire the PickCard signal through to the LCU rune-page
-    # creator. Runs as an async task so the UI doesn't freeze on the LCU
-    # round-trip; result lands in the status bar.
-    def _on_apply_runes(champion_key: str, rune_names: list) -> None:
+    # Apply Build: wire the PickCard signal through to two LCU writes:
+    # (1) create+activate a rune page; (2) push a custom item set the
+    # user can pick in the in-game shop. Each round-trip runs as an
+    # async task so the UI never freezes; the status bar shows progress.
+    def _on_apply_build(
+        champion_key: str, rune_names: list, item_names: list,
+    ) -> None:
         async def _run() -> None:
             from champ_assistant.lcu.client import LcuClient, LcuClientError
+            from champ_assistant.lcu.item_sets import apply_item_set
             from champ_assistant.lcu.lockfile import (
                 LockfileNotFound,
                 find_lockfile,
@@ -206,29 +210,72 @@ def _run_with_ui(args: argparse.Namespace) -> int:
                 lockfile = parse_lockfile(lockfile_path)
             except LockfileNotFound:
                 overlay.status_bar.set_info(
-                    "Apply Runes: League-Client nicht erreichbar",
+                    "Apply: League-Client nicht erreichbar",
                     color="#FF6B6B",
                 )
                 return
+
+            applied: list[str] = []
+            had_error = False
+            # Look up the champion's numeric id for the item set's
+            # associatedChampions field. Without it the set still works
+            # but won't be auto-suggested in champion select.
+            champ_id = next(
+                (c.id for c in assistant.champions.values()
+                 if c.key == champion_key),
+                0,
+            )
             try:
                 async with LcuClient(lockfile) as lcu:
-                    page = await apply_rune_page(
-                        lcu, champion_key=champion_key, rune_names=rune_names,
-                    )
+                    if rune_names:
+                        try:
+                            page = await apply_rune_page(
+                                lcu,
+                                champion_key=champion_key,
+                                rune_names=rune_names,
+                            )
+                            if page is not None:
+                                applied.append("Runen")
+                        except LcuClientError as exc:
+                            logging.getLogger(__name__).warning(
+                                "apply_runes_failed: %s", exc,
+                            )
+                            had_error = True
+                    if item_names:
+                        try:
+                            iset = await apply_item_set(
+                                lcu,
+                                champion_key=champion_key,
+                                champion_id=champ_id,
+                                item_names=item_names,
+                            )
+                            if iset is not None:
+                                applied.append("Items")
+                        except LcuClientError as exc:
+                            logging.getLogger(__name__).warning(
+                                "apply_items_failed: %s", exc,
+                            )
+                            had_error = True
             except LcuClientError as exc:
                 overlay.status_bar.set_info(
-                    f"Apply Runes fehlgeschlagen: {exc}",
+                    f"Apply Build fehlgeschlagen: {exc}",
                     color="#FF6B6B",
                 )
                 return
-            if page is None:
+
+            if not applied:
                 overlay.status_bar.set_info(
-                    f"Apply Runes: Keystone für {champion_key} nicht in Mapping",
+                    f"Apply Build {champion_key}: nichts angewendet",
+                    color="#FFB84A",
+                )
+            elif had_error:
+                overlay.status_bar.set_info(
+                    f"Apply Build {champion_key}: nur {' + '.join(applied)}",
                     color="#FFB84A",
                 )
             else:
                 overlay.status_bar.set_info(
-                    f"Apply Runes: '{page.get('name')}' aktiviert",
+                    f"Apply Build {champion_key}: {' + '.join(applied)} aktiviert",
                     color="#7FCC7F",
                 )
         import asyncio
@@ -236,7 +283,7 @@ def _run_with_ui(args: argparse.Namespace) -> int:
             asyncio.create_task(_run())
         except RuntimeError:
             pass
-    overlay.apply_runes_requested.connect(_on_apply_runes)
+    overlay.apply_build_requested.connect(_on_apply_build)
 
     # When the user saves a new Riot API key in Settings, rebuild the
     # profile service so subsequent enemy profile lookups use it.

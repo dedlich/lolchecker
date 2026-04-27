@@ -50,7 +50,8 @@ class MainOverlay(QMainWindow):
     refresh_requested = pyqtSignal()
     enemy_role_clicked = pyqtSignal(int)  # cell_id of the clicked enemy slot
     settings_changed = pyqtSignal()       # user saved a new API key
-    apply_runes_requested = pyqtSignal(str, "PyQt_PyObject")  # (champion_key, rune_names)
+    apply_build_requested = pyqtSignal(str, "PyQt_PyObject", "PyQt_PyObject")
+    # (champion_key, rune_names, item_names)
 
     def __init__(
         self,
@@ -323,7 +324,7 @@ class MainOverlay(QMainWindow):
             icon = self._icon_for_key(s.champion_key)
             build = view.suggestion_builds.get(s.champion_key)
             card = PickCard(s, icon=icon, build=build)
-            card.apply_runes_requested.connect(self.apply_runes_requested.emit)
+            card.apply_build_requested.connect(self.apply_build_requested.emit)
             self._picks_container.addWidget(card)
 
     # -- in-game panels visibility ---------------------------------------

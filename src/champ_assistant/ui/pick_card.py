@@ -22,7 +22,8 @@ ICON_SIZE = 28
 class PickCard(QFrame):
     """Card showing one suggested pick: icon + champion + tier + score + reasons + build."""
 
-    apply_runes_requested = pyqtSignal(str, "PyQt_PyObject")  # (champion_key, rune_names)
+    apply_build_requested = pyqtSignal(str, "PyQt_PyObject", "PyQt_PyObject")
+    # (champion_key, rune_names, item_names)
 
     def __init__(
         self,
@@ -107,16 +108,24 @@ class PickCard(QFrame):
             outer.addWidget(summ_label)
 
     def _add_apply_button(self, outer: QVBoxLayout, build: ChampionBuild) -> None:
-        """Apply Runes button — creates a Champ-Assistant-named rune page
-        in the LeagueClient via LCU and activates it. Only shown if the
-        build has runes; the rune-name → perk-id mapping silently skips
-        anything we can't resolve."""
-        if not build.runes:
+        """Apply Build button — pushes the recommended runes into a new
+        rune page AND the items into a custom item set in LeagueClient
+        via LCU, activates the rune page. Single click, two LCU writes.
+        Skipped if the build has neither runes nor items."""
+        if not (build.runes or build.items):
             return
+        # Adapt the label so it matches what the click actually does.
+        if build.runes and build.items:
+            label = "Apply Build"
+        elif build.runes:
+            label = "Apply Runes"
+        else:
+            label = "Apply Items"
+
         row = QHBoxLayout()
         row.setSpacing(6)
         row.addStretch(1)
-        apply = QPushButton("Apply Runes")
+        apply = QPushButton(label)
         apply.setCursor(Qt.CursorShape.PointingHandCursor)
         apply.setStyleSheet(
             f"QPushButton {{ background-color: {styles.ACCENT_DIM};"
@@ -129,8 +138,10 @@ class PickCard(QFrame):
             f" color: {styles.TEXT_MUTED}; border-color: {styles.BORDER}; }}"
         )
         apply.clicked.connect(
-            lambda: self.apply_runes_requested.emit(
-                self.suggestion.champion_key, list(build.runes),
+            lambda: self.apply_build_requested.emit(
+                self.suggestion.champion_key,
+                list(build.runes),
+                list(build.items),
             )
         )
         row.addWidget(apply)
