@@ -141,34 +141,42 @@ class ChampAssistant:
         event_type = event.get("type")
 
         if event_type == "waiting_for_client":
+            logger.info("orchestrator_state state=waiting")
             self._connection_state = "waiting"
             view = SessionView(connection_state="waiting", session=self._latest_session)
         elif event_type == "disconnected":
+            logger.info("orchestrator_state state=disconnected")
             self._connection_state = "disconnected"
             view = SessionView(connection_state="disconnected")
             self._latest_session = None
         elif event_type == "connected":
+            logger.info("orchestrator_state state=connected")
             self._connection_state = "connected"
             view = self._build_view(self._latest_session)
         elif event_type == "session":
             data = event.get("data")
             if not isinstance(data, dict):
-                logger.warning("session_event_missing_data", extra={"detail": str(event)})
+                logger.warning("session_event_missing_data type=%r", event_type)
                 return self._push_view(SessionView(connection_state=self._connection_state))
             try:
-                self._latest_session = ChampSelectSession.model_validate(data)
+                session = ChampSelectSession.model_validate(data)
             except Exception as exc:
-                # Pydantic's ValidationError has a useful __str__ — put it in
-                # the message itself, not just extra= which vanishes through
-                # our default formatter.
                 logger.warning("session_parse_failed: %s", exc)
                 self._dump_failed_payload(data)
                 return self._push_view(SessionView(connection_state=self._connection_state))
+            self._latest_session = session
             self._connection_state = "connected"
-            view = self._build_view(self._latest_session)
+            logger.info(
+                "session_received phase=%r my_team=%d their_team=%d local_cell=%d",
+                session.phase,
+                len(session.my_team),
+                len(session.their_team),
+                session.local_player_cell_id,
+            )
+            view = self._build_view(session)
         else:
             # Unknown event — don't crash, just ignore.
-            logger.debug("ignored_event", extra={"detail": str(event_type)})
+            logger.debug("ignored_event type=%r", event_type)
             return self._push_view(SessionView(connection_state=self._connection_state))
 
         return self._push_view(view)

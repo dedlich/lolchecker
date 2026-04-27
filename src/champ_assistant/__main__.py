@@ -412,12 +412,14 @@ def _log_directory() -> Path:
     return Path.home() / ".champ-assistant" / "logs"
 
 
-def _setup_file_logger(level: int = logging.DEBUG) -> Path:
+def _setup_file_logger(level: int = logging.INFO) -> Path:
     """Add a rotating file handler so we have visibility in the frozen exe.
 
     The exe is built with console=False (no stdout/stderr in a windowed app),
-    so without file logging there's no way to diagnose runtime issues. Every
-    LCU call, WS event, and orchestrator state transition lands here.
+    so without file logging there's no way to diagnose runtime issues. We
+    keep the handler at INFO and silence the chattiest third-party loggers
+    (httpcore + qasync emit thousands of DEBUG lines per second on Windows
+    IOCP and drown out the app's own logs).
     """
     log_dir = _log_directory()
     log_dir.mkdir(parents=True, exist_ok=True)
@@ -441,6 +443,12 @@ def _setup_file_logger(level: int = logging.DEBUG) -> Path:
     root.addHandler(handler)
     if root.level > level:
         root.setLevel(level)
+
+    # Silence noisy third-party loggers — they fire a debug line per byte
+    # of every HTTP body (icon prefetch alone produces ~30 MB of log noise).
+    for noisy in ("httpcore", "httpx", "qasync", "asyncio",
+                  "PIL", "diskcache"):
+        logging.getLogger(noisy).setLevel(logging.WARNING)
     return log_file
 
 
