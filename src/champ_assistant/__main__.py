@@ -219,8 +219,24 @@ def _run_with_ui(args: argparse.Namespace) -> int:
     update_task = loop.create_task(
         _check_and_notify_update(overlay), name="update-check"
     )
+
+    # Floating mini-widgets (Blitz-style independent overlays). Each one is
+    # its own top-level transparent always-on-top window with persisted
+    # position. Toggled via overlay_config flags in Settings.
+    from champ_assistant import overlay_config as _ovc
+    from champ_assistant.ui.minimap_timers_widget import MinimapTimersWidget
+    from champ_assistant.ui.scoreboard_widget import ScoreboardWidget
+    persisted = _ovc.load()
+    floating: list[object] = []
+    if persisted.show_scoreboard:
+        scoreboard = ScoreboardWidget()
+        floating.append(scoreboard)
+    if persisted.show_minimap_timers:
+        minimap = MinimapTimersWidget()
+        floating.append(minimap)
+
     lcda_task = loop.create_task(
-        _run_lcda_watcher(overlay), name="lcda-watcher"
+        _run_lcda_watcher(overlay, floating), name="lcda-watcher"
     )
 
     try:
@@ -233,8 +249,12 @@ def _run_with_ui(args: argparse.Namespace) -> int:
     return 0
 
 
-async def _run_lcda_watcher(overlay: MainOverlay) -> None:
-    """Background task that polls LCDA and pushes snapshots to the overlay.
+async def _run_lcda_watcher(
+    overlay: MainOverlay,
+    floating_consumers: list[object],
+) -> None:
+    """Background task that polls LCDA and pushes snapshots to the overlay
+    AND any floating mini-widgets (scoreboard, minimap timers, ...).
 
     LCDA is only reachable while a match is loaded. The source already
     handles the alive/stale transition; we just forward every callback
@@ -249,6 +269,11 @@ async def _run_lcda_watcher(overlay: MainOverlay) -> None:
             overlay.update_lcda_snapshot(snap)  # type: ignore[arg-type]
         except Exception:
             log.exception("lcda_overlay_update_failed")
+        for widget in floating_consumers:
+            try:
+                widget.update_snapshot(snap)  # type: ignore[attr-defined]
+            except Exception:
+                log.exception("lcda_floating_widget_update_failed")
 
     client = LcdaClient()
     source = LcdaSource(client, on_snapshot)

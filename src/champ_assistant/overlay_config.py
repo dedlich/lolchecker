@@ -33,6 +33,9 @@ class OverlayState:
     show_objectives: bool = True
     show_summoners: bool = True
     show_spikes: bool = True
+    show_scoreboard: bool = True
+    show_minimap_timers: bool = True
+    floating_positions: dict | None = None  # widget-key -> [x, y]
 
 
 def _config_dir() -> Path:
@@ -62,7 +65,8 @@ def load() -> OverlayState:
     for field in ("x", "y", "width", "height", "anchor",
                   "always_on_top", "frameless", "collapsed",
                   "opacity", "show_objectives", "show_summoners",
-                  "show_spikes"):
+                  "show_spikes", "show_scoreboard", "show_minimap_timers",
+                  "floating_positions"):
         if field in data:
             setattr(state, field, data[field])
     return state

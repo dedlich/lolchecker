@@ -73,6 +73,12 @@ class LivePlayer:
     team: str  # "ORDER" or "CHAOS"
     spell_one: LiveSummonerSpell
     spell_two: LiveSummonerSpell
+    level: int = 0
+    kills: int = 0
+    deaths: int = 0
+    assists: int = 0
+    creep_score: int = 0
+    items_value: int = 0   # sum of items[].price — proxy for gold spent
 
 
 def _canonical_name(raw: dict) -> str:
@@ -104,6 +110,14 @@ def parse_players(all_players: list[dict]) -> list[LivePlayer]:
     players: list[LivePlayer] = []
     for entry in all_players:
         spells = entry.get("summonerSpells") or {}
+        scores = entry.get("scores") or {}
+        items = entry.get("items") or []
+        items_value = 0
+        for item in items:
+            if isinstance(item, dict):
+                price = item.get("price") or 0
+                if isinstance(price, (int, float)):
+                    items_value += int(price)
         players.append(
             LivePlayer(
                 summoner_name=str(entry.get("summonerName") or ""),
@@ -111,6 +125,12 @@ def parse_players(all_players: list[dict]) -> list[LivePlayer]:
                 team=str(entry.get("team") or ""),
                 spell_one=_spell(spells.get("summonerSpellOne") or {}),
                 spell_two=_spell(spells.get("summonerSpellTwo") or {}),
+                level=int(entry.get("level") or 0),
+                kills=int(scores.get("kills") or 0),
+                deaths=int(scores.get("deaths") or 0),
+                assists=int(scores.get("assists") or 0),
+                creep_score=int(scores.get("creepScore") or 0),
+                items_value=items_value,
             )
         )
     return players
@@ -121,3 +141,49 @@ def enemies_of(players: list[LivePlayer], active_team: str) -> list[LivePlayer]:
     if not active_team:
         return list(players)
     return [p for p in players if p.team and p.team != active_team]
+
+
+def allies_of(players: list[LivePlayer], active_team: str) -> list[LivePlayer]:
+    """Return everyone on the active player's team (including the active player)."""
+    if not active_team:
+        return []
+    return [p for p in players if p.team == active_team]
+
+
+@dataclass(frozen=True)
+class TeamAggregate:
+    """Per-team rollup used by the scoreboard widget."""
+    kills: int
+    deaths: int
+    items_value: int
+    dragons: int
+    barons: int
+    heralds: int
+
+
+def aggregate_team(
+    players: list[LivePlayer],
+    events: list[dict],
+    team_name: str,
+) -> TeamAggregate:
+    members = [p for p in players if p.team == team_name]
+    kills = sum(p.kills for p in members)
+    deaths = sum(p.deaths for p in members)
+    items_value = sum(p.items_value for p in members)
+    member_names = {p.summoner_name for p in members}
+    dragons = barons = heralds = 0
+    for evt in events:
+        killer = evt.get("KillerName")
+        if not isinstance(killer, str) or killer not in member_names:
+            continue
+        name = evt.get("EventName")
+        if name == "DragonKill":
+            dragons += 1
+        elif name == "BaronKill":
+            barons += 1
+        elif name == "HeraldKill":
+            heralds += 1
+    return TeamAggregate(
+        kills=kills, deaths=deaths, items_value=items_value,
+        dragons=dragons, barons=barons, heralds=heralds,
+    )

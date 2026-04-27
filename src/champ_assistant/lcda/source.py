@@ -19,7 +19,13 @@ from dataclasses import dataclass, field
 
 from .client import LcdaClient, LcdaUnavailable
 from .objectives import ObjectiveTimer, compute_objectives
-from .players import LivePlayer, enemies_of, parse_players
+from .players import (
+    LivePlayer,
+    TeamAggregate,
+    aggregate_team,
+    enemies_of,
+    parse_players,
+)
 from .power_spikes import PowerSpike, detect_spikes, extract_active_state
 
 logger = logging.getLogger(__name__)
@@ -45,6 +51,11 @@ class LcdaSnapshot:
     active_level: int = 0
     active_items: int = 0
     new_spikes: list[PowerSpike] = field(default_factory=list)
+    allies: list[LivePlayer] = field(default_factory=list)
+    active_team: str = ""
+    enemy_team: str = ""
+    ally_aggregate: TeamAggregate | None = None
+    enemy_aggregate: TeamAggregate | None = None
 
 
 SnapshotCallback = Callable[[LcdaSnapshot | None], Awaitable[None] | None]
@@ -138,6 +149,20 @@ class LcdaSource:
         self._prev_level = new_level
         self._prev_items = new_items
 
+        from .players import allies_of
+        allies = allies_of(all_players, active_team) if active_team else []
+        enemy_team = next(
+            (t for t in {p.team for p in all_players} if t and t != active_team),
+            "",
+        )
+        ally_agg = (
+            aggregate_team(all_players, list(events), active_team)
+            if active_team else None
+        )
+        enemy_agg = (
+            aggregate_team(all_players, list(events), enemy_team)
+            if enemy_team else None
+        )
         return LcdaSnapshot(
             game_time=game_time,
             game_mode=str(game.get("gameMode") or ""),
@@ -148,6 +173,11 @@ class LcdaSource:
             active_level=new_level,
             active_items=new_items,
             new_spikes=spikes,
+            allies=allies,
+            active_team=active_team,
+            enemy_team=enemy_team,
+            ally_aggregate=ally_agg,
+            enemy_aggregate=enemy_agg,
         )
 
     @staticmethod
