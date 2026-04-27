@@ -45,9 +45,15 @@ class TrayController(QObject):
         self._tray.setToolTip("Champ Assistant")
 
         menu = QMenu()
-        show_action = QAction("Show / Hide", menu)
+        show_action = QAction("Show / Hide main panel", menu)
         show_action.triggered.connect(self._toggle_overlay)
         menu.addAction(show_action)
+
+        unlock_action = QAction("Unlock widgets (re-enable clicks)", menu)
+        unlock_action.triggered.connect(self._unlock_widgets)
+        menu.addAction(unlock_action)
+
+        menu.addSeparator()
 
         quit_action = QAction("Quit", menu)
         quit_action.triggered.connect(QApplication.quit)
@@ -72,3 +78,10 @@ class TrayController(QObject):
             self._overlay.show()
             self._overlay.raise_()
             self._overlay.activateWindow()
+
+    @staticmethod
+    def _unlock_widgets() -> None:
+        """Re-enable mouse interaction on all floating widgets after the
+        user has put them into right-click pass-through mode."""
+        from .floating_widget import FloatingWidget
+        FloatingWidget.unlock_all()

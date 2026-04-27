@@ -40,8 +40,9 @@ class ScoreboardWidget(FloatingWidget):
     def __init__(self) -> None:
         super().__init__()
         self.setStyleSheet(
-            f"QFrame[panel='true'] {{ background-color: rgba(11, 15, 20, 220);"
-            f" border: 1px solid {styles.BORDER}; border-radius: {styles.RADIUS}px; }}"
+            f"QFrame[panel='true'] {{ background-color: rgba(11, 15, 20, 150);"
+            f" border: 1px solid rgba(40, 48, 60, 180);"
+            f" border-radius: {styles.RADIUS}px; }}"
         )
         outer = QVBoxLayout(self)
         outer.setContentsMargins(10, 6, 10, 6)

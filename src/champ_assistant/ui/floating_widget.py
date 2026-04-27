@@ -4,6 +4,13 @@ Each FloatingWidget is its own top-level frameless transparent always-on-top
 window so users can drag them around freely (Blitz-style modular overlays).
 Position persists across sessions, keyed on a per-widget identifier.
 
+Mouse model:
+  - Left-drag → move the widget. Position auto-saves on release.
+  - Right-click → toggle pass-through. In pass-through mode the widget
+    becomes invisible to mouse input so League gets the clicks. The
+    user can re-enable interactivity from the tray menu's "Unlock
+    widgets" action (since right-click no longer reaches the widget).
+
 Subclasses just override ``KEY`` + ``DEFAULT_POS``/``DEFAULT_SIZE`` and
 build their internal layout in ``__init__``.
 """
@@ -21,6 +28,10 @@ class FloatingWidget(QFrame):
     DEFAULT_POS: tuple[int, int] = (100, 100)
     DEFAULT_SIZE: tuple[int, int] = (220, 56)
 
+    # Registry so the tray controller can find every live widget and
+    # toggle their pass-through state.
+    _instances: list["FloatingWidget"] = []
+
     def __init__(self) -> None:
         super().__init__(parent=None)
         self.setWindowFlags(
@@ -36,12 +47,36 @@ class FloatingWidget(QFrame):
 
         self._drag_origin: QPoint | None = None
         self._load_position()
+        FloatingWidget._instances.append(self)
+
+    def __del__(self) -> None:  # noqa: D401
+        try:
+            FloatingWidget._instances.remove(self)
+        except ValueError:
+            pass
+
+    # -- pass-through toggle (called via tray + right-click) -------------
+
+    def set_passthrough(self, on: bool) -> None:
+        """When True: every mouse event bypasses this widget so League
+        gets the click. When False: drag/right-click work normally."""
+        self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, on)
+
+    @classmethod
+    def unlock_all(cls) -> None:
+        """Tray-menu helper: re-enable interaction on every floating widget."""
+        for w in cls._instances:
+            w.set_passthrough(False)
 
     # -- drag handling ----------------------------------------------------
 
     def mousePressEvent(self, event: QMouseEvent) -> None:  # type: ignore[override]
         if event.button() == Qt.MouseButton.LeftButton:
             self._drag_origin = event.globalPosition().toPoint() - self.pos()
+            event.accept()
+            return
+        if event.button() == Qt.MouseButton.RightButton:
+            self.set_passthrough(True)
             event.accept()
             return
         super().mousePressEvent(event)
