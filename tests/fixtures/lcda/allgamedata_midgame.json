@@ -22,6 +22,58 @@
        "KillerName": "Kindred", "Stolen": "False"}
     ]
   },
-  "allPlayers": [],
-  "activePlayer": {}
+  "allPlayers": [
+    {
+      "summonerName": "Player1", "championName": "Garen", "team": "ORDER",
+      "summonerSpells": {
+        "summonerSpellOne": {"displayName": "Flash"},
+        "summonerSpellTwo": {"displayName": "Teleport"}
+      }
+    },
+    {
+      "summonerName": "Player2", "championName": "Kindred", "team": "ORDER",
+      "summonerSpells": {
+        "summonerSpellOne": {"displayName": "Flash"},
+        "summonerSpellTwo": {"displayName": "Smite"}
+      }
+    },
+    {
+      "summonerName": "EnemyTop", "championName": "Darius", "team": "CHAOS",
+      "summonerSpells": {
+        "summonerSpellOne": {"displayName": "Flash"},
+        "summonerSpellTwo": {"displayName": "Ghost"}
+      }
+    },
+    {
+      "summonerName": "EnemyJg", "championName": "LeeSin", "team": "CHAOS",
+      "summonerSpells": {
+        "summonerSpellOne": {"displayName": "Flash"},
+        "summonerSpellTwo": {"displayName": "Smite"}
+      }
+    },
+    {
+      "summonerName": "EnemyMid", "championName": "Ahri", "team": "CHAOS",
+      "summonerSpells": {
+        "summonerSpellOne": {"displayName": "Flash"},
+        "summonerSpellTwo": {"displayName": "Ignite"}
+      }
+    },
+    {
+      "summonerName": "EnemyBot", "championName": "Caitlyn", "team": "CHAOS",
+      "summonerSpells": {
+        "summonerSpellOne": {"displayName": "Flash"},
+        "summonerSpellTwo": {"displayName": "Heal"}
+      }
+    },
+    {
+      "summonerName": "EnemySup", "championName": "Thresh", "team": "CHAOS",
+      "summonerSpells": {
+        "summonerSpellOne": {"displayName": "Flash"},
+        "summonerSpellTwo": {"displayName": "Exhaust"}
+      }
+    }
+  ],
+  "activePlayer": {
+    "summonerName": "Player1"
+  }
 }

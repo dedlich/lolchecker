@@ -8,6 +8,17 @@ from champ_assistant.lcda.source import LcdaSnapshot
 from champ_assistant.ui.objective_panel import ObjectivePanel
 
 
+def _snap(*, game_time: float, objectives: list[ObjectiveTimer]) -> LcdaSnapshot:
+    return LcdaSnapshot(
+        game_time=game_time,
+        game_mode="CLASSIC",
+        objectives=objectives,
+        enemies=[],
+        active_summoner="",
+        raw_events=[],
+    )
+
+
 @pytest.fixture
 def panel(qtbot) -> ObjectivePanel:  # type: ignore[no-untyped-def]
     p = ObjectivePanel()
@@ -20,9 +31,8 @@ def test_panel_starts_hidden(panel: ObjectivePanel) -> None:
 
 
 def test_panel_shows_when_snapshot_arrives(panel: ObjectivePanel) -> None:
-    snap = LcdaSnapshot(
+    snap = _snap(
         game_time=600.0,
-        game_mode="CLASSIC",
         objectives=[
             ObjectiveTimer(name="Dragon", next_spawn_seconds=900.0,
                            last_killed_seconds=600.0, last_killer="Kindred",
@@ -32,23 +42,20 @@ def test_panel_shows_when_snapshot_arrives(panel: ObjectivePanel) -> None:
             ObjectiveTimer(name="Herald", next_spawn_seconds=840.0,
                            last_killed_seconds=None),
         ],
-        raw_events=[],
     )
     panel.update_snapshot(snap)
     assert panel.isHidden() is False
-    # Game time formatted as M:SS in the header.
-    assert "10:00" in panel._game_time_label.text()
-    # Dragon row shows the remaining time (900 - 600 = 300s = 5:00) and detail.
+    assert panel._game_time_label.text() == "10:00"
     drag_row = panel._rows["Dragon"]
-    assert drag_row["timer"].text() == "5:00"
-    assert "Cloud" in drag_row["detail"].text()
-    assert "Kindred" in drag_row["detail"].text()
+    assert drag_row._timer_label.text() == "5:00"
+    detail = drag_row._detail_label.text()
+    assert "Cloud" in detail
+    assert "Kindred" in detail
 
 
 def test_panel_hides_on_none_snapshot(panel: ObjectivePanel) -> None:
-    snap = LcdaSnapshot(
+    snap = _snap(
         game_time=120.0,
-        game_mode="CLASSIC",
         objectives=[
             ObjectiveTimer(name="Dragon", next_spawn_seconds=300.0,
                            last_killed_seconds=None),
@@ -57,7 +64,6 @@ def test_panel_hides_on_none_snapshot(panel: ObjectivePanel) -> None:
             ObjectiveTimer(name="Herald", next_spawn_seconds=840.0,
                            last_killed_seconds=None),
         ],
-        raw_events=[],
     )
     panel.update_snapshot(snap)
     assert panel.isHidden() is False
@@ -66,9 +72,8 @@ def test_panel_hides_on_none_snapshot(panel: ObjectivePanel) -> None:
 
 
 def test_panel_shows_up_when_remaining_is_zero(panel: ObjectivePanel) -> None:
-    snap = LcdaSnapshot(
+    snap = _snap(
         game_time=900.0,
-        game_mode="CLASSIC",
         objectives=[
             ObjectiveTimer(name="Dragon", next_spawn_seconds=900.0,
                            last_killed_seconds=600.0),
@@ -77,9 +82,8 @@ def test_panel_shows_up_when_remaining_is_zero(panel: ObjectivePanel) -> None:
             ObjectiveTimer(name="Herald", next_spawn_seconds=840.0,
                            last_killed_seconds=None),
         ],
-        raw_events=[],
     )
     panel.update_snapshot(snap)
-    assert panel._rows["Dragon"]["timer"].text() == "UP"
+    assert panel._rows["Dragon"]._timer_label.text() == "UP"
     # Herald already past its first spawn (840) at 900 → also UP
-    assert panel._rows["Herald"]["timer"].text() == "UP"
+    assert panel._rows["Herald"]._timer_label.text() == "UP"

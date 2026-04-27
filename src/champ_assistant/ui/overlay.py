@@ -27,6 +27,7 @@ from . import styles
 from .enemy_row import EnemyRow
 from .objective_panel import ObjectivePanel
 from .pick_card import PickCard
+from .summoner_tracker import SummonerTrackerPanel
 from .view_model import SessionView
 from .widgets import ConnectionStatusBar
 
@@ -118,6 +119,9 @@ class MainOverlay(QMainWindow):
         self._objective_panel = ObjectivePanel()
         layout.addWidget(self._objective_panel)
 
+        self._summoner_tracker = SummonerTrackerPanel()
+        layout.addWidget(self._summoner_tracker)
+
         layout.addStretch(1)
 
         self._status_bar = ConnectionStatusBar()
@@ -144,9 +148,14 @@ class MainOverlay(QMainWindow):
     def objective_panel(self) -> ObjectivePanel:
         return self._objective_panel
 
+    @property
+    def summoner_tracker(self) -> SummonerTrackerPanel:
+        return self._summoner_tracker
+
     def update_lcda_snapshot(self, snapshot: LcdaSnapshot | None) -> None:
-        """Forward LCDA ticks to the objective panel."""
+        """Forward LCDA ticks to in-game panels."""
         self._objective_panel.update_snapshot(snapshot)
+        self._summoner_tracker.update_snapshot(snapshot)
 
     @property
     def enemy_rows(self) -> list[EnemyRow]:

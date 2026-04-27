@@ -267,6 +267,11 @@ async def _hydrate_champions_and_icons(
             keys = sorted({c.key for c in champions.values()})
             log.info("icon_prefetch_start patch=%s keys=%d", patch, len(keys))
             icons_bytes = await dd.prefetch_icons(patch, keys)
+            try:
+                spell_bytes = await dd.prefetch_spell_icons(patch)
+            except Exception:
+                log.exception("spell_icons_fetch_failed")
+                spell_bytes = {}
     except Exception:
         log.exception("hydrate_failed")
         return
@@ -286,7 +291,35 @@ async def _hydrate_champions_and_icons(
             QtCore.TransformationMode.SmoothTransformation,
         )
     overlay.set_champion_icons(pixmaps)
-    log.info("icon_prefetch_done loaded=%d", len(pixmaps))
+
+    # The summoner tracker uses champion *names* (LCDA gives names, not keys).
+    # Champions in the dict are keyed by Riot's string ID — match the LCDA
+    # ``championName`` exactly by mapping name -> pixmap. For champions whose
+    # display name and key differ (Wukong, Renata Glasc, etc.) Data Dragon's
+    # ``name`` field is the source of truth.
+    name_to_pixmap: dict[str, QPixmap] = {}
+    for champ in champions.values():
+        pm = pixmaps.get(champ.key)
+        if pm is not None:
+            name_to_pixmap[champ.name] = pm
+
+    spell_pixmaps: dict[str, QPixmap] = {}
+    for name, data in spell_bytes.items():
+        pm = QPixmap()
+        if not pm.loadFromData(data):
+            continue
+        spell_pixmaps[name] = pm.scaled(
+            32, 32,
+            QtCore.AspectRatioMode.KeepAspectRatio,
+            QtCore.TransformationMode.SmoothTransformation,
+        )
+    overlay.summoner_tracker.set_champion_icons(name_to_pixmap)
+    overlay.summoner_tracker.set_spell_icons(spell_pixmaps)
+
+    log.info(
+        "icon_prefetch_done champs=%d spells=%d",
+        len(pixmaps), len(spell_pixmaps),
+    )
 
 
 async def _check_and_notify_update(overlay: MainOverlay) -> None:

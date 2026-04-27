@@ -36,6 +36,23 @@ DDRAGON_BASE = "https://ddragon.leagueoflegends.com"
 VERSIONS_URL = f"{DDRAGON_BASE}/api/versions.json"
 CHAMPIONS_URL_TEMPLATE = f"{DDRAGON_BASE}/cdn/{{patch}}/data/en_US/champion.json"
 CHAMPION_ICON_URL_TEMPLATE = f"{DDRAGON_BASE}/cdn/{{patch}}/img/champion/{{key}}.png"
+SPELL_ICON_URL_TEMPLATE = f"{DDRAGON_BASE}/cdn/{{patch}}/img/spell/{{file}}"
+
+# LCDA returns spell display names; Data Dragon stores them under file IDs
+# starting with ``Summoner``. This map covers every spell currently usable
+# in any LoL queue (Classic + ARAM).
+SUMMONER_SPELL_FILES: dict[str, str] = {
+    "Flash": "SummonerFlash.png",
+    "Ignite": "SummonerDot.png",
+    "Heal": "SummonerHeal.png",
+    "Teleport": "SummonerTeleport.png",
+    "Cleanse": "SummonerBoost.png",
+    "Barrier": "SummonerBarrier.png",
+    "Exhaust": "SummonerExhaust.png",
+    "Smite": "SummonerSmite.png",
+    "Ghost": "SummonerHaste.png",
+    "Snowball": "SummonerSnowball.png",
+}
 
 
 class DataDragonError(Exception):
@@ -202,3 +219,43 @@ class DataDragon:
 
         results = await asyncio.gather(*(one(k) for k in champion_keys))
         return {k: data for k, data in results if data is not None}
+
+    async def fetch_spell_icon(self, patch: str, spell_name: str) -> bytes:
+        """Fetch a summoner spell icon (PNG bytes), cached on disk."""
+        file = SUMMONER_SPELL_FILES.get(spell_name)
+        if file is None:
+            raise DataDragonError(f"unknown summoner spell: {spell_name}")
+        cache_key = f"spell:{patch}:{spell_name}"
+        cached = self.cache.get(cache_key)
+        if isinstance(cached, bytes):
+            return cached
+        if self._client is None:
+            raise DataDragonError("not in async context")
+        try:
+            response = await self._client.get(
+                SPELL_ICON_URL_TEMPLATE.format(patch=patch, file=file)
+            )
+            response.raise_for_status()
+            data = response.content
+        except (httpx.HTTPError, ValueError) as exc:
+            raise DataDragonError(
+                f"spell icon fetch failed for {spell_name} on {patch}: {exc}"
+            ) from exc
+        self.cache.set(cache_key, data, expire=self.TTL_CHAMPIONS)
+        return data
+
+    async def prefetch_spell_icons(self, patch: str) -> dict[str, bytes]:
+        """Fetch every known summoner spell icon in parallel."""
+        import asyncio
+
+        async def one(name: str) -> tuple[str, bytes | None]:
+            try:
+                return name, await self.fetch_spell_icon(patch, name)
+            except DataDragonError as exc:
+                logger.warning("ddragon_spell_icon_skipped %s: %s", name, exc)
+                return name, None
+
+        results = await asyncio.gather(
+            *(one(n) for n in SUMMONER_SPELL_FILES)
+        )
+        return {n: data for n, data in results if data is not None}

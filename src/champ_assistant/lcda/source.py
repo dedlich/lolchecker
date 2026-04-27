@@ -19,6 +19,7 @@ from dataclasses import dataclass
 
 from .client import LcdaClient, LcdaUnavailable
 from .objectives import ObjectiveTimer, compute_objectives
+from .players import LivePlayer, enemies_of, parse_players
 
 logger = logging.getLogger(__name__)
 
@@ -33,6 +34,8 @@ class LcdaSnapshot:
     game_time: float
     game_mode: str
     objectives: list[ObjectiveTimer]
+    enemies: list[LivePlayer]
+    active_summoner: str
     raw_events: list[dict]
 
 
@@ -101,12 +104,25 @@ class LcdaSource:
         events_block = data.get("events") or {}
         events = events_block.get("Events") or []
         game_time = float(game.get("gameTime") or 0.0)
+        all_players = parse_players(list(data.get("allPlayers") or []))
+        active = data.get("activePlayer") or {}
+        active_name = str(active.get("summonerName") or "")
+        active_team = self._team_of(all_players, active_name)
         return LcdaSnapshot(
             game_time=game_time,
             game_mode=str(game.get("gameMode") or ""),
             objectives=compute_objectives(list(events), game_time),
+            enemies=enemies_of(all_players, active_team),
+            active_summoner=active_name,
             raw_events=list(events),
         )
+
+    @staticmethod
+    def _team_of(players: list[LivePlayer], summoner_name: str) -> str:
+        for p in players:
+            if p.summoner_name == summoner_name:
+                return p.team
+        return ""
 
     def close(self) -> None:
         self._closed = True
