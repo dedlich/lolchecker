@@ -58,17 +58,29 @@ class _CampButton(QToolButton):
         self.cast_at: float | None = None
         self._glyph = glyph
         self.setText(glyph)
-        self.setFixedSize(34, 28)
+        self.setFixedSize(38, 30)
         self.setCursor(Qt.CursorShape.PointingHandCursor)
         self.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         self.setToolTip(
             f"{name} ({int(cooldown)}s) — Linksklick: Timer start · Rechtsklick: reset"
         )
-        self.setStyleSheet(
-            f"QToolButton {{ background: transparent; color: {styles.TEXT_SECONDARY};"
-            f" border: none; border-radius: {styles.RADIUS_SMALL}px; font-size: 14px; }}"
-            f" QToolButton:hover {{ color: {styles.TEXT_PRIMARY}; }}"
+        self._idle_style = (
+            f"QToolButton {{ background: rgba(45, 55, 70, 90);"
+            f" color: {styles.TEXT_SECONDARY};"
+            f" border: 1px solid rgba(60, 70, 85, 100);"
+            f" border-radius: 8px; font-size: 14px; padding: 0; }}"
+            f" QToolButton:hover {{ background: rgba(91, 168, 255, 60);"
+            f" color: {styles.TEXT_PRIMARY};"
+            f" border-color: {styles.ACCENT}; }}"
         )
+        self._active_style = (
+            f"QToolButton {{ background: rgba(91, 168, 255, 100);"
+            f" color: {styles.TEXT_PRIMARY};"
+            f" border: 1px solid {styles.ACCENT};"
+            f" border-radius: 8px; font-size: 11px;"
+            f" font-weight: 700; font-family: {styles.FONT_MONO}; padding: 0; }}"
+        )
+        self.setStyleSheet(self._idle_style)
 
     def mousePressEvent(self, event: QMouseEvent) -> None:  # type: ignore[override]
         if event.button() == Qt.MouseButton.RightButton:
@@ -86,24 +98,24 @@ class _CampButton(QToolButton):
     def update_text(self, game_time: float) -> None:
         if self.cast_at is None:
             self.setText(self._glyph)
-            self.setStyleSheet(self.styleSheet().replace(
-                f"color: {styles.WARNING}", f"color: {styles.TEXT_SECONDARY}"
-            ))
+            self.setStyleSheet(self._idle_style)
             return
         rem = max(0.0, (self.cast_at + self.cooldown) - game_time)
         if rem <= 0:
             self.cast_at = None
             self.setText(self._glyph)
+            self.setStyleSheet(self._idle_style)
             return
         minutes, sec = divmod(int(rem + 0.5), 60)
-        label = f"{minutes:d}:{sec:02d}" if minutes else f"{sec:d}s"
-        self.setText(f"{self._glyph} {label}")
+        label = f"{minutes:d}:{sec:02d}" if minutes else f"{sec:d}"
+        self.setText(label)
+        self.setStyleSheet(self._active_style)
 
 
 class MinimapTimersWidget(FloatingWidget):
     KEY = "minimap_timers"
     DEFAULT_POS = (1280, 600)  # above the minimap on a 1080p screen
-    DEFAULT_SIZE = (300, 76)
+    DEFAULT_SIZE = (332, 84)
 
     def __init__(self) -> None:
         super().__init__()
@@ -140,7 +152,11 @@ class MinimapTimersWidget(FloatingWidget):
         self._camps: list[_CampButton] = []
         for camp_name, glyph, cd in JUNGLE_CAMPS:
             btn = _CampButton(camp_name, glyph, cd, parent=self)
-            btn.clicked.connect(lambda _b=btn: self._on_camp_click(_b))
+            # QToolButton.clicked emits a bool (checked-state). The captured
+            # button has to be a default in a *positional* slot AFTER the
+            # signal arg, otherwise Qt's positional bool overrides our
+            # default and we end up calling .mark_used on False.
+            btn.clicked.connect(lambda _checked=False, b=btn: self._on_camp_click(b))
             self._camps.append(btn)
             bottom.addWidget(btn)
         outer.addLayout(bottom)
