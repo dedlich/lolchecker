@@ -188,15 +188,44 @@ def _run_with_ui(args: argparse.Namespace) -> int:
     update_task = loop.create_task(
         _check_and_notify_update(overlay), name="update-check"
     )
+    lcda_task = loop.create_task(
+        _run_lcda_watcher(overlay), name="lcda-watcher"
+    )
 
     try:
         with loop:
             loop.run_forever()
     finally:
-        for t in (consumer, icon_task, update_task):
+        for t in (consumer, icon_task, update_task, lcda_task):
             t.cancel()
         crash.uninstall()
     return 0
+
+
+async def _run_lcda_watcher(overlay: MainOverlay) -> None:
+    """Background task that polls LCDA and pushes snapshots to the overlay.
+
+    LCDA is only reachable while a match is loaded. The source already
+    handles the alive/stale transition; we just forward every callback
+    onto the Qt thread (qasync runs callbacks on it for us).
+    """
+    from champ_assistant.lcda import LcdaClient, LcdaSource
+
+    log = logging.getLogger(__name__)
+
+    async def on_snapshot(snap: object) -> None:
+        try:
+            overlay.update_lcda_snapshot(snap)  # type: ignore[arg-type]
+        except Exception:
+            log.exception("lcda_overlay_update_failed")
+
+    client = LcdaClient()
+    source = LcdaSource(client, on_snapshot)
+    try:
+        await source.run()
+    finally:
+        source.close()
+        await client.aclose()
 
 
 async def _hydrate_champions_and_icons(

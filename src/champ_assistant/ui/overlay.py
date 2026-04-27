@@ -22,8 +22,10 @@ from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtGui import QKeySequence, QPixmap, QShortcut
 from PyQt6.QtWidgets import QFrame, QLabel, QMainWindow, QVBoxLayout, QWidget
 
+from ..lcda.source import LcdaSnapshot
 from . import styles
 from .enemy_row import EnemyRow
+from .objective_panel import ObjectivePanel
 from .pick_card import PickCard
 from .view_model import SessionView
 from .widgets import ConnectionStatusBar
@@ -112,6 +114,10 @@ class MainOverlay(QMainWindow):
         picks_outer.addWidget(self._no_picks_label)
 
         layout.addWidget(picks_panel)
+
+        self._objective_panel = ObjectivePanel()
+        layout.addWidget(self._objective_panel)
+
         layout.addStretch(1)
 
         self._status_bar = ConnectionStatusBar()
@@ -133,6 +139,14 @@ class MainOverlay(QMainWindow):
     @property
     def status_bar(self) -> ConnectionStatusBar:
         return self._status_bar
+
+    @property
+    def objective_panel(self) -> ObjectivePanel:
+        return self._objective_panel
+
+    def update_lcda_snapshot(self, snapshot: LcdaSnapshot | None) -> None:
+        """Forward LCDA ticks to the objective panel."""
+        self._objective_panel.update_snapshot(snapshot)
 
     @property
     def enemy_rows(self) -> list[EnemyRow]:

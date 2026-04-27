@@ -1,0 +1,27 @@
+{
+  "gameData": {
+    "gameMode": "CLASSIC",
+    "gameTime": 1620.0,
+    "mapName": "Map11",
+    "mapNumber": 11,
+    "mapTerrain": "Mountain"
+  },
+  "events": {
+    "Events": [
+      {"EventID": 0, "EventName": "GameStart", "EventTime": 0.04},
+      {"EventID": 1, "EventName": "MinionsSpawning", "EventTime": 65.0},
+      {"EventID": 2, "EventName": "FirstBlood", "EventTime": 312.5,
+       "KillerName": "Riven", "Recipient": "Renekton"},
+      {"EventID": 3, "EventName": "HeraldKill", "EventTime": 920.0,
+       "KillerName": "JungleMain", "Stolen": "False"},
+      {"EventID": 4, "EventName": "DragonKill", "EventTime": 632.4,
+       "KillerName": "Kindred", "Stolen": "False", "DragonType": "Earth"},
+      {"EventID": 5, "EventName": "DragonKill", "EventTime": 1100.0,
+       "KillerName": "Kindred", "Stolen": "False", "DragonType": "Cloud"},
+      {"EventID": 6, "EventName": "BaronKill", "EventTime": 1530.0,
+       "KillerName": "Kindred", "Stolen": "False"}
+    ]
+  },
+  "allPlayers": [],
+  "activePlayer": {}
+}

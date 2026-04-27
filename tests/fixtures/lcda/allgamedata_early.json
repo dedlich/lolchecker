@@ -1,0 +1,17 @@
+{
+  "gameData": {
+    "gameMode": "CLASSIC",
+    "gameTime": 240.5,
+    "mapName": "Map11",
+    "mapNumber": 11,
+    "mapTerrain": "Default"
+  },
+  "events": {
+    "Events": [
+      {"EventID": 0, "EventName": "GameStart", "EventTime": 0.04},
+      {"EventID": 1, "EventName": "MinionsSpawning", "EventTime": 65.0}
+    ]
+  },
+  "allPlayers": [],
+  "activePlayer": {}
+}
