@@ -220,6 +220,11 @@ async def _hydrate_champions_and_icons(
             except Exception:  # noqa: BLE001
                 patch = "14.8.1"
             log.info("ddragon_patch=%s", patch)
+            # Tie the runtime-counter cache to the actual current patch so
+            # entries auto-invalidate at patch boundaries (and survive
+            # indefinitely otherwise — matchups don't change between patches).
+            if assistant._runtime_counters is not None:
+                assistant._runtime_counters.set_patch(patch)
 
             try:
                 champions = await dd.fetch_champions(patch)

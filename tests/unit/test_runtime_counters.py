@@ -152,6 +152,25 @@ async def test_cache_persists_across_instances(tmp_path: Path) -> None:
 
 
 @pytest.mark.asyncio
+@respx.mock
+async def test_set_patch_invalidates_cache_namespace(tmp_path: Path) -> None:
+    """When Data Dragon reports a new patch, old entries become unreachable
+    via the cache key (they live on disk but the next get() builds a new key
+    that doesn't match)."""
+    respx.post(GROQ_API_URL).mock(return_value=httpx.Response(200, json=VALID_PAYLOAD))
+    store = RuntimeCounterStore(tmp_path / "cache", api_key="test-key", patch="14.8")
+    counters = await store.get("Garen", "TOP")
+    assert len(counters) == 3
+    # New patch ships → switch the namespace → old key no longer matches.
+    store.set_patch("14.9")
+    assert store.get_cached("Garen", "TOP") is None
+    # And switching back to 14.8 finds the old entry again.
+    store.set_patch("14.8")
+    assert store.get_cached("Garen", "TOP") is not None
+    await store.aclose()
+
+
+@pytest.mark.asyncio
 async def test_get_cached_does_not_hit_network(tmp_path: Path) -> None:
     """Pre-warm cache then verify get_cached() returns it without a key."""
     pre = RuntimeCounterStore(tmp_path / "cache", api_key="x")

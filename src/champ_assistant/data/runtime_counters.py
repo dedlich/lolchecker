@@ -30,7 +30,12 @@ logger = logging.getLogger(__name__)
 GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions"
 DEFAULT_MODEL = "llama-3.3-70b-versatile"
 DEFAULT_TIMEOUT = 8.0
-DEFAULT_CACHE_TTL = 7 * 24 * 60 * 60  # 1 week — matchups are patch-stable
+DEFAULT_CACHE_TTL = 365 * 24 * 60 * 60  # ~1 year. The cache key includes the
+                                       # current LoL patch — entries become
+                                       # unreachable on patch change without
+                                       # needing a TTL, so this is just a
+                                       # safety net to keep diskcache from
+                                       # accumulating forever.
 
 
 _SYSTEM_PROMPT = """You are a League of Legends matchup expert. Reply with JSON only.
@@ -79,6 +84,17 @@ class RuntimeCounterStore:
     @property
     def enabled(self) -> bool:
         return bool(self.api_key)
+
+    def set_patch(self, patch: str) -> None:
+        """Switch the cache namespace when Data Dragon reports a new patch.
+
+        Old entries keyed under the previous patch remain on disk but stop
+        being read (cache key includes the patch). They expire via the TTL
+        safety net eventually.
+        """
+        if patch and patch != self.patch:
+            logger.info("runtime_counter_patch_changed from=%s to=%s", self.patch, patch)
+            self.patch = patch
 
     def get_cached(self, enemy_key: str, role: Role) -> list[CounterEntry] | None:
         """Returns cached counters without ever hitting the network."""
