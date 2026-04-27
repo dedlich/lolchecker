@@ -87,8 +87,11 @@ class MainOverlay(QMainWindow):
 
         # Custom title bar (drag + minimize + close) — only meaningful when
         # frameless. Always built so the layout stays uniform and tests pass.
+        from .. import __version__
+
         self._title_bar = TitleBar()
         self._title_bar.set_title("Champ Assistant")
+        self._title_bar.set_version(__version__)
         self._title_bar.drag_delta.connect(self._on_title_drag)
         self._title_bar.minimize_clicked.connect(self._toggle_collapsed)
         self._title_bar.close_clicked.connect(self.close)

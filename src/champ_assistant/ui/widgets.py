@@ -39,6 +39,13 @@ class ConnectionStatusBar(QStatusBar):
         super().__init__()
         self.setSizeGripEnabled(False)
 
+        self._version_label = QLabel("")
+        self._version_label.setStyleSheet(
+            f"color: {styles.TEXT_MUTED}; font-family: {styles.FONT_MONO};"
+            " font-size: 10px; padding: 0 6px;"
+        )
+        self.addWidget(self._version_label)
+
         self._info_label = QLabel("")
         self._info_label.setObjectName("statusInfoLabel")
         self.addWidget(self._info_label, 1)

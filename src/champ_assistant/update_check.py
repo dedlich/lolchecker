@@ -152,10 +152,29 @@ if not errorlevel 1 (
     goto waitloop
 )
 
-echo [updater] installing new version...
-xcopy /E /Y /Q "%STAGED_DIR%\*" "%INSTALL_DIR%\" >nul
-if errorlevel 1 (
-    echo [updater] file swap failed. The app may still be holding a file open.
+REM Windows can hold the .exe file lock for ~1-2s after process exit while
+REM the kernel releases handles. Give it a moment before touching files.
+echo [updater] giving Windows 3s to release file handles...
+timeout /t 3 /nobreak >nul
+
+echo [updater] installing new version (with retry on file locks)...
+REM robocopy is built into Windows since Vista. /MIR mirrors source to dest,
+REM /R:5 retries 5 times on locked files, /W:2 waits 2s between retries,
+REM /NFL/NDL/NJH/NJS keep output readable.
+robocopy "%STAGED_DIR%" "%INSTALL_DIR%" /MIR /R:5 /W:2 /NFL /NDL /NJH /NJS
+set RC=%errorlevel%
+REM robocopy exit codes: 0-7 = success (0=no change, 1=files copied, etc.),
+REM 8+ = real failure.
+if %RC% GEQ 8 (
+    echo.
+    echo [updater] file swap failed (robocopy exit %RC%).
+    echo [updater] Likely cause: another champ-assistant.exe is still running
+    echo            or an antivirus is scanning the file.
+    echo.
+    echo [updater] Manual recovery:
+    echo   1. Close all champ-assistant.exe processes ^(Task Manager^).
+    echo   2. Copy contents of %STAGED_DIR% into %INSTALL_DIR%.
+    echo.
     pause
     exit /b 1
 )
@@ -212,6 +231,22 @@ def launch_sidecar(
     )
 
 
+def install_dir_writable(target: Path) -> bool:
+    """Check if we can actually write into the install directory.
+
+    Avoids the "downloaded 47MB then realised the folder is in Program Files
+    and we don't have admin" failure mode. Tries to create + delete a
+    sentinel file; returns False on PermissionError.
+    """
+    try:
+        sentinel = target / ".champ-assistant-writable-check"
+        sentinel.write_bytes(b"")
+        sentinel.unlink()
+        return True
+    except (OSError, PermissionError):
+        return False
+
+
 async def apply_update(
     tag: str,
     *,
@@ -229,6 +264,15 @@ async def apply_update(
         logger.info("update_progress: %s", msg)
         if progress is not None:
             progress(msg)
+
+    # Pre-flight: refuse to start a 47-MB download if we already know the
+    # install directory is read-only (Program Files, restricted ACLs, etc.).
+    if not install_dir_writable(install_directory):
+        raise PermissionError(
+            f"Install-Ordner nicht beschreibbar: {install_directory}. "
+            "Verschiebe die App in einen Nutzer-Ordner (z.B. Documents) "
+            "und versuche es erneut."
+        )
 
     base = staging_root or Path(os.environ.get("TEMP", "/tmp")) / "champ-assistant-update"
     base.mkdir(parents=True, exist_ok=True)

@@ -165,11 +165,11 @@ def test_write_sidecar_bat_renders_template(tmp_path: Path) -> None:
         exe_name="champ-assistant.exe",
     )
     body = bat.read_text(encoding="ascii")
-    # Sidecar must wait for the parent exe, swap files via xcopy, relaunch,
-    # and self-delete. Verify the structural markers are present rather than
-    # asserting on whitespace.
+    # Sidecar must wait for the parent exe, swap files via robocopy with
+    # retries on file locks, relaunch, and self-delete.
     assert "tasklist" in body
-    assert "xcopy" in body
+    assert "robocopy" in body
+    assert "/R:5" in body
     assert 'start "" "%INSTALL_DIR%\\champ-assistant.exe"' in body
     assert "del \"%~f0\"" in body
 

@@ -43,7 +43,14 @@ class TitleBar(QFrame):
             f"color: {styles.TEXT_PRIMARY}; font-weight: 700;"
             " font-size: 11px; letter-spacing: 0.3px;"
         )
-        layout.addWidget(self._title, 1)
+        layout.addWidget(self._title)
+
+        self._version = QLabel("")
+        self._version.setStyleSheet(
+            f"color: {styles.TEXT_MUTED}; font-family: {styles.FONT_MONO};"
+            " font-size: 10px; padding-left: 6px;"
+        )
+        layout.addWidget(self._version, 1)
 
         self._minimize = self._mk_button("—")  # em-dash as a long minus
         self._minimize.clicked.connect(self.minimize_clicked.emit)
@@ -74,6 +81,9 @@ class TitleBar(QFrame):
 
     def set_title(self, text: str) -> None:
         self._title.setText(text)
+
+    def set_version(self, version: str) -> None:
+        self._version.setText(f"v{version}" if version else "")
 
     # -- drag handling ----------------------------------------------------
 
