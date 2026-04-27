@@ -1,0 +1,222 @@
+"""Thin async client for the Riot Web API.
+
+Endpoints we use (Riot returns JSON, plain Bearer-style auth via header):
+  /lol/summoner/v4/summoners/by-name/{name}            (platform host)
+  /lol/champion-mastery/v4/champion-masteries/by-summoner/{puuid}/top
+  /lol/match/v5/matches/by-puuid/{puuid}/ids?count=10  (regional host)
+  /lol/match/v5/matches/{matchId}                       (regional host)
+
+Region routing: Riot splits hosts into platform routes (per-server, e.g.
+``euw1.api.riotgames.com``) and regional routes (continent groups, e.g.
+``europe.api.riotgames.com``). Match-V5 lives on regional, Summoner /
+Mastery on platform.
+
+Errors are mapped to ``RiotApiError`` so the UI can degrade silently
+when the user has no key, the key is rate-limited (429), or the player
+isn't found (404).
+"""
+from __future__ import annotations
+
+import asyncio
+import logging
+from dataclasses import dataclass
+from typing import Any
+
+import httpx
+
+logger = logging.getLogger(__name__)
+
+PLATFORM_HOSTS: dict[str, str] = {
+    "EUW": "euw1.api.riotgames.com",
+    "EUNE": "eun1.api.riotgames.com",
+    "NA": "na1.api.riotgames.com",
+    "KR": "kr.api.riotgames.com",
+    "JP": "jp1.api.riotgames.com",
+    "BR": "br1.api.riotgames.com",
+    "LAN": "la1.api.riotgames.com",
+    "LAS": "la2.api.riotgames.com",
+    "OCE": "oc1.api.riotgames.com",
+    "TR": "tr1.api.riotgames.com",
+    "RU": "ru.api.riotgames.com",
+}
+
+# Maps a platform region to its regional cluster for Match-V5.
+REGIONAL_CLUSTER: dict[str, str] = {
+    "EUW": "europe.api.riotgames.com",
+    "EUNE": "europe.api.riotgames.com",
+    "TR": "europe.api.riotgames.com",
+    "RU": "europe.api.riotgames.com",
+    "NA": "americas.api.riotgames.com",
+    "BR": "americas.api.riotgames.com",
+    "LAN": "americas.api.riotgames.com",
+    "LAS": "americas.api.riotgames.com",
+    "KR": "asia.api.riotgames.com",
+    "JP": "asia.api.riotgames.com",
+    "OCE": "sea.api.riotgames.com",
+}
+
+
+class RiotApiError(RuntimeError):
+    """Wrapper for failed Riot API calls."""
+
+
+@dataclass(frozen=True)
+class SummonerInfo:
+    puuid: str
+    summoner_id: str
+    name: str
+    level: int
+
+
+@dataclass(frozen=True)
+class MasteryEntry:
+    champion_id: int
+    points: int
+    level: int
+
+
+class RiotApiClient:
+    DEFAULT_TIMEOUT = 5.0
+
+    def __init__(
+        self,
+        api_key: str,
+        *,
+        region: str = "EUW",
+        timeout: float = DEFAULT_TIMEOUT,
+        transport: httpx.AsyncBaseTransport | None = None,
+    ) -> None:
+        self._api_key = api_key
+        self.region = region.upper()
+        kwargs: dict[str, Any] = {
+            "timeout": timeout,
+            "headers": {"X-Riot-Token": api_key},
+        }
+        if transport is not None:
+            kwargs["transport"] = transport
+        self._client = httpx.AsyncClient(**kwargs)
+
+    async def aclose(self) -> None:
+        await self._client.aclose()
+
+    @property
+    def enabled(self) -> bool:
+        return bool(self._api_key)
+
+    @property
+    def _platform(self) -> str:
+        return PLATFORM_HOSTS.get(self.region, PLATFORM_HOSTS["EUW"])
+
+    @property
+    def _regional(self) -> str:
+        return REGIONAL_CLUSTER.get(self.region, REGIONAL_CLUSTER["EUW"])
+
+    async def _get(self, host: str, path: str) -> Any:
+        url = f"https://{host}{path}"
+        try:
+            response = await self._client.get(url)
+        except httpx.HTTPError as exc:
+            raise RiotApiError(f"network error: {exc}") from exc
+        if response.status_code == 404:
+            raise RiotApiError(f"not found: {path}")
+        if response.status_code == 401:
+            raise RiotApiError("invalid Riot API key")
+        if response.status_code == 429:
+            raise RiotApiError("rate-limited")
+        if not (200 <= response.status_code < 300):
+            raise RiotApiError(
+                f"riot api {response.status_code}: {response.text[:200]}"
+            )
+        try:
+            return response.json()
+        except ValueError as exc:
+            raise RiotApiError(f"bad json: {exc}") from exc
+
+    async def summoner_by_name(self, name: str) -> SummonerInfo:
+        path = f"/lol/summoner/v4/summoners/by-name/{name}"
+        data = await self._get(self._platform, path)
+        return SummonerInfo(
+            puuid=str(data.get("puuid") or ""),
+            summoner_id=str(data.get("id") or ""),
+            name=str(data.get("name") or ""),
+            level=int(data.get("summonerLevel") or 0),
+        )
+
+    async def top_mastery(
+        self, puuid: str, *, count: int = 3
+    ) -> list[MasteryEntry]:
+        path = (
+            f"/lol/champion-mastery/v4/champion-masteries"
+            f"/by-puuid/{puuid}/top?count={count}"
+        )
+        data = await self._get(self._platform, path)
+        if not isinstance(data, list):
+            return []
+        return [
+            MasteryEntry(
+                champion_id=int(e.get("championId") or 0),
+                points=int(e.get("championPoints") or 0),
+                level=int(e.get("championLevel") or 0),
+            )
+            for e in data
+            if isinstance(e, dict)
+        ]
+
+    async def recent_match_ids(
+        self, puuid: str, *, count: int = 10, queue: int | None = 420
+    ) -> list[str]:
+        """Recent ranked-solo (queue 420) match IDs by default."""
+        suffix = f"?count={count}"
+        if queue is not None:
+            suffix += f"&queue={queue}"
+        path = f"/lol/match/v5/matches/by-puuid/{puuid}/ids{suffix}"
+        data = await self._get(self._regional, path)
+        if not isinstance(data, list):
+            return []
+        return [str(x) for x in data]
+
+    async def match_outcome(self, match_id: str, puuid: str) -> bool | None:
+        """Return True/False (win/loss) for the given player, or None."""
+        path = f"/lol/match/v5/matches/{match_id}"
+        data = await self._get(self._regional, path)
+        info = data.get("info") if isinstance(data, dict) else None
+        if not isinstance(info, dict):
+            return None
+        for participant in info.get("participants") or []:
+            if isinstance(participant, dict) and participant.get("puuid") == puuid:
+                return bool(participant.get("win"))
+        return None
+
+    async def win_loss_streak(
+        self, puuid: str, *, count: int = 10
+    ) -> tuple[int, int, int]:
+        """(wins, losses, current streak signed +/- ).
+
+        Streak is positive on a win run, negative on a loss run.
+        Failures fall through with (0, 0, 0).
+        """
+        try:
+            ids = await self.recent_match_ids(puuid, count=count)
+        except RiotApiError:
+            return 0, 0, 0
+        if not ids:
+            return 0, 0, 0
+
+        outcomes = await asyncio.gather(
+            *(self.match_outcome(mid, puuid) for mid in ids),
+            return_exceptions=True,
+        )
+        wins = sum(1 for o in outcomes if o is True)
+        losses = sum(1 for o in outcomes if o is False)
+        streak = 0
+        for o in outcomes:
+            if not isinstance(o, bool):
+                break
+            if streak == 0:
+                streak = 1 if o else -1
+                continue
+            if (o and streak > 0) or (not o and streak < 0):
+                streak += 1 if o else -1
+            else:
+                break
+        return wins, losses, streak

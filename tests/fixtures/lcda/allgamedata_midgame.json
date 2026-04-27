@@ -74,6 +74,12 @@
     }
   ],
   "activePlayer": {
-    "summonerName": "Player1"
+    "summonerName": "Player1",
+    "level": 11,
+    "items": [
+      {"price": 1100},
+      {"price": 3000},
+      {"price": 2500}
+    ]
   }
 }

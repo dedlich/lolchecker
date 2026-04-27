@@ -157,7 +157,7 @@ def _build_assistant(args: argparse.Namespace, overlay: MainOverlay) -> ChampAss
 def _run_with_ui(args: argparse.Namespace) -> int:
     qt_app = QApplication(sys.argv[:1])
 
-    overlay = MainOverlay()
+    overlay = MainOverlay(load_persisted_state=True)
     assistant = _build_assistant(args, overlay)
     # Wire the clickable enemy-role badge to the orchestrator's cycle method.
     overlay.enemy_role_clicked.connect(assistant.cycle_enemy_role_override)

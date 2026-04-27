@@ -15,11 +15,12 @@ import asyncio
 import logging
 import time
 from collections.abc import Awaitable, Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from .client import LcdaClient, LcdaUnavailable
 from .objectives import ObjectiveTimer, compute_objectives
 from .players import LivePlayer, enemies_of, parse_players
+from .power_spikes import PowerSpike, detect_spikes, extract_active_state
 
 logger = logging.getLogger(__name__)
 
@@ -37,6 +38,9 @@ class LcdaSnapshot:
     enemies: list[LivePlayer]
     active_summoner: str
     raw_events: list[dict]
+    active_level: int = 0
+    active_items: int = 0
+    new_spikes: list[PowerSpike] = field(default_factory=list)
 
 
 SnapshotCallback = Callable[[LcdaSnapshot | None], Awaitable[None] | None]
@@ -66,6 +70,8 @@ class LcdaSource:
         self._closed = False
         self._was_alive = False
         self._last_seen: float | None = None
+        self._prev_level = 0
+        self._prev_items = 0
 
     async def run(self) -> None:
         """Loop until ``close()`` is called."""
@@ -108,6 +114,17 @@ class LcdaSource:
         active = data.get("activePlayer") or {}
         active_name = str(active.get("summonerName") or "")
         active_team = self._team_of(all_players, active_name)
+
+        new_level, new_items = extract_active_state(active)
+        spikes = detect_spikes(
+            prev_level=self._prev_level,
+            new_level=new_level,
+            prev_items=self._prev_items,
+            new_items=new_items,
+        )
+        self._prev_level = new_level
+        self._prev_items = new_items
+
         return LcdaSnapshot(
             game_time=game_time,
             game_mode=str(game.get("gameMode") or ""),
@@ -115,6 +132,9 @@ class LcdaSource:
             enemies=enemies_of(all_players, active_team),
             active_summoner=active_name,
             raw_events=list(events),
+            active_level=new_level,
+            active_items=new_items,
+            new_spikes=spikes,
         )
 
     @staticmethod

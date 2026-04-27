@@ -12,6 +12,7 @@ from PyQt6.QtWidgets import (
 )
 
 from ..data.models import CounterEntry, TeamMember
+from ..profiling.profile import EnemyProfile
 from . import styles
 
 ICON_SIZE = 32
@@ -73,8 +74,17 @@ class EnemyRow(QFrame):
         self._counters_label.setStyleSheet(f"color: {styles.TEXT_MUTED};")
         self._counters_label.setWordWrap(True)
 
+        # Optional profiling line — appears only when a profile is set.
+        self._profile_label = QLabel("")
+        self._profile_label.setStyleSheet(
+            f"color: {styles.TEXT_SECONDARY}; font-size: 10px;"
+        )
+        self._profile_label.setWordWrap(True)
+        self._profile_label.hide()
+
         outer.addLayout(head)
         outer.addWidget(self._counters_label)
+        outer.addWidget(self._profile_label)
 
         self.clear()
 
@@ -84,6 +94,36 @@ class EnemyRow(QFrame):
         self._update_role_button_style(role="", overridden=False)
         self._counters_label.setText("")
         self._icon_label.clear()
+        self._profile_label.setText("")
+        self._profile_label.hide()
+
+    def set_profile(self, profile: EnemyProfile | None, *,
+                    champion_names: dict[int, str] | None = None) -> None:
+        """Render an optional pre-game profile under the counters line."""
+        if profile is None or not profile.has_data:
+            self._profile_label.hide()
+            return
+        names = champion_names or {}
+        bits: list[str] = []
+        if profile.top_champions:
+            tops = ", ".join(
+                names.get(c.champion_id, f"#{c.champion_id}")
+                for c in profile.top_champions[:3]
+            )
+            bits.append(f"Mains: {tops}")
+        wr = profile.win_rate
+        total = profile.wins + profile.losses
+        if total > 0 and wr is not None:
+            bits.append(f"{int(wr * 100)}% WR ({total})")
+        if profile.streak >= 3:
+            bits.append(f"W{profile.streak} streak")
+        elif profile.streak <= -3:
+            bits.append(f"L{abs(profile.streak)} streak (tilt?)")
+        if not bits:
+            self._profile_label.hide()
+            return
+        self._profile_label.setText(" · ".join(bits))
+        self._profile_label.show()
 
     def set_data(
         self,
