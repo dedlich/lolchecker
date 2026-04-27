@@ -1,220 +1,177 @@
 {
   "patch": null,
   "builds": {
-    "Darius": {
-      "TOP": {
-        "runes": ["Conqueror", "Triumph", "Legend: Tenacity", "Last Stand", "Demolish", "Unflinching"],
-        "items": ["Stridebreaker", "Sterak's Gage", "Death's Dance", "Plated Steelcaps"],
-        "summoners": ["Flash", "Teleport"]
-      }
-    },
-    "Garen": {
-      "TOP": {
-        "runes": ["Conqueror", "Triumph", "Legend: Tenacity", "Last Stand", "Bone Plating", "Unflinching"],
-        "items": ["Stridebreaker", "Dead Man's Plate", "Sterak's Gage", "Plated Steelcaps"],
-        "summoners": ["Flash", "Teleport"]
-      }
-    },
-    "KSante": {
-      "TOP": {
-        "runes": ["Grasp of the Undying", "Demolish", "Conditioning", "Overgrowth", "Triumph", "Legend: Tenacity"],
-        "items": ["Hullbreaker", "Sundered Sky", "Frozen Heart", "Plated Steelcaps"],
-        "summoners": ["Flash", "Teleport"]
-      }
-    },
-    "Camille": {
-      "TOP": {
-        "runes": ["Conqueror", "Triumph", "Legend: Alacrity", "Last Stand", "Second Wind", "Unflinching"],
-        "items": ["Trinity Force", "Sundered Sky", "Sterak's Gage", "Plated Steelcaps"],
-        "summoners": ["Flash", "Teleport"]
-      }
-    },
-    "Sett": {
-      "TOP": {
-        "runes": ["Conqueror", "Triumph", "Legend: Tenacity", "Last Stand", "Bone Plating", "Unflinching"],
-        "items": ["Trinity Force", "Sundered Sky", "Sterak's Gage", "Mercury's Treads"],
-        "summoners": ["Flash", "Teleport"]
-      }
-    },
-    "Mordekaiser": {
-      "TOP": {
-        "runes": ["Conqueror", "Triumph", "Legend: Tenacity", "Last Stand", "Second Wind", "Unflinching"],
-        "items": ["Riftmaker", "Rylai's Crystal Scepter", "Sorcerer's Shoes", "Cosmic Drive"],
-        "summoners": ["Flash", "Teleport"]
-      }
-    },
-    "Fiora": {
-      "TOP": {
-        "runes": ["Conqueror", "Triumph", "Legend: Alacrity", "Last Stand", "Second Wind", "Revitalize"],
-        "items": ["Blade of the Ruined King", "Trinity Force", "Sterak's Gage", "Plated Steelcaps"],
-        "summoners": ["Flash", "Teleport"]
-      }
-    },
-    "Aatrox": {
-      "TOP": {
-        "runes": ["Conqueror", "Triumph", "Legend: Tenacity", "Last Stand", "Bone Plating", "Unflinching"],
-        "items": ["Eclipse", "Sundered Sky", "Sterak's Gage", "Plated Steelcaps"],
-        "summoners": ["Flash", "Teleport"]
-      }
-    },
-    "Hecarim": {
-      "JUNGLE": {
-        "runes": ["Conqueror", "Triumph", "Legend: Tenacity", "Last Stand", "Bone Plating", "Unflinching"],
-        "items": ["Stridebreaker", "Trinity Force", "Sterak's Gage", "Mercury's Treads"],
-        "summoners": ["Flash", "Smite"]
-      }
-    },
-    "Viego": {
-      "JUNGLE": {
-        "runes": ["Conqueror", "Triumph", "Legend: Alacrity", "Last Stand", "Second Wind", "Unflinching"],
-        "items": ["Kraken Slayer", "Blade of the Ruined King", "Sundered Sky", "Plated Steelcaps"],
-        "summoners": ["Flash", "Smite"]
-      }
-    },
-    "LeeSin": {
-      "JUNGLE": {
-        "runes": ["Conqueror", "Triumph", "Legend: Tenacity", "Last Stand", "Second Wind", "Unflinching"],
-        "items": ["Eclipse", "Sundered Sky", "Black Cleaver", "Plated Steelcaps"],
-        "summoners": ["Flash", "Smite"]
-      }
-    },
-    "Khazix": {
-      "JUNGLE": {
-        "runes": ["Hail of Blades", "Sudden Impact", "Eyeball Collection", "Ultimate Hunter", "Triumph", "Coup de Grace"],
-        "items": ["Eclipse", "Profane Hydra", "Edge of Night", "Ionian Boots of Lucidity"],
-        "summoners": ["Flash", "Smite"]
-      }
-    },
-    "Nidalee": {
-      "JUNGLE": {
-        "runes": ["Electrocute", "Sudden Impact", "Eyeball Collection", "Ultimate Hunter", "Manaflow Band", "Transcendence"],
-        "items": ["Lich Bane", "Nashor's Tooth", "Rabadon's Deathcap", "Sorcerer's Shoes"],
-        "summoners": ["Flash", "Smite"]
-      }
-    },
-    "Nautilus": {
-      "JUNGLE": {
-        "runes": ["Aftershock", "Shield Bash", "Conditioning", "Overgrowth", "Manaflow Band", "Transcendence"],
-        "items": ["Sunfire Aegis", "Knight's Vow", "Thornmail", "Mercury's Treads"],
-        "summoners": ["Flash", "Smite"]
-      },
-      "SUPPORT": {
-        "runes": ["Aftershock", "Font of Life", "Conditioning", "Revitalize", "Manaflow Band", "Cosmic Insight"],
-        "items": ["Locket of the Iron Solari", "Zeke's Convergence", "Knight's Vow", "Mercury's Treads"],
-        "summoners": ["Flash", "Ignite"]
-      }
-    },
-    "Yasuo": {
-      "MID": {
-        "runes": ["Lethal Tempo", "Triumph", "Legend: Alacrity", "Last Stand", "Resolve", "Unflinching"],
-        "items": ["Immortal Shieldbow", "Infinity Edge", "Bloodthirster", "Berserker's Greaves"],
-        "summoners": ["Flash", "Ignite"]
-      }
-    },
-    "Zed": {
-      "MID": {
-        "runes": ["Electrocute", "Sudden Impact", "Eyeball Collection", "Ultimate Hunter", "Triumph", "Coup de Grace"],
-        "items": ["Eclipse", "Profane Hydra", "Edge of Night", "Ionian Boots of Lucidity"],
-        "summoners": ["Flash", "Ignite"]
-      }
-    },
-    "Annie": {
-      "MID": {
-        "runes": ["Phase Rush", "Manaflow Band", "Transcendence", "Scorch", "Cheap Shot", "Ultimate Hunter"],
-        "items": ["Liandry's Anguish", "Rylai's Crystal Scepter", "Rabadon's Deathcap", "Sorcerer's Shoes"],
-        "summoners": ["Flash", "Ignite"]
-      }
-    },
-    "Galio": {
-      "MID": {
-        "runes": ["Aftershock", "Shield Bash", "Conditioning", "Overgrowth", "Manaflow Band", "Transcendence"],
-        "items": ["Riftmaker", "Rylai's Crystal Scepter", "Cosmic Drive", "Sorcerer's Shoes"],
-        "summoners": ["Flash", "Teleport"]
-      }
-    },
-    "Malzahar": {
-      "MID": {
-        "runes": ["Arcane Comet", "Manaflow Band", "Transcendence", "Scorch", "Cheap Shot", "Ultimate Hunter"],
-        "items": ["Liandry's Anguish", "Rylai's Crystal Scepter", "Sorcerer's Shoes", "Banshee's Veil"],
-        "summoners": ["Flash", "Ignite"]
-      }
-    },
-    "Vex": {
-      "MID": {
-        "runes": ["Arcane Comet", "Manaflow Band", "Transcendence", "Scorch", "Cheap Shot", "Ultimate Hunter"],
-        "items": ["Ludens Companion", "Shadowflame", "Rabadon's Deathcap", "Sorcerer's Shoes"],
-        "summoners": ["Flash", "Teleport"]
-      }
-    },
-    "Caitlyn": {
-      "BOT": {
-        "runes": ["Fleet Footwork", "Triumph", "Legend: Alacrity", "Coup de Grace", "Manaflow Band", "Transcendence"],
-        "items": ["The Collector", "Rapid Firecannon", "Infinity Edge", "Berserker's Greaves"],
-        "summoners": ["Flash", "Heal"]
-      }
-    },
-    "Jinx": {
-      "BOT": {
-        "runes": ["Lethal Tempo", "Triumph", "Legend: Alacrity", "Coup de Grace", "Cheap Shot", "Ultimate Hunter"],
-        "items": ["Kraken Slayer", "Runaan's Hurricane", "Infinity Edge", "Berserker's Greaves"],
-        "summoners": ["Flash", "Heal"]
-      }
-    },
-    "MissFortune": {
-      "BOT": {
-        "runes": ["Lethal Tempo", "Triumph", "Legend: Alacrity", "Cut Down", "Cheap Shot", "Treasure Hunter"],
-        "items": ["The Collector", "Infinity Edge", "Lord Dominik's Regards", "Berserker's Greaves"],
-        "summoners": ["Flash", "Heal"]
-      }
-    },
-    "Ezreal": {
-      "BOT": {
-        "runes": ["First Strike", "Magical Footwear", "Biscuit Delivery", "Cosmic Insight", "Manaflow Band", "Transcendence"],
-        "items": ["Trinity Force", "Muramana", "Rapid Firecannon", "Ionian Boots of Lucidity"],
-        "summoners": ["Flash", "Heal"]
-      }
-    },
-    "Vayne": {
-      "BOT": {
-        "runes": ["Lethal Tempo", "Triumph", "Legend: Alacrity", "Coup de Grace", "Bone Plating", "Overgrowth"],
-        "items": ["Blade of the Ruined King", "Runaan's Hurricane", "Infinity Edge", "Berserker's Greaves"],
-        "summoners": ["Flash", "Heal"]
-      }
-    },
-    "Kaisa": {
-      "BOT": {
-        "runes": ["Hail of Blades", "Sudden Impact", "Eyeball Collection", "Treasure Hunter", "Manaflow Band", "Transcendence"],
-        "items": ["Kraken Slayer", "Nashor's Tooth", "Rabadon's Deathcap", "Berserker's Greaves"],
-        "summoners": ["Flash", "Heal"]
-      }
-    },
-    "Lulu": {
-      "SUPPORT": {
-        "runes": ["Summon Aery", "Manaflow Band", "Transcendence", "Scorch", "Biscuit Delivery", "Cosmic Insight"],
-        "items": ["Moonstone Renewer", "Ardent Censer", "Staff of Flowing Water", "Ionian Boots of Lucidity"],
-        "summoners": ["Flash", "Exhaust"]
-      }
-    },
-    "Thresh": {
-      "SUPPORT": {
-        "runes": ["Aftershock", "Font of Life", "Conditioning", "Revitalize", "Manaflow Band", "Cosmic Insight"],
-        "items": ["Locket of the Iron Solari", "Knight's Vow", "Zeke's Convergence", "Mercury's Treads"],
-        "summoners": ["Flash", "Ignite"]
-      }
-    },
-    "Soraka": {
-      "SUPPORT": {
-        "runes": ["Summon Aery", "Manaflow Band", "Transcendence", "Scorch", "Biscuit Delivery", "Cosmic Insight"],
-        "items": ["Moonstone Renewer", "Redemption", "Ardent Censer", "Ionian Boots of Lucidity"],
-        "summoners": ["Flash", "Exhaust"]
-      }
-    },
-    "Leona": {
-      "SUPPORT": {
-        "runes": ["Aftershock", "Font of Life", "Conditioning", "Revitalize", "Cheap Shot", "Ultimate Hunter"],
-        "items": ["Locket of the Iron Solari", "Knight's Vow", "Zeke's Convergence", "Mercury's Treads"],
-        "summoners": ["Flash", "Ignite"]
-      }
-    }
+    "Aatrox":       {"TOP":{"runes":["Conqueror","Triumph","Legend: Tenacity","Last Stand","Bone Plating","Unflinching"],"items":["Eclipse","Sundered Sky","Sterak's Gage","Plated Steelcaps"],"summoners":["Flash","Teleport"]}},
+    "Ahri":         {"MID":{"runes":["Electrocute","Sudden Impact","Eyeball Collection","Ultimate Hunter","Manaflow Band","Transcendence"],"items":["Ludens Companion","Shadowflame","Rabadon's Deathcap","Sorcerer's Shoes"],"summoners":["Flash","Ignite"]}},
+    "Akali":        {"MID":{"runes":["Electrocute","Sudden Impact","Eyeball Collection","Ultimate Hunter","Triumph","Coup de Grace"],"items":["Hextech Rocketbelt","Shadowflame","Rabadon's Deathcap","Sorcerer's Shoes"],"summoners":["Flash","Ignite"]},"TOP":{"runes":["Conqueror","Triumph","Legend: Tenacity","Last Stand","Bone Plating","Unflinching"],"items":["Hextech Rocketbelt","Shadowflame","Sorcerer's Shoes","Zhonya's Hourglass"],"summoners":["Flash","Teleport"]}},
+    "Akshan":       {"MID":{"runes":["Press the Attack","Triumph","Legend: Alacrity","Coup de Grace","Cheap Shot","Treasure Hunter"],"items":["Eclipse","The Collector","Infinity Edge","Berserker's Greaves"],"summoners":["Flash","Ignite"]}},
+    "Alistar":      {"SUPPORT":{"runes":["Aftershock","Font of Life","Conditioning","Revitalize","Manaflow Band","Cosmic Insight"],"items":["Locket of the Iron Solari","Knight's Vow","Zeke's Convergence","Mercury's Treads"],"summoners":["Flash","Ignite"]}},
+    "Ambessa":      {"TOP":{"runes":["Conqueror","Triumph","Legend: Tenacity","Last Stand","Bone Plating","Unflinching"],"items":["Eclipse","Sundered Sky","Sterak's Gage","Plated Steelcaps"],"summoners":["Flash","Teleport"]}},
+    "Amumu":        {"JUNGLE":{"runes":["Aftershock","Shield Bash","Conditioning","Revitalize","Manaflow Band","Cosmic Insight"],"items":["Sunfire Aegis","Liandry's Anguish","Rylai's Crystal Scepter","Mercury's Treads"],"summoners":["Flash","Smite"]}},
+    "Anivia":       {"MID":{"runes":["Arcane Comet","Manaflow Band","Transcendence","Scorch","Cheap Shot","Cosmic Insight"],"items":["Liandry's Anguish","Rylai's Crystal Scepter","Rabadon's Deathcap","Sorcerer's Shoes"],"summoners":["Flash","Ignite"]}},
+    "Annie":        {"MID":{"runes":["Phase Rush","Manaflow Band","Transcendence","Scorch","Cheap Shot","Ultimate Hunter"],"items":["Liandry's Anguish","Rylai's Crystal Scepter","Rabadon's Deathcap","Sorcerer's Shoes"],"summoners":["Flash","Ignite"]}},
+    "Aphelios":     {"BOT":{"runes":["Lethal Tempo","Triumph","Legend: Alacrity","Coup de Grace","Cheap Shot","Ultimate Hunter"],"items":["The Collector","Infinity Edge","Lord Dominik's Regards","Berserker's Greaves"],"summoners":["Flash","Heal"]}},
+    "Ashe":         {"BOT":{"runes":["Lethal Tempo","Triumph","Legend: Alacrity","Coup de Grace","Manaflow Band","Cosmic Insight"],"items":["Kraken Slayer","Runaan's Hurricane","Infinity Edge","Berserker's Greaves"],"summoners":["Flash","Heal"]}},
+    "AurelionSol":  {"MID":{"runes":["Phase Rush","Manaflow Band","Transcendence","Scorch","Biscuit Delivery","Cosmic Insight"],"items":["Liandry's Anguish","Rylai's Crystal Scepter","Rabadon's Deathcap","Sorcerer's Shoes"],"summoners":["Flash","Teleport"]}},
+    "Aurora":       {"MID":{"runes":["First Strike","Magical Footwear","Biscuit Delivery","Cosmic Insight","Manaflow Band","Transcendence"],"items":["Lich Bane","Shadowflame","Rabadon's Deathcap","Sorcerer's Shoes"],"summoners":["Flash","Ignite"]}},
+    "Azir":         {"MID":{"runes":["First Strike","Manaflow Band","Transcendence","Scorch","Cheap Shot","Cosmic Insight"],"items":["Liandry's Anguish","Nashor's Tooth","Rabadon's Deathcap","Sorcerer's Shoes"],"summoners":["Flash","Teleport"]}},
+    "Bard":         {"SUPPORT":{"runes":["Glacial Augment","Magical Footwear","Biscuit Delivery","Cosmic Insight","Manaflow Band","Transcendence"],"items":["Shurelya's Battlesong","Locket of the Iron Solari","Mikael's Blessing","Ionian Boots of Lucidity"],"summoners":["Flash","Exhaust"]}},
+    "Belveth":      {"JUNGLE":{"runes":["Press the Attack","Triumph","Legend: Alacrity","Last Stand","Second Wind","Unflinching"],"items":["Kraken Slayer","Runaan's Hurricane","Blade of the Ruined King","Berserker's Greaves"],"summoners":["Flash","Smite"]}},
+    "Blitzcrank":   {"SUPPORT":{"runes":["Glacial Augment","Magical Footwear","Biscuit Delivery","Cosmic Insight","Manaflow Band","Transcendence"],"items":["Locket of the Iron Solari","Knight's Vow","Zeke's Convergence","Mobility Boots"],"summoners":["Flash","Ignite"]}},
+    "Brand":        {"SUPPORT":{"runes":["Arcane Comet","Manaflow Band","Transcendence","Scorch","Cheap Shot","Ultimate Hunter"],"items":["Liandry's Anguish","Rylai's Crystal Scepter","Rabadon's Deathcap","Sorcerer's Shoes"],"summoners":["Flash","Ignite"]}},
+    "Braum":        {"SUPPORT":{"runes":["Aftershock","Font of Life","Conditioning","Revitalize","Manaflow Band","Cosmic Insight"],"items":["Locket of the Iron Solari","Knight's Vow","Thornmail","Mercury's Treads"],"summoners":["Flash","Exhaust"]}},
+    "Briar":        {"JUNGLE":{"runes":["Conqueror","Triumph","Legend: Tenacity","Last Stand","Bone Plating","Unflinching"],"items":["Stridebreaker","Sundered Sky","Sterak's Gage","Mercury's Treads"],"summoners":["Flash","Smite"]}},
+    "Caitlyn":      {"BOT":{"runes":["Fleet Footwork","Triumph","Legend: Alacrity","Coup de Grace","Manaflow Band","Transcendence"],"items":["The Collector","Rapid Firecannon","Infinity Edge","Berserker's Greaves"],"summoners":["Flash","Heal"]}},
+    "Camille":      {"TOP":{"runes":["Conqueror","Triumph","Legend: Alacrity","Last Stand","Second Wind","Unflinching"],"items":["Trinity Force","Sundered Sky","Sterak's Gage","Plated Steelcaps"],"summoners":["Flash","Teleport"]}},
+    "Cassiopeia":   {"MID":{"runes":["Phase Rush","Manaflow Band","Transcendence","Scorch","Biscuit Delivery","Cosmic Insight"],"items":["Liandry's Anguish","Rylai's Crystal Scepter","Rabadon's Deathcap","Sorcerer's Shoes"],"summoners":["Flash","Teleport"]}},
+    "Chogath":      {"TOP":{"runes":["Grasp of the Undying","Demolish","Conditioning","Overgrowth","Triumph","Legend: Tenacity"],"items":["Heartsteel","Sundered Sky","Frozen Heart","Plated Steelcaps"],"summoners":["Flash","Teleport"]}},
+    "Corki":        {"MID":{"runes":["First Strike","Magical Footwear","Biscuit Delivery","Cosmic Insight","Manaflow Band","Transcendence"],"items":["Trinity Force","Manamune","Lich Bane","Ionian Boots of Lucidity"],"summoners":["Flash","Teleport"]}},
+    "Darius":       {"TOP":{"runes":["Conqueror","Triumph","Legend: Tenacity","Last Stand","Demolish","Unflinching"],"items":["Stridebreaker","Sterak's Gage","Death's Dance","Plated Steelcaps"],"summoners":["Flash","Teleport"]}},
+    "Diana":        {"JUNGLE":{"runes":["Electrocute","Sudden Impact","Eyeball Collection","Ultimate Hunter","Manaflow Band","Transcendence"],"items":["Hextech Rocketbelt","Shadowflame","Rabadon's Deathcap","Sorcerer's Shoes"],"summoners":["Flash","Smite"]},"MID":{"runes":["Electrocute","Sudden Impact","Eyeball Collection","Ultimate Hunter","Manaflow Band","Transcendence"],"items":["Hextech Rocketbelt","Shadowflame","Rabadon's Deathcap","Sorcerer's Shoes"],"summoners":["Flash","Ignite"]}},
+    "DrMundo":      {"TOP":{"runes":["Grasp of the Undying","Demolish","Conditioning","Overgrowth","Triumph","Legend: Tenacity"],"items":["Heartsteel","Sundered Sky","Spirit Visage","Plated Steelcaps"],"summoners":["Flash","Teleport"]}},
+    "Draven":       {"BOT":{"runes":["Press the Attack","Triumph","Legend: Bloodline","Coup de Grace","Cheap Shot","Treasure Hunter"],"items":["Bloodthirster","The Collector","Infinity Edge","Berserker's Greaves"],"summoners":["Flash","Heal"]}},
+    "Ekko":         {"JUNGLE":{"runes":["Electrocute","Sudden Impact","Eyeball Collection","Ultimate Hunter","Manaflow Band","Transcendence"],"items":["Hextech Rocketbelt","Lich Bane","Shadowflame","Sorcerer's Shoes"],"summoners":["Flash","Smite"]},"MID":{"runes":["Electrocute","Sudden Impact","Eyeball Collection","Ultimate Hunter","Manaflow Band","Transcendence"],"items":["Hextech Rocketbelt","Lich Bane","Shadowflame","Sorcerer's Shoes"],"summoners":["Flash","Ignite"]}},
+    "Elise":        {"JUNGLE":{"runes":["Electrocute","Sudden Impact","Eyeball Collection","Ultimate Hunter","Manaflow Band","Transcendence"],"items":["Hextech Rocketbelt","Liandry's Anguish","Rylai's Crystal Scepter","Sorcerer's Shoes"],"summoners":["Flash","Smite"]}},
+    "Evelynn":      {"JUNGLE":{"runes":["Dark Harvest","Cheap Shot","Eyeball Collection","Ultimate Hunter","Manaflow Band","Transcendence"],"items":["Hextech Rocketbelt","Lich Bane","Rabadon's Deathcap","Sorcerer's Shoes"],"summoners":["Flash","Smite"]}},
+    "Ezreal":       {"BOT":{"runes":["First Strike","Magical Footwear","Biscuit Delivery","Cosmic Insight","Manaflow Band","Transcendence"],"items":["Trinity Force","Muramana","Rapid Firecannon","Ionian Boots of Lucidity"],"summoners":["Flash","Heal"]}},
+    "Fiddlesticks": {"JUNGLE":{"runes":["Dark Harvest","Cheap Shot","Eyeball Collection","Ultimate Hunter","Manaflow Band","Transcendence"],"items":["Liandry's Anguish","Rylai's Crystal Scepter","Rabadon's Deathcap","Sorcerer's Shoes"],"summoners":["Flash","Smite"]}},
+    "Fiora":        {"TOP":{"runes":["Conqueror","Triumph","Legend: Alacrity","Last Stand","Second Wind","Revitalize"],"items":["Blade of the Ruined King","Trinity Force","Sterak's Gage","Plated Steelcaps"],"summoners":["Flash","Teleport"]}},
+    "Fizz":         {"MID":{"runes":["Electrocute","Sudden Impact","Eyeball Collection","Ultimate Hunter","Manaflow Band","Transcendence"],"items":["Hextech Rocketbelt","Lich Bane","Shadowflame","Sorcerer's Shoes"],"summoners":["Flash","Ignite"]}},
+    "Galio":        {"MID":{"runes":["Aftershock","Shield Bash","Conditioning","Overgrowth","Manaflow Band","Transcendence"],"items":["Riftmaker","Rylai's Crystal Scepter","Cosmic Drive","Sorcerer's Shoes"],"summoners":["Flash","Teleport"]}},
+    "Gangplank":    {"TOP":{"runes":["Grasp of the Undying","Demolish","Conditioning","Overgrowth","Triumph","Legend: Tenacity"],"items":["Trinity Force","Essence Reaver","Infinity Edge","Plated Steelcaps"],"summoners":["Flash","Teleport"]}},
+    "Garen":        {"TOP":{"runes":["Conqueror","Triumph","Legend: Tenacity","Last Stand","Bone Plating","Unflinching"],"items":["Stridebreaker","Dead Man's Plate","Sterak's Gage","Plated Steelcaps"],"summoners":["Flash","Teleport"]}},
+    "Gnar":         {"TOP":{"runes":["Lethal Tempo","Triumph","Legend: Alacrity","Last Stand","Bone Plating","Unflinching"],"items":["Trinity Force","Sterak's Gage","Death's Dance","Plated Steelcaps"],"summoners":["Flash","Teleport"]}},
+    "Gragas":       {"JUNGLE":{"runes":["First Strike","Magical Footwear","Biscuit Delivery","Cosmic Insight","Manaflow Band","Transcendence"],"items":["Riftmaker","Rylai's Crystal Scepter","Cosmic Drive","Sorcerer's Shoes"],"summoners":["Flash","Smite"]},"TOP":{"runes":["Grasp of the Undying","Demolish","Conditioning","Overgrowth","Manaflow Band","Transcendence"],"items":["Riftmaker","Rylai's Crystal Scepter","Sorcerer's Shoes","Cosmic Drive"],"summoners":["Flash","Teleport"]}},
+    "Graves":       {"JUNGLE":{"runes":["Hail of Blades","Sudden Impact","Eyeball Collection","Treasure Hunter","Triumph","Legend: Alacrity"],"items":["The Collector","Eclipse","Infinity Edge","Mercury's Treads"],"summoners":["Flash","Smite"]}},
+    "Gwen":         {"TOP":{"runes":["Conqueror","Triumph","Legend: Tenacity","Last Stand","Second Wind","Unflinching"],"items":["Riftmaker","Nashor's Tooth","Rabadon's Deathcap","Plated Steelcaps"],"summoners":["Flash","Teleport"]}},
+    "Hecarim":      {"JUNGLE":{"runes":["Conqueror","Triumph","Legend: Tenacity","Last Stand","Bone Plating","Unflinching"],"items":["Stridebreaker","Trinity Force","Sterak's Gage","Mercury's Treads"],"summoners":["Flash","Smite"]}},
+    "Heimerdinger": {"TOP":{"runes":["Arcane Comet","Manaflow Band","Transcendence","Scorch","Biscuit Delivery","Cosmic Insight"],"items":["Liandry's Anguish","Malignance","Rabadon's Deathcap","Sorcerer's Shoes"],"summoners":["Flash","Teleport"]}},
+    "Hwei":         {"MID":{"runes":["Arcane Comet","Manaflow Band","Transcendence","Scorch","Biscuit Delivery","Cosmic Insight"],"items":["Liandry's Anguish","Malignance","Rabadon's Deathcap","Sorcerer's Shoes"],"summoners":["Flash","Teleport"]}},
+    "Illaoi":       {"TOP":{"runes":["Conqueror","Triumph","Legend: Tenacity","Last Stand","Bone Plating","Unflinching"],"items":["Trinity Force","Sundered Sky","Sterak's Gage","Plated Steelcaps"],"summoners":["Flash","Teleport"]}},
+    "Irelia":       {"TOP":{"runes":["Conqueror","Triumph","Legend: Tenacity","Last Stand","Second Wind","Unflinching"],"items":["Trinity Force","Sundered Sky","Sterak's Gage","Plated Steelcaps"],"summoners":["Flash","Teleport"]},"MID":{"runes":["Conqueror","Triumph","Legend: Alacrity","Last Stand","Second Wind","Unflinching"],"items":["Trinity Force","Sundered Sky","Sterak's Gage","Mercury's Treads"],"summoners":["Flash","Ignite"]}},
+    "Ivern":        {"JUNGLE":{"runes":["Glacial Augment","Magical Footwear","Biscuit Delivery","Cosmic Insight","Manaflow Band","Transcendence"],"items":["Moonstone Renewer","Ardent Censer","Staff of Flowing Water","Ionian Boots of Lucidity"],"summoners":["Flash","Smite"]}},
+    "Janna":        {"SUPPORT":{"runes":["Summon Aery","Manaflow Band","Transcendence","Scorch","Biscuit Delivery","Cosmic Insight"],"items":["Moonstone Renewer","Ardent Censer","Staff of Flowing Water","Ionian Boots of Lucidity"],"summoners":["Flash","Exhaust"]}},
+    "JarvanIV":     {"JUNGLE":{"runes":["Conqueror","Triumph","Legend: Tenacity","Last Stand","Bone Plating","Unflinching"],"items":["Stridebreaker","Sundered Sky","Sterak's Gage","Mercury's Treads"],"summoners":["Flash","Smite"]}},
+    "Jax":          {"TOP":{"runes":["Conqueror","Triumph","Legend: Alacrity","Last Stand","Second Wind","Unflinching"],"items":["Blade of the Ruined King","Trinity Force","Sterak's Gage","Plated Steelcaps"],"summoners":["Flash","Teleport"]}},
+    "Jayce":        {"TOP":{"runes":["First Strike","Magical Footwear","Biscuit Delivery","Cosmic Insight","Manaflow Band","Transcendence"],"items":["Eclipse","The Collector","Lord Dominik's Regards","Ionian Boots of Lucidity"],"summoners":["Flash","Teleport"]},"MID":{"runes":["First Strike","Magical Footwear","Biscuit Delivery","Cosmic Insight","Manaflow Band","Transcendence"],"items":["Eclipse","The Collector","Lord Dominik's Regards","Ionian Boots of Lucidity"],"summoners":["Flash","Teleport"]}},
+    "Jhin":         {"BOT":{"runes":["Fleet Footwork","Triumph","Legend: Alacrity","Coup de Grace","Cheap Shot","Treasure Hunter"],"items":["The Collector","Rapid Firecannon","Infinity Edge","Berserker's Greaves"],"summoners":["Flash","Heal"]}},
+    "Jinx":         {"BOT":{"runes":["Lethal Tempo","Triumph","Legend: Alacrity","Coup de Grace","Cheap Shot","Ultimate Hunter"],"items":["Kraken Slayer","Runaan's Hurricane","Infinity Edge","Berserker's Greaves"],"summoners":["Flash","Heal"]}},
+    "KSante":       {"TOP":{"runes":["Grasp of the Undying","Demolish","Conditioning","Overgrowth","Triumph","Legend: Tenacity"],"items":["Hullbreaker","Sundered Sky","Frozen Heart","Plated Steelcaps"],"summoners":["Flash","Teleport"]}},
+    "Kaisa":        {"BOT":{"runes":["Hail of Blades","Sudden Impact","Eyeball Collection","Treasure Hunter","Manaflow Band","Transcendence"],"items":["Kraken Slayer","Nashor's Tooth","Rabadon's Deathcap","Berserker's Greaves"],"summoners":["Flash","Heal"]}},
+    "Kalista":      {"BOT":{"runes":["Lethal Tempo","Triumph","Legend: Alacrity","Coup de Grace","Cheap Shot","Treasure Hunter"],"items":["Blade of the Ruined King","Runaan's Hurricane","Infinity Edge","Berserker's Greaves"],"summoners":["Flash","Heal"]}},
+    "Karma":        {"SUPPORT":{"runes":["Summon Aery","Manaflow Band","Transcendence","Scorch","Biscuit Delivery","Cosmic Insight"],"items":["Moonstone Renewer","Ardent Censer","Staff of Flowing Water","Ionian Boots of Lucidity"],"summoners":["Flash","Exhaust"]}},
+    "Karthus":      {"JUNGLE":{"runes":["Phase Rush","Manaflow Band","Transcendence","Scorch","Cheap Shot","Ultimate Hunter"],"items":["Liandry's Anguish","Rylai's Crystal Scepter","Rabadon's Deathcap","Sorcerer's Shoes"],"summoners":["Flash","Smite"]}},
+    "Kassadin":     {"MID":{"runes":["Phase Rush","Manaflow Band","Transcendence","Scorch","Biscuit Delivery","Cosmic Insight"],"items":["Hextech Rocketbelt","Lich Bane","Rabadon's Deathcap","Mercury's Treads"],"summoners":["Flash","Teleport"]}},
+    "Katarina":     {"MID":{"runes":["Electrocute","Sudden Impact","Eyeball Collection","Ultimate Hunter","Triumph","Coup de Grace"],"items":["Hextech Rocketbelt","Shadowflame","Rabadon's Deathcap","Sorcerer's Shoes"],"summoners":["Flash","Ignite"]}},
+    "Kayle":        {"TOP":{"runes":["Lethal Tempo","Triumph","Legend: Alacrity","Coup de Grace","Bone Plating","Unflinching"],"items":["Nashor's Tooth","Rabadon's Deathcap","Lich Bane","Berserker's Greaves"],"summoners":["Flash","Teleport"]}},
+    "Kayn":         {"JUNGLE":{"runes":["Conqueror","Triumph","Legend: Tenacity","Last Stand","Bone Plating","Unflinching"],"items":["Eclipse","Sundered Sky","Sterak's Gage","Mercury's Treads"],"summoners":["Flash","Smite"]}},
+    "Kennen":       {"TOP":{"runes":["First Strike","Magical Footwear","Biscuit Delivery","Cosmic Insight","Manaflow Band","Transcendence"],"items":["Hextech Rocketbelt","Shadowflame","Rabadon's Deathcap","Sorcerer's Shoes"],"summoners":["Flash","Teleport"]}},
+    "Khazix":       {"JUNGLE":{"runes":["Hail of Blades","Sudden Impact","Eyeball Collection","Ultimate Hunter","Triumph","Coup de Grace"],"items":["Eclipse","Profane Hydra","Edge of Night","Ionian Boots of Lucidity"],"summoners":["Flash","Smite"]}},
+    "Kindred":      {"JUNGLE":{"runes":["Press the Attack","Triumph","Legend: Alacrity","Coup de Grace","Cheap Shot","Treasure Hunter"],"items":["The Collector","Runaan's Hurricane","Infinity Edge","Berserker's Greaves"],"summoners":["Flash","Smite"]}},
+    "Kled":         {"TOP":{"runes":["Conqueror","Triumph","Legend: Tenacity","Last Stand","Bone Plating","Unflinching"],"items":["Stridebreaker","Sundered Sky","Sterak's Gage","Plated Steelcaps"],"summoners":["Flash","Teleport"]}},
+    "KogMaw":       {"BOT":{"runes":["Lethal Tempo","Triumph","Legend: Alacrity","Coup de Grace","Cheap Shot","Treasure Hunter"],"items":["Kraken Slayer","Runaan's Hurricane","Guinsoo's Rageblade","Berserker's Greaves"],"summoners":["Flash","Heal"]}},
+    "Leblanc":      {"MID":{"runes":["Electrocute","Sudden Impact","Eyeball Collection","Ultimate Hunter","Manaflow Band","Transcendence"],"items":["Hextech Rocketbelt","Shadowflame","Rabadon's Deathcap","Sorcerer's Shoes"],"summoners":["Flash","Ignite"]}},
+    "LeeSin":       {"JUNGLE":{"runes":["Conqueror","Triumph","Legend: Tenacity","Last Stand","Second Wind","Unflinching"],"items":["Eclipse","Sundered Sky","Black Cleaver","Plated Steelcaps"],"summoners":["Flash","Smite"]}},
+    "Leona":        {"SUPPORT":{"runes":["Aftershock","Font of Life","Conditioning","Revitalize","Cheap Shot","Ultimate Hunter"],"items":["Locket of the Iron Solari","Knight's Vow","Zeke's Convergence","Mercury's Treads"],"summoners":["Flash","Ignite"]}},
+    "Lillia":       {"JUNGLE":{"runes":["Phase Rush","Manaflow Band","Transcendence","Scorch","Cheap Shot","Ultimate Hunter"],"items":["Liandry's Anguish","Riftmaker","Rabadon's Deathcap","Sorcerer's Shoes"],"summoners":["Flash","Smite"]}},
+    "Lissandra":    {"MID":{"runes":["Phase Rush","Manaflow Band","Transcendence","Scorch","Cheap Shot","Ultimate Hunter"],"items":["Liandry's Anguish","Rylai's Crystal Scepter","Rabadon's Deathcap","Sorcerer's Shoes"],"summoners":["Flash","Teleport"]}},
+    "Lucian":       {"BOT":{"runes":["Press the Attack","Triumph","Legend: Bloodline","Coup de Grace","Cheap Shot","Treasure Hunter"],"items":["Kraken Slayer","Essence Reaver","Navori Quickblades","Berserker's Greaves"],"summoners":["Flash","Heal"]}},
+    "Lulu":         {"SUPPORT":{"runes":["Summon Aery","Manaflow Band","Transcendence","Scorch","Biscuit Delivery","Cosmic Insight"],"items":["Moonstone Renewer","Ardent Censer","Staff of Flowing Water","Ionian Boots of Lucidity"],"summoners":["Flash","Exhaust"]}},
+    "Lux":          {"MID":{"runes":["Arcane Comet","Manaflow Band","Transcendence","Scorch","Cheap Shot","Cosmic Insight"],"items":["Ludens Companion","Shadowflame","Rabadon's Deathcap","Sorcerer's Shoes"],"summoners":["Flash","Teleport"]},"SUPPORT":{"runes":["Arcane Comet","Manaflow Band","Transcendence","Scorch","Biscuit Delivery","Cosmic Insight"],"items":["Imperial Mandate","Ludens Companion","Shadowflame","Sorcerer's Shoes"],"summoners":["Flash","Ignite"]}},
+    "Malphite":     {"TOP":{"runes":["Grasp of the Undying","Demolish","Conditioning","Overgrowth","Triumph","Legend: Tenacity"],"items":["Sunfire Aegis","Frozen Heart","Thornmail","Plated Steelcaps"],"summoners":["Flash","Teleport"]}},
+    "Malzahar":     {"MID":{"runes":["Arcane Comet","Manaflow Band","Transcendence","Scorch","Cheap Shot","Ultimate Hunter"],"items":["Liandry's Anguish","Rylai's Crystal Scepter","Sorcerer's Shoes","Banshee's Veil"],"summoners":["Flash","Ignite"]}},
+    "Maokai":       {"TOP":{"runes":["Grasp of the Undying","Demolish","Conditioning","Overgrowth","Manaflow Band","Transcendence"],"items":["Sunfire Aegis","Liandry's Anguish","Rylai's Crystal Scepter","Plated Steelcaps"],"summoners":["Flash","Teleport"]},"SUPPORT":{"runes":["Aftershock","Font of Life","Conditioning","Revitalize","Manaflow Band","Cosmic Insight"],"items":["Locket of the Iron Solari","Knight's Vow","Zeke's Convergence","Mercury's Treads"],"summoners":["Flash","Ignite"]}},
+    "MasterYi":     {"JUNGLE":{"runes":["Lethal Tempo","Triumph","Legend: Alacrity","Coup de Grace","Cheap Shot","Treasure Hunter"],"items":["Kraken Slayer","Blade of the Ruined King","Wit's End","Berserker's Greaves"],"summoners":["Flash","Smite"]}},
+    "Mel":          {"MID":{"runes":["Arcane Comet","Manaflow Band","Transcendence","Scorch","Biscuit Delivery","Cosmic Insight"],"items":["Liandry's Anguish","Shadowflame","Rabadon's Deathcap","Sorcerer's Shoes"],"summoners":["Flash","Teleport"]}},
+    "Milio":        {"SUPPORT":{"runes":["Summon Aery","Manaflow Band","Transcendence","Scorch","Biscuit Delivery","Cosmic Insight"],"items":["Moonstone Renewer","Ardent Censer","Staff of Flowing Water","Ionian Boots of Lucidity"],"summoners":["Flash","Exhaust"]}},
+    "MissFortune":  {"BOT":{"runes":["Lethal Tempo","Triumph","Legend: Alacrity","Cut Down","Cheap Shot","Treasure Hunter"],"items":["The Collector","Infinity Edge","Lord Dominik's Regards","Berserker's Greaves"],"summoners":["Flash","Heal"]}},
+    "MonkeyKing":   {"JUNGLE":{"runes":["Conqueror","Triumph","Legend: Tenacity","Last Stand","Bone Plating","Unflinching"],"items":["Eclipse","Sundered Sky","Sterak's Gage","Mercury's Treads"],"summoners":["Flash","Smite"]}},
+    "Mordekaiser":  {"TOP":{"runes":["Conqueror","Triumph","Legend: Tenacity","Last Stand","Second Wind","Unflinching"],"items":["Riftmaker","Rylai's Crystal Scepter","Sorcerer's Shoes","Cosmic Drive"],"summoners":["Flash","Teleport"]}},
+    "Morgana":      {"SUPPORT":{"runes":["Arcane Comet","Manaflow Band","Transcendence","Scorch","Cheap Shot","Ultimate Hunter"],"items":["Liandry's Anguish","Rylai's Crystal Scepter","Sorcerer's Shoes","Banshee's Veil"],"summoners":["Flash","Ignite"]}},
+    "Naafiri":      {"MID":{"runes":["Hail of Blades","Sudden Impact","Eyeball Collection","Ultimate Hunter","Triumph","Coup de Grace"],"items":["Eclipse","Profane Hydra","Edge of Night","Ionian Boots of Lucidity"],"summoners":["Flash","Ignite"]}},
+    "Nami":         {"SUPPORT":{"runes":["Summon Aery","Manaflow Band","Transcendence","Scorch","Biscuit Delivery","Cosmic Insight"],"items":["Moonstone Renewer","Ardent Censer","Staff of Flowing Water","Ionian Boots of Lucidity"],"summoners":["Flash","Exhaust"]}},
+    "Nasus":        {"TOP":{"runes":["Conqueror","Triumph","Legend: Tenacity","Last Stand","Second Wind","Unflinching"],"items":["Trinity Force","Sundered Sky","Sterak's Gage","Plated Steelcaps"],"summoners":["Flash","Teleport"]}},
+    "Nautilus":     {"JUNGLE":{"runes":["Aftershock","Shield Bash","Conditioning","Overgrowth","Manaflow Band","Transcendence"],"items":["Sunfire Aegis","Knight's Vow","Thornmail","Mercury's Treads"],"summoners":["Flash","Smite"]},"SUPPORT":{"runes":["Aftershock","Font of Life","Conditioning","Revitalize","Manaflow Band","Cosmic Insight"],"items":["Locket of the Iron Solari","Zeke's Convergence","Knight's Vow","Mercury's Treads"],"summoners":["Flash","Ignite"]}},
+    "Neeko":        {"MID":{"runes":["Arcane Comet","Manaflow Band","Transcendence","Scorch","Biscuit Delivery","Cosmic Insight"],"items":["Liandry's Anguish","Rylai's Crystal Scepter","Rabadon's Deathcap","Sorcerer's Shoes"],"summoners":["Flash","Ignite"]}},
+    "Nidalee":      {"JUNGLE":{"runes":["Electrocute","Sudden Impact","Eyeball Collection","Ultimate Hunter","Manaflow Band","Transcendence"],"items":["Lich Bane","Nashor's Tooth","Rabadon's Deathcap","Sorcerer's Shoes"],"summoners":["Flash","Smite"]}},
+    "Nilah":        {"BOT":{"runes":["Lethal Tempo","Triumph","Legend: Alacrity","Coup de Grace","Cheap Shot","Treasure Hunter"],"items":["Blade of the Ruined King","Trinity Force","Sterak's Gage","Berserker's Greaves"],"summoners":["Flash","Heal"]}},
+    "Nocturne":     {"JUNGLE":{"runes":["Electrocute","Sudden Impact","Eyeball Collection","Ultimate Hunter","Triumph","Coup de Grace"],"items":["Eclipse","Profane Hydra","Edge of Night","Ionian Boots of Lucidity"],"summoners":["Flash","Smite"]}},
+    "Nunu":         {"JUNGLE":{"runes":["First Strike","Magical Footwear","Biscuit Delivery","Cosmic Insight","Manaflow Band","Transcendence"],"items":["Liandry's Anguish","Rylai's Crystal Scepter","Riftmaker","Mercury's Treads"],"summoners":["Flash","Smite"]}},
+    "Olaf":         {"TOP":{"runes":["Conqueror","Triumph","Legend: Tenacity","Last Stand","Second Wind","Unflinching"],"items":["Stridebreaker","Sundered Sky","Sterak's Gage","Plated Steelcaps"],"summoners":["Flash","Teleport"]},"JUNGLE":{"runes":["Conqueror","Triumph","Legend: Tenacity","Last Stand","Second Wind","Unflinching"],"items":["Stridebreaker","Sundered Sky","Sterak's Gage","Mercury's Treads"],"summoners":["Flash","Smite"]}},
+    "Orianna":      {"MID":{"runes":["Arcane Comet","Manaflow Band","Transcendence","Scorch","Cheap Shot","Cosmic Insight"],"items":["Ludens Companion","Shadowflame","Rabadon's Deathcap","Sorcerer's Shoes"],"summoners":["Flash","Teleport"]}},
+    "Ornn":         {"TOP":{"runes":["Grasp of the Undying","Demolish","Conditioning","Overgrowth","Triumph","Legend: Tenacity"],"items":["Sunfire Aegis","Frozen Heart","Thornmail","Plated Steelcaps"],"summoners":["Flash","Teleport"]}},
+    "Pantheon":     {"TOP":{"runes":["Conqueror","Triumph","Legend: Tenacity","Last Stand","Bone Plating","Unflinching"],"items":["Eclipse","Sundered Sky","Black Cleaver","Plated Steelcaps"],"summoners":["Flash","Teleport"]},"JUNGLE":{"runes":["Conqueror","Triumph","Legend: Tenacity","Last Stand","Second Wind","Unflinching"],"items":["Eclipse","Sundered Sky","Black Cleaver","Mercury's Treads"],"summoners":["Flash","Smite"]},"SUPPORT":{"runes":["Aftershock","Font of Life","Conditioning","Revitalize","Cheap Shot","Ultimate Hunter"],"items":["Locket of the Iron Solari","Knight's Vow","Zeke's Convergence","Mobility Boots"],"summoners":["Flash","Ignite"]}},
+    "Poppy":        {"TOP":{"runes":["Grasp of the Undying","Demolish","Conditioning","Overgrowth","Triumph","Legend: Tenacity"],"items":["Sunfire Aegis","Knight's Vow","Frozen Heart","Plated Steelcaps"],"summoners":["Flash","Teleport"]},"JUNGLE":{"runes":["Aftershock","Shield Bash","Conditioning","Overgrowth","Triumph","Legend: Tenacity"],"items":["Sunfire Aegis","Knight's Vow","Frozen Heart","Mercury's Treads"],"summoners":["Flash","Smite"]}},
+    "Pyke":         {"SUPPORT":{"runes":["Hail of Blades","Sudden Impact","Eyeball Collection","Treasure Hunter","Cheap Shot","Ultimate Hunter"],"items":["Umbral Glaive","Youmuu's Ghostblade","Edge of Night","Mobility Boots"],"summoners":["Flash","Ignite"]}},
+    "Qiyana":       {"MID":{"runes":["Electrocute","Sudden Impact","Eyeball Collection","Ultimate Hunter","Triumph","Coup de Grace"],"items":["Eclipse","Profane Hydra","Edge of Night","Ionian Boots of Lucidity"],"summoners":["Flash","Ignite"]}},
+    "Quinn":        {"TOP":{"runes":["Press the Attack","Triumph","Legend: Alacrity","Coup de Grace","Cheap Shot","Treasure Hunter"],"items":["The Collector","Runaan's Hurricane","Infinity Edge","Berserker's Greaves"],"summoners":["Flash","Teleport"]}},
+    "Rakan":        {"SUPPORT":{"runes":["Glacial Augment","Magical Footwear","Biscuit Delivery","Cosmic Insight","Manaflow Band","Transcendence"],"items":["Locket of the Iron Solari","Knight's Vow","Zeke's Convergence","Ionian Boots of Lucidity"],"summoners":["Flash","Ignite"]}},
+    "Rammus":       {"JUNGLE":{"runes":["Aftershock","Shield Bash","Conditioning","Overgrowth","Triumph","Legend: Tenacity"],"items":["Sunfire Aegis","Thornmail","Frozen Heart","Plated Steelcaps"],"summoners":["Flash","Smite"]}},
+    "RekSai":       {"JUNGLE":{"runes":["Conqueror","Triumph","Legend: Tenacity","Last Stand","Second Wind","Unflinching"],"items":["Eclipse","Sundered Sky","Black Cleaver","Mercury's Treads"],"summoners":["Flash","Smite"]}},
+    "Rell":         {"SUPPORT":{"runes":["Aftershock","Font of Life","Conditioning","Revitalize","Manaflow Band","Cosmic Insight"],"items":["Locket of the Iron Solari","Knight's Vow","Zeke's Convergence","Mercury's Treads"],"summoners":["Flash","Ignite"]}},
+    "Renata":       {"SUPPORT":{"runes":["Glacial Augment","Magical Footwear","Biscuit Delivery","Cosmic Insight","Manaflow Band","Transcendence"],"items":["Imperial Mandate","Locket of the Iron Solari","Mikael's Blessing","Ionian Boots of Lucidity"],"summoners":["Flash","Exhaust"]}},
+    "Renekton":     {"TOP":{"runes":["Conqueror","Triumph","Legend: Tenacity","Last Stand","Bone Plating","Unflinching"],"items":["Eclipse","Sundered Sky","Black Cleaver","Plated Steelcaps"],"summoners":["Flash","Teleport"]}},
+    "Rengar":       {"JUNGLE":{"runes":["Hail of Blades","Sudden Impact","Eyeball Collection","Ultimate Hunter","Triumph","Coup de Grace"],"items":["Eclipse","Profane Hydra","Edge of Night","Ionian Boots of Lucidity"],"summoners":["Flash","Smite"]}},
+    "Riven":        {"TOP":{"runes":["Conqueror","Triumph","Legend: Alacrity","Last Stand","Bone Plating","Unflinching"],"items":["Eclipse","Sundered Sky","Black Cleaver","Plated Steelcaps"],"summoners":["Flash","Teleport"]}},
+    "Rumble":       {"TOP":{"runes":["Phase Rush","Manaflow Band","Transcendence","Scorch","Bone Plating","Unflinching"],"items":["Liandry's Anguish","Riftmaker","Rylai's Crystal Scepter","Sorcerer's Shoes"],"summoners":["Flash","Teleport"]}},
+    "Ryze":         {"MID":{"runes":["Phase Rush","Manaflow Band","Transcendence","Scorch","Biscuit Delivery","Cosmic Insight"],"items":["Archangel's Staff","Rabadon's Deathcap","Rylai's Crystal Scepter","Sorcerer's Shoes"],"summoners":["Flash","Teleport"]}},
+    "Samira":       {"BOT":{"runes":["Conqueror","Triumph","Legend: Alacrity","Coup de Grace","Cheap Shot","Treasure Hunter"],"items":["The Collector","Bloodthirster","Infinity Edge","Berserker's Greaves"],"summoners":["Flash","Heal"]}},
+    "Sejuani":      {"JUNGLE":{"runes":["Aftershock","Font of Life","Conditioning","Overgrowth","Manaflow Band","Cosmic Insight"],"items":["Sunfire Aegis","Knight's Vow","Thornmail","Mercury's Treads"],"summoners":["Flash","Smite"]}},
+    "Senna":        {"BOT":{"runes":["Fleet Footwork","Triumph","Legend: Bloodline","Coup de Grace","Cheap Shot","Treasure Hunter"],"items":["Black Cleaver","Manamune","Lord Dominik's Regards","Berserker's Greaves"],"summoners":["Flash","Heal"]},"SUPPORT":{"runes":["Fleet Footwork","Triumph","Legend: Bloodline","Coup de Grace","Cheap Shot","Treasure Hunter"],"items":["Umbral Glaive","Black Cleaver","Lord Dominik's Regards","Mobility Boots"],"summoners":["Flash","Ignite"]}},
+    "Seraphine":    {"BOT":{"runes":["Arcane Comet","Manaflow Band","Transcendence","Scorch","Cheap Shot","Cosmic Insight"],"items":["Liandry's Anguish","Rylai's Crystal Scepter","Rabadon's Deathcap","Sorcerer's Shoes"],"summoners":["Flash","Heal"]},"SUPPORT":{"runes":["Summon Aery","Manaflow Band","Transcendence","Scorch","Biscuit Delivery","Cosmic Insight"],"items":["Moonstone Renewer","Ardent Censer","Staff of Flowing Water","Ionian Boots of Lucidity"],"summoners":["Flash","Exhaust"]}},
+    "Sett":         {"TOP":{"runes":["Conqueror","Triumph","Legend: Tenacity","Last Stand","Bone Plating","Unflinching"],"items":["Trinity Force","Sundered Sky","Sterak's Gage","Mercury's Treads"],"summoners":["Flash","Teleport"]}},
+    "Shaco":        {"JUNGLE":{"runes":["Hail of Blades","Sudden Impact","Eyeball Collection","Treasure Hunter","Cheap Shot","Ultimate Hunter"],"items":["Eclipse","Profane Hydra","Edge of Night","Ionian Boots of Lucidity"],"summoners":["Flash","Smite"]}},
+    "Shen":         {"TOP":{"runes":["Grasp of the Undying","Demolish","Conditioning","Overgrowth","Triumph","Legend: Tenacity"],"items":["Sunfire Aegis","Frozen Heart","Thornmail","Plated Steelcaps"],"summoners":["Flash","Teleport"]}},
+    "Shyvana":      {"JUNGLE":{"runes":["Conqueror","Triumph","Legend: Alacrity","Last Stand","Bone Plating","Unflinching"],"items":["Titanic Hydra","Sundered Sky","Sterak's Gage","Mercury's Treads"],"summoners":["Flash","Smite"]}},
+    "Singed":       {"TOP":{"runes":["Grasp of the Undying","Demolish","Conditioning","Overgrowth","Manaflow Band","Transcendence"],"items":["Riftmaker","Rylai's Crystal Scepter","Liandry's Anguish","Plated Steelcaps"],"summoners":["Flash","Teleport"]}},
+    "Sion":         {"TOP":{"runes":["Grasp of the Undying","Demolish","Conditioning","Overgrowth","Triumph","Legend: Tenacity"],"items":["Heartsteel","Frozen Heart","Thornmail","Plated Steelcaps"],"summoners":["Flash","Teleport"]}},
+    "Sivir":        {"BOT":{"runes":["Lethal Tempo","Triumph","Legend: Alacrity","Coup de Grace","Manaflow Band","Cosmic Insight"],"items":["Kraken Slayer","Runaan's Hurricane","Infinity Edge","Berserker's Greaves"],"summoners":["Flash","Heal"]}},
+    "Skarner":      {"JUNGLE":{"runes":["Aftershock","Font of Life","Conditioning","Revitalize","Manaflow Band","Cosmic Insight"],"items":["Sunfire Aegis","Knight's Vow","Frozen Heart","Mercury's Treads"],"summoners":["Flash","Smite"]}},
+    "Smolder":      {"BOT":{"runes":["Fleet Footwork","Triumph","Legend: Alacrity","Coup de Grace","Cheap Shot","Treasure Hunter"],"items":["Essence Reaver","Trinity Force","Rapid Firecannon","Berserker's Greaves"],"summoners":["Flash","Heal"]}},
+    "Sona":         {"SUPPORT":{"runes":["Summon Aery","Manaflow Band","Transcendence","Scorch","Biscuit Delivery","Cosmic Insight"],"items":["Moonstone Renewer","Ardent Censer","Staff of Flowing Water","Ionian Boots of Lucidity"],"summoners":["Flash","Exhaust"]}},
+    "Soraka":       {"SUPPORT":{"runes":["Summon Aery","Manaflow Band","Transcendence","Scorch","Biscuit Delivery","Cosmic Insight"],"items":["Moonstone Renewer","Redemption","Ardent Censer","Ionian Boots of Lucidity"],"summoners":["Flash","Exhaust"]}},
+    "Swain":        {"BOT":{"runes":["Conqueror","Triumph","Legend: Tenacity","Last Stand","Manaflow Band","Cosmic Insight"],"items":["Liandry's Anguish","Rylai's Crystal Scepter","Riftmaker","Sorcerer's Shoes"],"summoners":["Flash","Ignite"]},"SUPPORT":{"runes":["Aftershock","Font of Life","Conditioning","Revitalize","Manaflow Band","Cosmic Insight"],"items":["Liandry's Anguish","Rylai's Crystal Scepter","Riftmaker","Sorcerer's Shoes"],"summoners":["Flash","Ignite"]}},
+    "Sylas":        {"MID":{"runes":["Conqueror","Triumph","Legend: Tenacity","Last Stand","Manaflow Band","Transcendence"],"items":["Riftmaker","Rylai's Crystal Scepter","Cosmic Drive","Sorcerer's Shoes"],"summoners":["Flash","Ignite"]}},
+    "Syndra":       {"MID":{"runes":["Electrocute","Sudden Impact","Eyeball Collection","Ultimate Hunter","Manaflow Band","Transcendence"],"items":["Ludens Companion","Shadowflame","Rabadon's Deathcap","Sorcerer's Shoes"],"summoners":["Flash","Ignite"]}},
+    "TahmKench":    {"TOP":{"runes":["Grasp of the Undying","Demolish","Conditioning","Overgrowth","Triumph","Legend: Tenacity"],"items":["Heartsteel","Sundered Sky","Frozen Heart","Plated Steelcaps"],"summoners":["Flash","Teleport"]},"SUPPORT":{"runes":["Aftershock","Font of Life","Conditioning","Revitalize","Manaflow Band","Cosmic Insight"],"items":["Bloodsong","Zeke's Convergence","Knight's Vow","Mercury's Treads"],"summoners":["Flash","Ignite"]}},
+    "Taliyah":      {"MID":{"runes":["Phase Rush","Manaflow Band","Transcendence","Scorch","Biscuit Delivery","Cosmic Insight"],"items":["Liandry's Anguish","Rylai's Crystal Scepter","Rabadon's Deathcap","Sorcerer's Shoes"],"summoners":["Flash","Teleport"]},"JUNGLE":{"runes":["Phase Rush","Manaflow Band","Transcendence","Scorch","Cheap Shot","Ultimate Hunter"],"items":["Liandry's Anguish","Rylai's Crystal Scepter","Rabadon's Deathcap","Sorcerer's Shoes"],"summoners":["Flash","Smite"]}},
+    "Talon":        {"MID":{"runes":["Hail of Blades","Sudden Impact","Eyeball Collection","Treasure Hunter","Cheap Shot","Ultimate Hunter"],"items":["Eclipse","Profane Hydra","Edge of Night","Ionian Boots of Lucidity"],"summoners":["Flash","Ignite"]}},
+    "Taric":        {"SUPPORT":{"runes":["Aftershock","Font of Life","Conditioning","Revitalize","Manaflow Band","Cosmic Insight"],"items":["Locket of the Iron Solari","Knight's Vow","Zeke's Convergence","Mercury's Treads"],"summoners":["Flash","Ignite"]}},
+    "Teemo":        {"TOP":{"runes":["First Strike","Magical Footwear","Biscuit Delivery","Cosmic Insight","Manaflow Band","Transcendence"],"items":["Liandry's Anguish","Nashor's Tooth","Rabadon's Deathcap","Sorcerer's Shoes"],"summoners":["Flash","Teleport"]}},
+    "Thresh":       {"SUPPORT":{"runes":["Aftershock","Font of Life","Conditioning","Revitalize","Manaflow Band","Cosmic Insight"],"items":["Locket of the Iron Solari","Knight's Vow","Zeke's Convergence","Mercury's Treads"],"summoners":["Flash","Ignite"]}},
+    "Tristana":     {"BOT":{"runes":["Lethal Tempo","Triumph","Legend: Alacrity","Coup de Grace","Cheap Shot","Treasure Hunter"],"items":["Kraken Slayer","Runaan's Hurricane","Infinity Edge","Berserker's Greaves"],"summoners":["Flash","Heal"]}},
+    "Trundle":      {"TOP":{"runes":["Conqueror","Triumph","Legend: Tenacity","Last Stand","Second Wind","Unflinching"],"items":["Trinity Force","Sundered Sky","Sterak's Gage","Plated Steelcaps"],"summoners":["Flash","Teleport"]},"JUNGLE":{"runes":["Conqueror","Triumph","Legend: Tenacity","Last Stand","Second Wind","Unflinching"],"items":["Trinity Force","Sundered Sky","Sterak's Gage","Mercury's Treads"],"summoners":["Flash","Smite"]}},
+    "Tryndamere":   {"TOP":{"runes":["Conqueror","Triumph","Legend: Bloodline","Last Stand","Second Wind","Unflinching"],"items":["Hullbreaker","Bloodthirster","Infinity Edge","Berserker's Greaves"],"summoners":["Flash","Teleport"]}},
+    "TwistedFate":  {"MID":{"runes":["First Strike","Magical Footwear","Biscuit Delivery","Cosmic Insight","Manaflow Band","Transcendence"],"items":["Lich Bane","Shadowflame","Rabadon's Deathcap","Sorcerer's Shoes"],"summoners":["Flash","Teleport"]}},
+    "Twitch":       {"BOT":{"runes":["Hail of Blades","Sudden Impact","Eyeball Collection","Treasure Hunter","Manaflow Band","Cosmic Insight"],"items":["Kraken Slayer","Runaan's Hurricane","Infinity Edge","Berserker's Greaves"],"summoners":["Flash","Heal"]}},
+    "Udyr":         {"JUNGLE":{"runes":["Conqueror","Triumph","Legend: Tenacity","Last Stand","Bone Plating","Unflinching"],"items":["Stridebreaker","Trinity Force","Sterak's Gage","Mercury's Treads"],"summoners":["Flash","Smite"]}},
+    "Urgot":        {"TOP":{"runes":["Conqueror","Triumph","Legend: Tenacity","Last Stand","Bone Plating","Unflinching"],"items":["Black Cleaver","Sundered Sky","Death's Dance","Plated Steelcaps"],"summoners":["Flash","Teleport"]}},
+    "Varus":        {"BOT":{"runes":["Press the Attack","Triumph","Legend: Alacrity","Coup de Grace","Cheap Shot","Treasure Hunter"],"items":["Kraken Slayer","Runaan's Hurricane","Infinity Edge","Berserker's Greaves"],"summoners":["Flash","Heal"]}},
+    "Vayne":        {"TOP":{"runes":["Press the Attack","Triumph","Legend: Alacrity","Coup de Grace","Bone Plating","Overgrowth"],"items":["Blade of the Ruined King","Wit's End","Guinsoo's Rageblade","Berserker's Greaves"],"summoners":["Flash","Teleport"]},"BOT":{"runes":["Lethal Tempo","Triumph","Legend: Alacrity","Coup de Grace","Bone Plating","Overgrowth"],"items":["Blade of the Ruined King","Runaan's Hurricane","Infinity Edge","Berserker's Greaves"],"summoners":["Flash","Heal"]}},
+    "Veigar":       {"MID":{"runes":["Arcane Comet","Manaflow Band","Transcendence","Scorch","Cheap Shot","Ultimate Hunter"],"items":["Rod of Ages","Rabadon's Deathcap","Shadowflame","Sorcerer's Shoes"],"summoners":["Flash","Teleport"]}},
+    "Velkoz":       {"MID":{"runes":["Arcane Comet","Manaflow Band","Transcendence","Scorch","Cheap Shot","Cosmic Insight"],"items":["Liandry's Anguish","Rylai's Crystal Scepter","Rabadon's Deathcap","Sorcerer's Shoes"],"summoners":["Flash","Teleport"]},"SUPPORT":{"runes":["Arcane Comet","Manaflow Band","Transcendence","Scorch","Cheap Shot","Cosmic Insight"],"items":["Liandry's Anguish","Rylai's Crystal Scepter","Rabadon's Deathcap","Sorcerer's Shoes"],"summoners":["Flash","Ignite"]}},
+    "Vex":          {"MID":{"runes":["Arcane Comet","Manaflow Band","Transcendence","Scorch","Cheap Shot","Ultimate Hunter"],"items":["Ludens Companion","Shadowflame","Rabadon's Deathcap","Sorcerer's Shoes"],"summoners":["Flash","Teleport"]}},
+    "Vi":           {"JUNGLE":{"runes":["Conqueror","Triumph","Legend: Tenacity","Last Stand","Second Wind","Unflinching"],"items":["Eclipse","Sundered Sky","Black Cleaver","Mercury's Treads"],"summoners":["Flash","Smite"]}},
+    "Viego":        {"JUNGLE":{"runes":["Conqueror","Triumph","Legend: Alacrity","Last Stand","Second Wind","Unflinching"],"items":["Kraken Slayer","Blade of the Ruined King","Sundered Sky","Plated Steelcaps"],"summoners":["Flash","Smite"]}},
+    "Viktor":       {"MID":{"runes":["Phase Rush","Manaflow Band","Transcendence","Scorch","Biscuit Delivery","Cosmic Insight"],"items":["Liandry's Anguish","Rylai's Crystal Scepter","Rabadon's Deathcap","Sorcerer's Shoes"],"summoners":["Flash","Teleport"]}},
+    "Vladimir":     {"TOP":{"runes":["Phase Rush","Manaflow Band","Transcendence","Scorch","Bone Plating","Unflinching"],"items":["Riftmaker","Rylai's Crystal Scepter","Rabadon's Deathcap","Sorcerer's Shoes"],"summoners":["Flash","Teleport"]},"MID":{"runes":["Phase Rush","Manaflow Band","Transcendence","Scorch","Bone Plating","Unflinching"],"items":["Riftmaker","Rylai's Crystal Scepter","Rabadon's Deathcap","Sorcerer's Shoes"],"summoners":["Flash","Teleport"]}},
+    "Volibear":     {"TOP":{"runes":["Conqueror","Triumph","Legend: Tenacity","Last Stand","Bone Plating","Unflinching"],"items":["Sundered Sky","Trinity Force","Sterak's Gage","Plated Steelcaps"],"summoners":["Flash","Teleport"]},"JUNGLE":{"runes":["Conqueror","Triumph","Legend: Tenacity","Last Stand","Bone Plating","Unflinching"],"items":["Sundered Sky","Trinity Force","Sterak's Gage","Mercury's Treads"],"summoners":["Flash","Smite"]}},
+    "Warwick":      {"JUNGLE":{"runes":["Conqueror","Triumph","Legend: Tenacity","Last Stand","Second Wind","Unflinching"],"items":["Stridebreaker","Sundered Sky","Sterak's Gage","Mercury's Treads"],"summoners":["Flash","Smite"]}},
+    "Xayah":        {"BOT":{"runes":["Lethal Tempo","Triumph","Legend: Alacrity","Coup de Grace","Cheap Shot","Treasure Hunter"],"items":["The Collector","Runaan's Hurricane","Infinity Edge","Berserker's Greaves"],"summoners":["Flash","Heal"]}},
+    "Xerath":       {"MID":{"runes":["Arcane Comet","Manaflow Band","Transcendence","Scorch","Biscuit Delivery","Cosmic Insight"],"items":["Liandry's Anguish","Malignance","Rabadon's Deathcap","Sorcerer's Shoes"],"summoners":["Flash","Teleport"]},"SUPPORT":{"runes":["Arcane Comet","Manaflow Band","Transcendence","Scorch","Biscuit Delivery","Cosmic Insight"],"items":["Liandry's Anguish","Malignance","Rabadon's Deathcap","Sorcerer's Shoes"],"summoners":["Flash","Ignite"]}},
+    "XinZhao":      {"JUNGLE":{"runes":["Conqueror","Triumph","Legend: Alacrity","Last Stand","Bone Plating","Unflinching"],"items":["Kraken Slayer","Sundered Sky","Sterak's Gage","Mercury's Treads"],"summoners":["Flash","Smite"]}},
+    "Yasuo":        {"MID":{"runes":["Lethal Tempo","Triumph","Legend: Alacrity","Last Stand","Bone Plating","Unflinching"],"items":["Immortal Shieldbow","Infinity Edge","Bloodthirster","Berserker's Greaves"],"summoners":["Flash","Ignite"]},"TOP":{"runes":["Lethal Tempo","Triumph","Legend: Alacrity","Last Stand","Bone Plating","Unflinching"],"items":["Immortal Shieldbow","Infinity Edge","Bloodthirster","Berserker's Greaves"],"summoners":["Flash","Teleport"]}},
+    "Yone":         {"MID":{"runes":["Conqueror","Triumph","Legend: Alacrity","Last Stand","Second Wind","Unflinching"],"items":["Immortal Shieldbow","Infinity Edge","Bloodthirster","Berserker's Greaves"],"summoners":["Flash","Ignite"]},"TOP":{"runes":["Conqueror","Triumph","Legend: Alacrity","Last Stand","Second Wind","Unflinching"],"items":["Immortal Shieldbow","Infinity Edge","Bloodthirster","Berserker's Greaves"],"summoners":["Flash","Teleport"]}},
+    "Yorick":       {"TOP":{"runes":["Conqueror","Triumph","Legend: Tenacity","Last Stand","Demolish","Unflinching"],"items":["Trinity Force","Sundered Sky","Sterak's Gage","Plated Steelcaps"],"summoners":["Flash","Teleport"]}},
+    "Yuumi":        {"SUPPORT":{"runes":["Summon Aery","Manaflow Band","Transcendence","Scorch","Biscuit Delivery","Cosmic Insight"],"items":["Moonstone Renewer","Ardent Censer","Staff of Flowing Water","Ionian Boots of Lucidity"],"summoners":["Flash","Heal"]}},
+    "Zac":          {"JUNGLE":{"runes":["Aftershock","Font of Life","Conditioning","Revitalize","Manaflow Band","Cosmic Insight"],"items":["Sunfire Aegis","Knight's Vow","Thornmail","Mercury's Treads"],"summoners":["Flash","Smite"]}},
+    "Zed":          {"MID":{"runes":["Electrocute","Sudden Impact","Eyeball Collection","Ultimate Hunter","Triumph","Coup de Grace"],"items":["Eclipse","Profane Hydra","Edge of Night","Ionian Boots of Lucidity"],"summoners":["Flash","Ignite"]}},
+    "Zeri":         {"BOT":{"runes":["Lethal Tempo","Triumph","Legend: Alacrity","Coup de Grace","Cheap Shot","Treasure Hunter"],"items":["Blade of the Ruined King","Trinity Force","Phantom Dancer","Berserker's Greaves"],"summoners":["Flash","Heal"]}},
+    "Ziggs":        {"MID":{"runes":["Arcane Comet","Manaflow Band","Transcendence","Scorch","Biscuit Delivery","Cosmic Insight"],"items":["Liandry's Anguish","Malignance","Rabadon's Deathcap","Sorcerer's Shoes"],"summoners":["Flash","Teleport"]},"BOT":{"runes":["Arcane Comet","Manaflow Band","Transcendence","Scorch","Cheap Shot","Cosmic Insight"],"items":["Liandry's Anguish","Malignance","Rabadon's Deathcap","Sorcerer's Shoes"],"summoners":["Flash","Heal"]}},
+    "Zilean":       {"MID":{"runes":["Phase Rush","Manaflow Band","Transcendence","Scorch","Biscuit Delivery","Cosmic Insight"],"items":["Rod of Ages","Rylai's Crystal Scepter","Rabadon's Deathcap","Ionian Boots of Lucidity"],"summoners":["Flash","Teleport"]},"SUPPORT":{"runes":["Glacial Augment","Magical Footwear","Biscuit Delivery","Cosmic Insight","Manaflow Band","Transcendence"],"items":["Moonstone Renewer","Mikael's Blessing","Ardent Censer","Ionian Boots of Lucidity"],"summoners":["Flash","Exhaust"]}},
+    "Zoe":          {"MID":{"runes":["Electrocute","Sudden Impact","Eyeball Collection","Ultimate Hunter","Manaflow Band","Transcendence"],"items":["Hextech Rocketbelt","Shadowflame","Rabadon's Deathcap","Sorcerer's Shoes"],"summoners":["Flash","Ignite"]}},
+    "Zyra":         {"SUPPORT":{"runes":["Arcane Comet","Manaflow Band","Transcendence","Scorch","Cheap Shot","Ultimate Hunter"],"items":["Liandry's Anguish","Rylai's Crystal Scepter","Sorcerer's Shoes","Banshee's Veil"],"summoners":["Flash","Ignite"]}},
+    "Yunara":       {"BOT":{"runes":["Press the Attack","Triumph","Legend: Bloodline","Coup de Grace","Cheap Shot","Ultimate Hunter"],"items":["Kraken Slayer","Berserker's Greaves","Phantom Dancer","Infinity Edge"],"summoners":["Flash","Heal"]}},
+    "Zaahen":       {"MID":{"runes":["Arcane Comet","Manaflow Band","Transcendence","Scorch","Cheap Shot","Ultimate Hunter"],"items":["Luden's Companion","Sorcerer's Shoes","Shadowflame","Rabadon's Deathcap"],"summoners":["Flash","Teleport"]}}
   }
 }

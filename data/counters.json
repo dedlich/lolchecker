@@ -1,320 +1,177 @@
 {
   "patch": null,
   "matrix": {
-    "Darius": {
-      "TOP": [
-        {"champion": "Vayne", "score": 8.0, "tier": "S", "notes": {"lane_phase": "Kite with Q + condemn into wall, never trade auto-for-auto", "trade_pattern": "Stay max range, %HP damage shreds him"}},
-        {"champion": "Quinn", "score": 7.5, "tier": "S", "notes": {"lane_phase": "Vault E to escape pull, poke with W passive", "trade_pattern": "Auto-Q-auto then disengage"}},
-        {"champion": "Gnar", "score": 6.5, "tier": "A", "notes": {"lane_phase": "Stay mini Gnar form, kite with Q", "spike": "Lvl 6 mega-Gnar all-in"}}
-      ]
-    },
-    "KSante": {
-      "TOP": [
-        {"champion": "Vayne", "score": 7.5, "tier": "S", "notes": {"lane_phase": "True damage shreds his shields, kite the W", "items": ["Blade of the Ruined King"]}},
-        {"champion": "Yorick", "score": 7.0, "tier": "S", "notes": {"lane_phase": "Cage him with W, ghouls do steady damage", "spike": "Mythic + Tabis"}},
-        {"champion": "Kennen", "score": 6.5, "tier": "A", "notes": {"trade_pattern": "Q poke from range, never get caught in ult"}}
-      ]
-    },
-    "Garen": {
-      "TOP": [
-        {"champion": "Darius", "score": 8.0, "tier": "S", "notes": {"lane_phase": "Q at level 1, all-in level 6 with R reset potential", "items": ["Black Cleaver", "Plated Steelcaps"]}},
-        {"champion": "Vayne", "score": 6.5, "tier": "A", "notes": {"lane_phase": "Kite with Q + condemn into wall", "items": ["Blade of the Ruined King"]}},
-        {"champion": "Teemo", "score": 6.5, "tier": "A", "notes": {"lane_phase": "Blind Q on his Q, poke with autos"}}
-      ]
-    },
-    "Sett": {
-      "TOP": [
-        {"champion": "Vayne", "score": 7.5, "tier": "S", "notes": {"lane_phase": "Kite the W stun, condemn into wall"}},
-        {"champion": "Gangplank", "score": 7.0, "tier": "S", "notes": {"lane_phase": "Poke with Q, avoid melee range", "spike": "Trinity Force"}},
-        {"champion": "Quinn", "score": 6.5, "tier": "A", "notes": {"lane_phase": "Vault to dodge W, poke E + autos"}}
-      ]
-    },
-    "Camille": {
-      "TOP": [
-        {"champion": "Tahm Kench", "score": 7.0, "tier": "S", "notes": {"lane_phase": "Devour to dodge ult, Q stack passive"}},
-        {"champion": "Garen", "score": 6.5, "tier": "A", "notes": {"trade_pattern": "Spin out of E, walk down with W speed"}},
-        {"champion": "Mordekaiser", "score": 6.5, "tier": "A", "notes": {"spike": "Lvl 6 R deletes her squishy mid-game"}}
-      ]
-    },
-    "Mordekaiser": {
-      "TOP": [
-        {"champion": "Tryndamere", "score": 7.5, "tier": "S", "notes": {"lane_phase": "Kite Q with E, ult negates his ult damage", "items": ["Plated Steelcaps"]}},
-        {"champion": "Ornn", "score": 7.0, "tier": "S", "notes": {"trade_pattern": "Brittle empowered autos break his shield"}},
-        {"champion": "Malphite", "score": 6.5, "tier": "A", "notes": {"lane_phase": "Passive shield blocks Q, armor stack"}}
-      ]
-    },
-    "Hecarim": {
-      "JUNGLE": [
-        {"champion": "Maokai", "score": 7.5, "tier": "S", "notes": {"lane_phase": "Saplings clear vision, W roots through his speed"}},
-        {"champion": "Sejuani", "score": 7.0, "tier": "S", "notes": {"trade_pattern": "Frost passive procs on his rampage"}},
-        {"champion": "Lillia", "score": 6.5, "tier": "A", "notes": {"spike": "Lvl 6 sleep then full combo"}}
-      ]
-    },
-    "Viego": {
-      "JUNGLE": [
-        {"champion": "Olaf", "score": 7.5, "tier": "S", "notes": {"trade_pattern": "True damage R ignores his passive heal"}},
-        {"champion": "Master Yi", "score": 7.0, "tier": "S", "notes": {"spike": "Lvl 6 R + Wits End vs his ult"}},
-        {"champion": "Warwick", "score": 6.5, "tier": "A", "notes": {"trade_pattern": "Q heal sustains through his W"}}
-      ]
-    },
-    "LeeSin": {
-      "JUNGLE": [
-        {"champion": "Nautilus", "score": 7.0, "tier": "S", "notes": {"lane_phase": "Q hook locks him out of mobility"}},
-        {"champion": "Skarner", "score": 7.0, "tier": "S", "notes": {"trade_pattern": "R interrupts his insec, shield block Q"}},
-        {"champion": "Diana", "score": 6.5, "tier": "A", "notes": {"spike": "Lvl 6 R pull when he Q-engages"}}
-      ]
-    },
-    "MasterYi": {
-      "JUNGLE": [
-        {"champion": "Lillia", "score": 7.5, "tier": "S", "notes": {"trade_pattern": "Sleep stops alpha-strike, kite with W speed"}},
-        {"champion": "Pantheon", "score": 7.0, "tier": "S", "notes": {"trade_pattern": "Shield blocks autos, W stun cancels Q"}},
-        {"champion": "Rammus", "score": 7.0, "tier": "S", "notes": {"items": ["Thornmail", "Bramble Vest"]}}
-      ]
-    },
-    "Khazix": {
-      "JUNGLE": [
-        {"champion": "Kindred", "score": 7.0, "tier": "S", "notes": {"trade_pattern": "Ult denies his execute window, kite with Q"}},
-        {"champion": "Vi", "score": 6.5, "tier": "A", "notes": {"trade_pattern": "Q + R hard CC his evolution windows"}},
-        {"champion": "Warwick", "score": 6.5, "tier": "A", "notes": {"lane_phase": "Q sustain through his isolation burst"}}
-      ]
-    },
-    "Nidalee": {
-      "JUNGLE": [
-        {"champion": "Skarner", "score": 7.0, "tier": "S", "notes": {"trade_pattern": "Shield block spear, R chain when she dives"}},
-        {"champion": "Nautilus", "score": 6.5, "tier": "A", "notes": {"trade_pattern": "Q hook when she lands cougar W"}},
-        {"champion": "Vi", "score": 6.5, "tier": "A", "notes": {"trade_pattern": "Q gap-close her squishy form"}}
-      ]
-    },
-    "Yasuo": {
-      "MID": [
-        {"champion": "Annie", "score": 8.0, "tier": "S+", "notes": {"lane_phase": "Stack passive, point-blank R deletes him through wind wall", "items": ["Sorcerer's Shoes", "Liandry's Anguish"]}},
-        {"champion": "Malzahar", "score": 7.5, "tier": "S", "notes": {"trade_pattern": "R suppresses through Wind Wall — uncounterable lockdown"}},
-        {"champion": "Pantheon", "score": 7.0, "tier": "S", "notes": {"lane_phase": "Shield blocks his Q, W stun cancels dash"}}
-      ]
-    },
-    "Zed": {
-      "MID": [
-        {"champion": "Lissandra", "score": 8.0, "tier": "S+", "notes": {"trade_pattern": "Self-R freezes you when his R lands, full combo on him"}},
-        {"champion": "Kassadin", "score": 7.5, "tier": "S", "notes": {"spike": "Lvl 6 R out of his W shadow", "items": ["Magic Resist boots"]}},
-        {"champion": "Malzahar", "score": 7.0, "tier": "S", "notes": {"trade_pattern": "E pushes wave, R suppresses his ult-dive"}}
-      ]
-    },
-    "Akali": {
-      "MID": [
-        {"champion": "Pantheon", "score": 7.5, "tier": "S", "notes": {"lane_phase": "Stun cancels her mobility, W blocks her Q"}},
-        {"champion": "Galio", "score": 7.0, "tier": "S", "notes": {"trade_pattern": "Magic shield negates her burst, R locks her down"}},
-        {"champion": "Diana", "score": 6.5, "tier": "A", "notes": {"spike": "Lvl 6 pull her out of shroud"}}
-      ]
-    },
-    "Annie": {
-      "MID": [
-        {"champion": "Akshan", "score": 7.0, "tier": "S", "notes": {"trade_pattern": "Range advantage, E to dodge stun"}},
-        {"champion": "Talon", "score": 7.0, "tier": "S", "notes": {"spike": "Lvl 6 jump in with R when stun is down"}},
-        {"champion": "Yone", "score": 6.5, "tier": "A", "notes": {"trade_pattern": "Q3 knock-up through her stun"}}
-      ]
-    },
-    "Ahri": {
-      "MID": [
-        {"champion": "Kassadin", "score": 7.5, "tier": "S", "notes": {"spike": "Lvl 6 R out of her charm range", "items": ["MR boots"]}},
-        {"champion": "Fizz", "score": 7.0, "tier": "S", "notes": {"trade_pattern": "E avoids her charm, all-in lvl 6"}},
-        {"champion": "Yasuo", "score": 6.5, "tier": "A", "notes": {"trade_pattern": "Wind wall blocks charm, dash to her after"}}
-      ]
-    },
-    "Syndra": {
-      "MID": [
-        {"champion": "Yasuo", "score": 7.0, "tier": "S", "notes": {"trade_pattern": "Wind wall blocks E + R, dash to her"}},
-        {"champion": "Yone", "score": 6.5, "tier": "A", "notes": {"trade_pattern": "Wind wall + dash through balls"}},
-        {"champion": "Akali", "score": 6.5, "tier": "A", "notes": {"spike": "Lvl 6 shroud denies her R targeting"}}
-      ]
-    },
-    "Caitlyn": {
-      "BOT": [
-        {"champion": "Draven", "score": 7.5, "tier": "S", "notes": {"trade_pattern": "Out-damages her in lane with Q stack"}},
-        {"champion": "Tristana", "score": 7.0, "tier": "S", "notes": {"spike": "Lvl 9+ outranges her", "items": ["Bork", "Berserker's"]}},
-        {"champion": "Lucian", "score": 6.5, "tier": "A", "notes": {"trade_pattern": "Dash + double-shot beats her trade pattern"}}
-      ]
-    },
-    "Jinx": {
-      "BOT": [
-        {"champion": "Draven", "score": 7.5, "tier": "S", "notes": {"lane_phase": "Out-trade pre-6 hard, snowball with axes"}},
-        {"champion": "Caitlyn", "score": 7.0, "tier": "S", "notes": {"trade_pattern": "Range advantage, headshot poke"}},
-        {"champion": "Lucian", "score": 6.5, "tier": "A", "notes": {"trade_pattern": "All-in before her range spikes"}}
-      ]
-    },
-    "MissFortune": {
-      "BOT": [
-        {"champion": "Caitlyn", "score": 7.0, "tier": "S", "notes": {"trade_pattern": "Out-range her autos, headshot poke"}},
-        {"champion": "Draven", "score": 6.5, "tier": "A", "notes": {"trade_pattern": "Q damage exceeds her trade"}},
-        {"champion": "Ezreal", "score": 6.0, "tier": "A", "notes": {"lane_phase": "Q poke from safe range"}}
-      ]
-    },
-    "Ezreal": {
-      "BOT": [
-        {"champion": "Draven", "score": 7.5, "tier": "S", "notes": {"lane_phase": "All-in lvl 2-3 before he scales", "trade_pattern": "Out-damages him pre-Triforce"}},
-        {"champion": "Kalista", "score": 7.0, "tier": "S", "notes": {"trade_pattern": "Skirmish kite, E execute when low"}},
-        {"champion": "Lucian", "score": 7.0, "tier": "S", "notes": {"lane_phase": "Out-trades early, dash dodges his Q"}}
-      ]
-    },
-    "Vayne": {
-      "BOT": [
-        {"champion": "Draven", "score": 7.5, "tier": "S", "notes": {"lane_phase": "Punish hard pre-6, kill her before items"}},
-        {"champion": "Caitlyn", "score": 7.5, "tier": "S", "notes": {"trade_pattern": "Range advantage, never let her tumble in", "items": ["Berserker's Greaves"]}},
-        {"champion": "Tristana", "score": 6.5, "tier": "A", "notes": {"spike": "Lvl 9 outranges her, W away from condemn"}}
-      ]
-    },
-    "KaiSa": {
-      "BOT": [
-        {"champion": "Caitlyn", "score": 7.0, "tier": "S", "notes": {"trade_pattern": "Range and traps deny her safe farm"}},
-        {"champion": "Draven", "score": 6.5, "tier": "A", "notes": {"lane_phase": "Out-trade pre-6 before her ult range"}},
-        {"champion": "Vayne", "score": 6.0, "tier": "A", "notes": {"spike": "Late game tumble + true damage out-DPS"}}
-      ]
-    },
-    "Lulu": {
-      "SUPPORT": [
-        {"champion": "Pyke", "score": 7.0, "tier": "S", "notes": {"trade_pattern": "Stealth around her vision, Q + E execute"}},
-        {"champion": "Blitzcrank", "score": 6.5, "tier": "A", "notes": {"trade_pattern": "Q hook when she's poking, kill ADC"}},
-        {"champion": "Leona", "score": 6.5, "tier": "A", "notes": {"trade_pattern": "Engage stun chain through her shield"}}
-      ]
-    },
-    "Nautilus": {
-      "SUPPORT": [
-        {"champion": "Janna", "score": 7.0, "tier": "S", "notes": {"trade_pattern": "W shield + Q knock-up disengage every all-in"}},
-        {"champion": "Lulu", "score": 6.5, "tier": "A", "notes": {"trade_pattern": "Polymorph denies his hook follow-up"}},
-        {"champion": "Morgana", "score": 6.5, "tier": "A", "notes": {"trade_pattern": "Black Shield blocks every CC"}}
-      ]
-    },
-    "Thresh": {
-      "SUPPORT": [
-        {"champion": "Morgana", "score": 7.0, "tier": "S", "notes": {"trade_pattern": "Black Shield blocks hook + flay"}},
-        {"champion": "Janna", "score": 6.5, "tier": "A", "notes": {"trade_pattern": "Knock-up cancels his lantern engage"}},
-        {"champion": "Nami", "score": 6.0, "tier": "A", "notes": {"trade_pattern": "E sustain through his poke"}}
-      ]
-    },
-    "Soraka": {
-      "SUPPORT": [
-        {"champion": "Pyke", "score": 7.5, "tier": "S", "notes": {"trade_pattern": "Stealth + execute kills her instantly"}},
-        {"champion": "Blitzcrank", "score": 7.0, "tier": "S", "notes": {"trade_pattern": "Q hook removes her from lane, dive ADC"}},
-        {"champion": "Leona", "score": 6.5, "tier": "A", "notes": {"trade_pattern": "All-in ignores her heal output"}}
-      ]
-    },
-    "Leona": {
-      "SUPPORT": [
-        {"champion": "Morgana", "score": 7.5, "tier": "S", "notes": {"trade_pattern": "Black Shield blocks Q + R + E entirely"}},
-        {"champion": "Janna", "score": 6.5, "tier": "A", "notes": {"trade_pattern": "Disengage every E engage"}},
-        {"champion": "Lulu", "score": 6.5, "tier": "A", "notes": {"trade_pattern": "Polymorph cancels her Q stun"}}
-      ]
-    },
-    "Pyke": {
-      "SUPPORT": [
-        {"champion": "Janna", "score": 7.0, "tier": "S", "notes": {"trade_pattern": "Tornado cancels Q pull mid-cast"}},
-        {"champion": "Karma", "score": 6.5, "tier": "A", "notes": {"trade_pattern": "RW shield blocks his combo, Q poke"}},
-        {"champion": "Soraka", "score": 6.0, "tier": "A", "notes": {"trade_pattern": "Heal sustain through his poke"}}
-      ]
-    },
-    "Aatrox": {
-      "TOP": [
-        {"champion": "Fiora", "score": 7.5, "tier": "S", "notes": {"lane_phase": "Parry his Q3, riposte the slow", "items": ["Bork"]}},
-        {"champion": "Renekton", "score": 7.0, "tier": "S", "notes": {"lane_phase": "Stun cancels Q, all-in lvl 3"}},
-        {"champion": "Tryndamere", "score": 6.5, "tier": "A", "notes": {"trade_pattern": "Crit through his sustain, ult negates his ult"}}
-      ]
-    },
-    "Fiora": {
-      "TOP": [
-        {"champion": "Jax", "score": 7.0, "tier": "S", "notes": {"trade_pattern": "Counter-strike dodges her Q-W", "spike": "Lvl 6"}},
-        {"champion": "Camille", "score": 6.5, "tier": "A", "notes": {"trade_pattern": "Hookshot disengages parry"}},
-        {"champion": "Kennen", "score": 6.5, "tier": "A", "notes": {"lane_phase": "Range advantage, kite with W passive stuns"}}
-      ]
-    },
-    "Renekton": {
-      "TOP": [
-        {"champion": "Tahm Kench", "score": 7.5, "tier": "S", "notes": {"trade_pattern": "Devour his stun, slap stack passive"}},
-        {"champion": "Vladimir", "score": 7.0, "tier": "S", "notes": {"spike": "Lvl 6 R", "trade_pattern": "Pool dodges his W stun"}},
-        {"champion": "Garen", "score": 6.0, "tier": "A", "notes": {"trade_pattern": "Spin out of his stun-W, all-in lvl 3"}}
-      ]
-    },
-    "Gnar": {
-      "TOP": [
-        {"champion": "Renekton", "score": 7.0, "tier": "S", "notes": {"lane_phase": "All-in pre-mega Gnar"}},
-        {"champion": "Darius", "score": 6.5, "tier": "A", "notes": {"trade_pattern": "Pull him in, ignore mini Gnar kite"}},
-        {"champion": "Jax", "score": 6.5, "tier": "A", "notes": {"spike": "Lvl 6 outduels both forms"}}
-      ]
-    },
-    "Diana": {
-      "JUNGLE": [
-        {"champion": "Olaf", "score": 7.5, "tier": "S", "notes": {"trade_pattern": "True damage R ignores her shield"}},
-        {"champion": "Skarner", "score": 7.0, "tier": "S", "notes": {"trade_pattern": "R interrupts her R-pull"}},
-        {"champion": "Pantheon", "score": 6.5, "tier": "A", "notes": {"trade_pattern": "Shield blocks Q, W stun cancels engage"}}
-      ]
-    },
-    "Karthus": {
-      "JUNGLE": [
-        {"champion": "Skarner", "score": 7.5, "tier": "S", "notes": {"trade_pattern": "Early invade before defile", "items": ["Mercury's Treads"]}},
-        {"champion": "Lee Sin", "score": 7.0, "tier": "S", "notes": {"lane_phase": "Bully early jungle camps"}},
-        {"champion": "Kindred", "score": 6.5, "tier": "A", "notes": {"trade_pattern": "Ult denies his execute window"}}
-      ]
-    },
-    "Yone": {
-      "MID": [
-        {"champion": "Pantheon", "score": 7.5, "tier": "S", "notes": {"lane_phase": "Shield blocks his Q-Q, W stun cancels dash"}},
-        {"champion": "Annie", "score": 7.0, "tier": "S", "notes": {"trade_pattern": "Stun then full combo before Q3"}},
-        {"champion": "Galio", "score": 6.5, "tier": "A", "notes": {"trade_pattern": "Magic shield negates his ult burst"}}
-      ]
-    },
-    "Akali": {
-      "MID": [
-        {"champion": "Lissandra", "score": 7.5, "tier": "S", "notes": {"trade_pattern": "Self-R when she ults you, full combo"}},
-        {"champion": "Pantheon", "score": 7.0, "tier": "S", "notes": {"lane_phase": "W stun cancels mobility, shield blocks Q"}},
-        {"champion": "Galio", "score": 6.5, "tier": "A", "notes": {"trade_pattern": "Magic shield + R lockdown her assassination"}}
-      ]
-    },
-    "Veigar": {
-      "MID": [
-        {"champion": "Yasuo", "score": 7.5, "tier": "S", "notes": {"trade_pattern": "Wind wall blocks his Q + R", "items": ["Magic Resist boots"]}},
-        {"champion": "Fizz", "score": 7.0, "tier": "S", "notes": {"trade_pattern": "E dodges his cage, all-in lvl 6"}},
-        {"champion": "Yone", "score": 6.5, "tier": "A", "notes": {"trade_pattern": "Wind wall + dashes through cage"}}
-      ]
-    },
-    "Lucian": {
-      "BOT": [
-        {"champion": "Caitlyn", "score": 7.5, "tier": "S", "notes": {"trade_pattern": "Range advantage + traps deny his dash all-in", "items": ["Berserker's Greaves"]}},
-        {"champion": "Vayne", "score": 6.5, "tier": "A", "notes": {"spike": "Lvl 9+ tumble out-trades him"}},
-        {"champion": "Draven", "score": 6.5, "tier": "A", "notes": {"lane_phase": "Q axes out-damage his trade pattern"}}
-      ]
-    },
-    "Tristana": {
-      "BOT": [
-        {"champion": "Caitlyn", "score": 7.0, "tier": "S", "notes": {"lane_phase": "Range advantage pre-9, trap her jump"}},
-        {"champion": "Draven", "score": 7.0, "tier": "S", "notes": {"trade_pattern": "Out-damage early, kill before lvl 9 spike"}},
-        {"champion": "Jhin", "score": 6.5, "tier": "A", "notes": {"spike": "Lvl 6 R + W root after she jumps in"}}
-      ]
-    },
-    "Xayah": {
-      "BOT": [
-        {"champion": "Draven", "score": 7.0, "tier": "S", "notes": {"lane_phase": "Out-damage early, all-in pre-feathers"}},
-        {"champion": "Caitlyn", "score": 6.5, "tier": "A", "notes": {"trade_pattern": "Range advantage, headshot her engage"}},
-        {"champion": "Lucian", "score": 6.5, "tier": "A", "notes": {"trade_pattern": "All-in dash + double-shot pre-6"}}
-      ]
-    },
-    "Senna": {
-      "SUPPORT": [
-        {"champion": "Pyke", "score": 7.0, "tier": "S", "notes": {"trade_pattern": "Stealth + Q hook bypass her root setup"}},
-        {"champion": "Blitzcrank", "score": 6.5, "tier": "A", "notes": {"trade_pattern": "Q hook removes her from lane, dive ADC"}},
-        {"champion": "Leona", "score": 6.5, "tier": "A", "notes": {"trade_pattern": "Engage stun denies her Q safe poke"}}
-      ]
-    },
-    "Janna": {
-      "SUPPORT": [
-        {"champion": "Pyke", "score": 7.0, "tier": "S", "notes": {"trade_pattern": "Stealth bypasses her tornado knock-up"}},
-        {"champion": "Leona", "score": 6.5, "tier": "A", "notes": {"trade_pattern": "Hard CC chain through her shield"}},
-        {"champion": "Nautilus", "score": 6.0, "tier": "A", "notes": {"trade_pattern": "Q hook locks her down, dive ADC"}}
-      ]
-    },
-    "Morgana": {
-      "SUPPORT": [
-        {"champion": "Pyke", "score": 7.0, "tier": "S", "notes": {"trade_pattern": "Stealth around her vision, Q execute"}},
-        {"champion": "Blitzcrank", "score": 6.5, "tier": "A", "notes": {"trade_pattern": "Q hook before she Q-stuns"}},
-        {"champion": "Brand", "score": 6.0, "tier": "A", "notes": {"trade_pattern": "W poke from range, R AoE on fights"}}
-      ]
-    }
+    "Aatrox":       {"TOP":[{"champion":"Fiora", "score":7.5, "tier":"S"}, {"champion":"Renekton", "score":7.0, "tier":"S"}, {"champion":"Tryndamere", "score":6.5, "tier":"A"}]},
+    "Ahri":         {"MID":[{"champion":"Kassadin", "score":7.5, "tier":"S"}, {"champion":"Fizz", "score":7.0, "tier":"S"}, {"champion":"Yasuo", "score":6.5, "tier":"A"}]},
+    "Akali":        {"MID":[{"champion":"Lissandra", "score":7.5, "tier":"S"}, {"champion":"Pantheon", "score":7.0, "tier":"S"}, {"champion":"Galio", "score":6.5, "tier":"A"}], "TOP":[{"champion":"Pantheon", "score":7.5, "tier":"S"}, {"champion":"Renekton", "score":7.0, "tier":"S"}, {"champion":"Mordekaiser", "score":6.5, "tier":"A"}]},
+    "Akshan":       {"MID":[{"champion":"Annie", "score":7.0, "tier":"S"}, {"champion":"Pantheon", "score":6.5, "tier":"A"}, {"champion":"Lissandra", "score":6.0, "tier":"A"}]},
+    "Alistar":      {"SUPPORT":[{"champion":"Janna", "score":6.5, "tier":"A"}, {"champion":"Morgana", "score":6.5, "tier":"A"}, {"champion":"Pyke", "score":6.0, "tier":"A"}]},
+    "Ambessa":      {"TOP":[{"champion":"Tahm Kench", "score":7.0, "tier":"S"}, {"champion":"Mordekaiser", "score":6.5, "tier":"A"}, {"champion":"Garen", "score":6.0, "tier":"A"}]},
+    "Amumu":        {"JUNGLE":[{"champion":"Pantheon", "score":6.5, "tier":"A"}, {"champion":"Master Yi", "score":6.5, "tier":"A"}, {"champion":"Karthus", "score":6.0, "tier":"A"}]},
+    "Anivia":       {"MID":[{"champion":"Yasuo", "score":7.0, "tier":"S"}, {"champion":"Talon", "score":6.5, "tier":"A"}, {"champion":"Akali", "score":6.0, "tier":"A"}]},
+    "Annie":        {"MID":[{"champion":"Akshan", "score":7.0, "tier":"S"}, {"champion":"Talon", "score":7.0, "tier":"S"}, {"champion":"Yone", "score":6.5, "tier":"A"}]},
+    "Aphelios":     {"BOT":[{"champion":"Caitlyn", "score":7.0, "tier":"S"}, {"champion":"Draven", "score":7.0, "tier":"S"}, {"champion":"Lucian", "score":6.5, "tier":"A"}]},
+    "Ashe":         {"BOT":[{"champion":"Draven", "score":7.0, "tier":"S"}, {"champion":"Lucian", "score":6.5, "tier":"A"}, {"champion":"Tristana", "score":6.5, "tier":"A"}]},
+    "AurelionSol":  {"MID":[{"champion":"Annie", "score":7.0, "tier":"S"}, {"champion":"Talon", "score":6.5, "tier":"A"}, {"champion":"Pantheon", "score":6.5, "tier":"A"}]},
+    "Aurora":       {"MID":[{"champion":"Annie", "score":6.5, "tier":"A"}, {"champion":"Pantheon", "score":6.5, "tier":"A"}, {"champion":"Akali", "score":6.0, "tier":"A"}]},
+    "Azir":         {"MID":[{"champion":"Yasuo", "score":7.0, "tier":"S"}, {"champion":"Akali", "score":7.0, "tier":"S"}, {"champion":"Talon", "score":6.5, "tier":"A"}]},
+    "Bard":         {"SUPPORT":[{"champion":"Pyke", "score":6.5, "tier":"A"}, {"champion":"Leona", "score":6.0, "tier":"A"}, {"champion":"Blitzcrank", "score":6.0, "tier":"A"}]},
+    "Belveth":      {"JUNGLE":[{"champion":"Skarner", "score":7.0, "tier":"S"}, {"champion":"Maokai", "score":6.5, "tier":"A"}, {"champion":"Sejuani", "score":6.5, "tier":"A"}]},
+    "Blitzcrank":   {"SUPPORT":[{"champion":"Janna", "score":7.0, "tier":"S"}, {"champion":"Morgana", "score":6.5, "tier":"A"}, {"champion":"Lulu", "score":6.0, "tier":"A"}]},
+    "Brand":        {"SUPPORT":[{"champion":"Janna", "score":6.5, "tier":"A"}, {"champion":"Morgana", "score":6.5, "tier":"A"}, {"champion":"Pyke", "score":6.0, "tier":"A"}]},
+    "Braum":        {"SUPPORT":[{"champion":"Pyke", "score":6.5, "tier":"A"}, {"champion":"Morgana", "score":6.5, "tier":"A"}, {"champion":"Lulu", "score":6.0, "tier":"A"}]},
+    "Briar":        {"JUNGLE":[{"champion":"Maokai", "score":7.0, "tier":"S"}, {"champion":"Lillia", "score":6.5, "tier":"A"}, {"champion":"Skarner", "score":6.0, "tier":"A"}]},
+    "Caitlyn":      {"BOT":[{"champion":"Draven", "score":7.5, "tier":"S"}, {"champion":"Tristana", "score":7.0, "tier":"S"}, {"champion":"Lucian", "score":6.5, "tier":"A"}]},
+    "Camille":      {"TOP":[{"champion":"Tahm Kench", "score":7.0, "tier":"S"}, {"champion":"Garen", "score":6.5, "tier":"A"}, {"champion":"Mordekaiser", "score":6.5, "tier":"A"}]},
+    "Cassiopeia":   {"MID":[{"champion":"Yasuo", "score":7.0, "tier":"S"}, {"champion":"Fizz", "score":6.5, "tier":"A"}, {"champion":"Pantheon", "score":6.0, "tier":"A"}]},
+    "Chogath":      {"TOP":[{"champion":"Quinn", "score":7.0, "tier":"S"}, {"champion":"Vayne", "score":6.5, "tier":"A"}, {"champion":"Tryndamere", "score":6.0, "tier":"A"}]},
+    "Corki":        {"MID":[{"champion":"Yasuo", "score":7.0, "tier":"S"}, {"champion":"Fizz", "score":6.5, "tier":"A"}, {"champion":"Annie", "score":6.5, "tier":"A"}]},
+    "Darius":       {"TOP":[{"champion":"Vayne", "score":8.0, "tier":"S+"}, {"champion":"Quinn", "score":7.5, "tier":"S"}, {"champion":"Gnar", "score":6.5, "tier":"A"}]},
+    "Diana":        {"JUNGLE":[{"champion":"Olaf", "score":7.5, "tier":"S"}, {"champion":"Skarner", "score":7.0, "tier":"S"}, {"champion":"Pantheon", "score":6.5, "tier":"A"}], "MID":[{"champion":"Pantheon", "score":7.0, "tier":"S"}, {"champion":"Galio", "score":6.5, "tier":"A"}, {"champion":"Lissandra", "score":6.0, "tier":"A"}]},
+    "DrMundo":      {"TOP":[{"champion":"Vayne", "score":7.5, "tier":"S"}, {"champion":"Fiora", "score":7.0, "tier":"S"}, {"champion":"Quinn", "score":6.5, "tier":"A"}]},
+    "Draven":       {"BOT":[{"champion":"Caitlyn", "score":6.5, "tier":"A"}, {"champion":"Vayne", "score":6.5, "tier":"A"}, {"champion":"Tristana", "score":6.0, "tier":"A"}]},
+    "Ekko":         {"JUNGLE":[{"champion":"Skarner", "score":7.0, "tier":"S"}, {"champion":"Pantheon", "score":6.5, "tier":"A"}, {"champion":"Nautilus", "score":6.5, "tier":"A"}], "MID":[{"champion":"Annie", "score":7.0, "tier":"S"}, {"champion":"Pantheon", "score":6.5, "tier":"A"}, {"champion":"Talon", "score":6.0, "tier":"A"}]},
+    "Elise":        {"JUNGLE":[{"champion":"Warwick", "score":7.0, "tier":"S"}, {"champion":"Olaf", "score":6.5, "tier":"A"}, {"champion":"Skarner", "score":6.0, "tier":"A"}]},
+    "Evelynn":      {"JUNGLE":[{"champion":"Lillia", "score":7.0, "tier":"S"}, {"champion":"Master Yi", "score":6.5, "tier":"A"}, {"champion":"Vi", "score":6.0, "tier":"A"}]},
+    "Ezreal":       {"BOT":[{"champion":"Draven", "score":7.5, "tier":"S"}, {"champion":"Kalista", "score":7.0, "tier":"S"}, {"champion":"Lucian", "score":7.0, "tier":"S"}]},
+    "Fiddlesticks": {"JUNGLE":[{"champion":"Pantheon", "score":7.0, "tier":"S"}, {"champion":"Lee Sin", "score":6.5, "tier":"A"}, {"champion":"Diana", "score":6.0, "tier":"A"}]},
+    "Fiora":        {"TOP":[{"champion":"Jax", "score":7.0, "tier":"S"}, {"champion":"Camille", "score":6.5, "tier":"A"}, {"champion":"Kennen", "score":6.5, "tier":"A"}]},
+    "Fizz":         {"MID":[{"champion":"Annie", "score":7.0, "tier":"S"}, {"champion":"Lissandra", "score":6.5, "tier":"A"}, {"champion":"Galio", "score":6.0, "tier":"A"}]},
+    "Galio":        {"MID":[{"champion":"Yasuo", "score":6.5, "tier":"A"}, {"champion":"Fizz", "score":6.5, "tier":"A"}, {"champion":"Talon", "score":6.0, "tier":"A"}]},
+    "Gangplank":    {"TOP":[{"champion":"Renekton", "score":7.0, "tier":"S"}, {"champion":"Pantheon", "score":7.0, "tier":"S"}, {"champion":"Quinn", "score":6.5, "tier":"A"}]},
+    "Garen":        {"TOP":[{"champion":"Darius", "score":8.0, "tier":"S"}, {"champion":"Vayne", "score":6.5, "tier":"A"}, {"champion":"Teemo", "score":6.5, "tier":"A"}]},
+    "Gnar":         {"TOP":[{"champion":"Renekton", "score":7.0, "tier":"S"}, {"champion":"Darius", "score":6.5, "tier":"A"}, {"champion":"Jax", "score":6.5, "tier":"A"}]},
+    "Gragas":       {"JUNGLE":[{"champion":"Skarner", "score":6.5, "tier":"A"}, {"champion":"Lillia", "score":6.5, "tier":"A"}, {"champion":"Olaf", "score":6.0, "tier":"A"}], "TOP":[{"champion":"Renekton", "score":6.5, "tier":"A"}, {"champion":"Garen", "score":6.5, "tier":"A"}, {"champion":"Quinn", "score":6.0, "tier":"A"}]},
+    "Graves":       {"JUNGLE":[{"champion":"Master Yi", "score":6.5, "tier":"A"}, {"champion":"Olaf", "score":6.5, "tier":"A"}, {"champion":"Lee Sin", "score":6.0, "tier":"A"}]},
+    "Gwen":         {"TOP":[{"champion":"Renekton", "score":7.0, "tier":"S"}, {"champion":"Darius", "score":6.5, "tier":"A"}, {"champion":"Yorick", "score":6.5, "tier":"A"}]},
+    "Hecarim":      {"JUNGLE":[{"champion":"Maokai", "score":7.5, "tier":"S"}, {"champion":"Sejuani", "score":7.0, "tier":"S"}, {"champion":"Lillia", "score":6.5, "tier":"A"}]},
+    "Heimerdinger": {"TOP":[{"champion":"Renekton", "score":7.0, "tier":"S"}, {"champion":"Pantheon", "score":7.0, "tier":"S"}, {"champion":"Quinn", "score":6.5, "tier":"A"}]},
+    "Hwei":         {"MID":[{"champion":"Yasuo", "score":6.5, "tier":"A"}, {"champion":"Fizz", "score":6.5, "tier":"A"}, {"champion":"Akali", "score":6.0, "tier":"A"}]},
+    "Illaoi":       {"TOP":[{"champion":"Vayne", "score":7.5, "tier":"S"}, {"champion":"Quinn", "score":7.0, "tier":"S"}, {"champion":"Fiora", "score":6.5, "tier":"A"}]},
+    "Irelia":       {"TOP":[{"champion":"Pantheon", "score":7.5, "tier":"S"}, {"champion":"Renekton", "score":7.0, "tier":"S"}, {"champion":"Jax", "score":6.5, "tier":"A"}], "MID":[{"champion":"Pantheon", "score":7.0, "tier":"S"}, {"champion":"Galio", "score":6.5, "tier":"A"}, {"champion":"Lissandra", "score":6.0, "tier":"A"}]},
+    "Ivern":        {"JUNGLE":[{"champion":"Lee Sin", "score":6.5, "tier":"A"}, {"champion":"Karthus", "score":6.5, "tier":"A"}, {"champion":"Master Yi", "score":6.0, "tier":"A"}]},
+    "Janna":        {"SUPPORT":[{"champion":"Pyke", "score":7.0, "tier":"S"}, {"champion":"Leona", "score":6.5, "tier":"A"}, {"champion":"Nautilus", "score":6.0, "tier":"A"}]},
+    "JarvanIV":     {"JUNGLE":[{"champion":"Olaf", "score":7.0, "tier":"S"}, {"champion":"Lillia", "score":6.5, "tier":"A"}, {"champion":"Skarner", "score":6.0, "tier":"A"}]},
+    "Jax":          {"TOP":[{"champion":"Vayne", "score":7.0, "tier":"S"}, {"champion":"Renekton", "score":6.5, "tier":"A"}, {"champion":"Quinn", "score":6.5, "tier":"A"}]},
+    "Jayce":        {"TOP":[{"champion":"Sett", "score":7.0, "tier":"S"}, {"champion":"Mordekaiser", "score":6.5, "tier":"A"}, {"champion":"Renekton", "score":6.0, "tier":"A"}], "MID":[{"champion":"Yasuo", "score":6.5, "tier":"A"}, {"champion":"Talon", "score":6.5, "tier":"A"}, {"champion":"Annie", "score":6.0, "tier":"A"}]},
+    "Jhin":         {"BOT":[{"champion":"Draven", "score":7.0, "tier":"S"}, {"champion":"Caitlyn", "score":6.5, "tier":"A"}, {"champion":"Lucian", "score":6.5, "tier":"A"}]},
+    "Jinx":         {"BOT":[{"champion":"Draven", "score":7.5, "tier":"S"}, {"champion":"Caitlyn", "score":7.0, "tier":"S"}, {"champion":"Lucian", "score":6.5, "tier":"A"}]},
+    "KSante":       {"TOP":[{"champion":"Vayne", "score":7.5, "tier":"S"}, {"champion":"Yorick", "score":7.0, "tier":"S"}, {"champion":"Kennen", "score":6.5, "tier":"A"}]},
+    "Kaisa":        {"BOT":[{"champion":"Caitlyn", "score":7.0, "tier":"S"}, {"champion":"Draven", "score":6.5, "tier":"A"}, {"champion":"Vayne", "score":6.0, "tier":"A"}]},
+    "Kalista":      {"BOT":[{"champion":"Caitlyn", "score":7.0, "tier":"S"}, {"champion":"Vayne", "score":6.5, "tier":"A"}, {"champion":"Tristana", "score":6.0, "tier":"A"}]},
+    "Karma":        {"SUPPORT":[{"champion":"Pyke", "score":6.5, "tier":"A"}, {"champion":"Leona", "score":6.5, "tier":"A"}, {"champion":"Blitzcrank", "score":6.0, "tier":"A"}]},
+    "Karthus":      {"JUNGLE":[{"champion":"Skarner", "score":7.5, "tier":"S"}, {"champion":"Lee Sin", "score":7.0, "tier":"S"}, {"champion":"Kindred", "score":6.5, "tier":"A"}]},
+    "Kassadin":     {"MID":[{"champion":"Talon", "score":7.0, "tier":"S"}, {"champion":"Annie", "score":6.5, "tier":"A"}, {"champion":"Pantheon", "score":6.5, "tier":"A"}]},
+    "Katarina":     {"MID":[{"champion":"Lissandra", "score":7.5, "tier":"S"}, {"champion":"Galio", "score":7.0, "tier":"S"}, {"champion":"Pantheon", "score":6.5, "tier":"A"}]},
+    "Kayle":        {"TOP":[{"champion":"Renekton", "score":7.5, "tier":"S"}, {"champion":"Darius", "score":7.0, "tier":"S"}, {"champion":"Pantheon", "score":6.5, "tier":"A"}]},
+    "Kayn":         {"JUNGLE":[{"champion":"Skarner", "score":7.0, "tier":"S"}, {"champion":"Maokai", "score":6.5, "tier":"A"}, {"champion":"Pantheon", "score":6.0, "tier":"A"}]},
+    "Kennen":       {"TOP":[{"champion":"Yasuo", "score":7.0, "tier":"S"}, {"champion":"Mordekaiser", "score":6.5, "tier":"A"}, {"champion":"Garen", "score":6.0, "tier":"A"}]},
+    "Khazix":       {"JUNGLE":[{"champion":"Kindred", "score":7.0, "tier":"S"}, {"champion":"Vi", "score":6.5, "tier":"A"}, {"champion":"Warwick", "score":6.5, "tier":"A"}]},
+    "Kindred":      {"JUNGLE":[{"champion":"Lee Sin", "score":7.0, "tier":"S"}, {"champion":"Olaf", "score":6.5, "tier":"A"}, {"champion":"Pantheon", "score":6.0, "tier":"A"}]},
+    "Kled":         {"TOP":[{"champion":"Quinn", "score":7.0, "tier":"S"}, {"champion":"Tahm Kench", "score":6.5, "tier":"A"}, {"champion":"Vayne", "score":6.0, "tier":"A"}]},
+    "KogMaw":       {"BOT":[{"champion":"Draven", "score":7.5, "tier":"S"}, {"champion":"Caitlyn", "score":7.0, "tier":"S"}, {"champion":"Lucian", "score":6.5, "tier":"A"}]},
+    "Leblanc":      {"MID":[{"champion":"Galio", "score":7.0, "tier":"S"}, {"champion":"Lissandra", "score":6.5, "tier":"A"}, {"champion":"Pantheon", "score":6.5, "tier":"A"}]},
+    "LeeSin":       {"JUNGLE":[{"champion":"Nautilus", "score":7.0, "tier":"S"}, {"champion":"Skarner", "score":7.0, "tier":"S"}, {"champion":"Diana", "score":6.5, "tier":"A"}]},
+    "Leona":        {"SUPPORT":[{"champion":"Morgana", "score":7.5, "tier":"S"}, {"champion":"Janna", "score":6.5, "tier":"A"}, {"champion":"Lulu", "score":6.5, "tier":"A"}]},
+    "Lillia":       {"JUNGLE":[{"champion":"Olaf", "score":7.0, "tier":"S"}, {"champion":"Skarner", "score":6.5, "tier":"A"}, {"champion":"Pantheon", "score":6.0, "tier":"A"}]},
+    "Lissandra":    {"MID":[{"champion":"Yasuo", "score":7.0, "tier":"S"}, {"champion":"Fizz", "score":6.5, "tier":"A"}, {"champion":"Talon", "score":6.0, "tier":"A"}]},
+    "Lucian":       {"BOT":[{"champion":"Caitlyn", "score":7.5, "tier":"S"}, {"champion":"Vayne", "score":6.5, "tier":"A"}, {"champion":"Draven", "score":6.5, "tier":"A"}]},
+    "Lulu":         {"SUPPORT":[{"champion":"Pyke", "score":7.0, "tier":"S"}, {"champion":"Blitzcrank", "score":6.5, "tier":"A"}, {"champion":"Leona", "score":6.5, "tier":"A"}]},
+    "Lux":          {"MID":[{"champion":"Yasuo", "score":7.0, "tier":"S"}, {"champion":"Fizz", "score":6.5, "tier":"A"}, {"champion":"Talon", "score":6.5, "tier":"A"}], "SUPPORT":[{"champion":"Pyke", "score":7.0, "tier":"S"}, {"champion":"Blitzcrank", "score":6.5, "tier":"A"}, {"champion":"Leona", "score":6.0, "tier":"A"}]},
+    "Malphite":     {"TOP":[{"champion":"Vayne", "score":7.0, "tier":"S"}, {"champion":"Fiora", "score":6.5, "tier":"A"}, {"champion":"Trundle", "score":6.5, "tier":"A"}]},
+    "Malzahar":     {"MID":[{"champion":"Akshan", "score":7.0, "tier":"S"}, {"champion":"Talon", "score":6.5, "tier":"A"}, {"champion":"Yasuo", "score":6.0, "tier":"A"}]},
+    "Maokai":       {"TOP":[{"champion":"Vayne", "score":6.5, "tier":"A"}, {"champion":"Quinn", "score":6.5, "tier":"A"}, {"champion":"Mordekaiser", "score":6.0, "tier":"A"}], "SUPPORT":[{"champion":"Pyke", "score":6.5, "tier":"A"}, {"champion":"Morgana", "score":6.5, "tier":"A"}, {"champion":"Lulu", "score":6.0, "tier":"A"}]},
+    "MasterYi":     {"JUNGLE":[{"champion":"Lillia", "score":7.5, "tier":"S"}, {"champion":"Pantheon", "score":7.0, "tier":"S"}, {"champion":"Rammus", "score":7.0, "tier":"S"}]},
+    "Mel":          {"MID":[{"champion":"Annie", "score":6.5, "tier":"A"}, {"champion":"Pantheon", "score":6.5, "tier":"A"}, {"champion":"Akali", "score":6.0, "tier":"A"}]},
+    "Milio":        {"SUPPORT":[{"champion":"Pyke", "score":7.0, "tier":"S"}, {"champion":"Blitzcrank", "score":6.5, "tier":"A"}, {"champion":"Leona", "score":6.5, "tier":"A"}]},
+    "MissFortune":  {"BOT":[{"champion":"Caitlyn", "score":7.0, "tier":"S"}, {"champion":"Draven", "score":6.5, "tier":"A"}, {"champion":"Ezreal", "score":6.0, "tier":"A"}]},
+    "MonkeyKing":   {"JUNGLE":[{"champion":"Pantheon", "score":6.5, "tier":"A"}, {"champion":"Tahm Kench", "score":6.5, "tier":"A"}, {"champion":"Vayne", "score":6.0, "tier":"A"}]},
+    "Mordekaiser":  {"TOP":[{"champion":"Tryndamere", "score":7.5, "tier":"S"}, {"champion":"Ornn", "score":7.0, "tier":"S"}, {"champion":"Malphite", "score":6.5, "tier":"A"}]},
+    "Morgana":      {"SUPPORT":[{"champion":"Pyke", "score":7.0, "tier":"S"}, {"champion":"Blitzcrank", "score":6.5, "tier":"A"}, {"champion":"Brand", "score":6.0, "tier":"A"}]},
+    "Naafiri":      {"MID":[{"champion":"Annie", "score":7.0, "tier":"S"}, {"champion":"Lissandra", "score":6.5, "tier":"A"}, {"champion":"Galio", "score":6.0, "tier":"A"}]},
+    "Nami":         {"SUPPORT":[{"champion":"Pyke", "score":6.5, "tier":"A"}, {"champion":"Blitzcrank", "score":6.5, "tier":"A"}, {"champion":"Leona", "score":6.0, "tier":"A"}]},
+    "Nasus":        {"TOP":[{"champion":"Darius", "score":7.5, "tier":"S"}, {"champion":"Renekton", "score":7.5, "tier":"S"}, {"champion":"Garen", "score":6.5, "tier":"A"}]},
+    "Nautilus":     {"JUNGLE":[{"champion":"Master Yi", "score":6.5, "tier":"A"}, {"champion":"Karthus", "score":6.0, "tier":"A"}, {"champion":"Olaf", "score":6.0, "tier":"A"}], "SUPPORT":[{"champion":"Janna", "score":7.0, "tier":"S"}, {"champion":"Lulu", "score":6.5, "tier":"A"}, {"champion":"Morgana", "score":6.5, "tier":"A"}]},
+    "Neeko":        {"MID":[{"champion":"Yasuo", "score":6.5, "tier":"A"}, {"champion":"Fizz", "score":6.5, "tier":"A"}, {"champion":"Pantheon", "score":6.0, "tier":"A"}]},
+    "Nidalee":      {"JUNGLE":[{"champion":"Skarner", "score":7.0, "tier":"S"}, {"champion":"Nautilus", "score":6.5, "tier":"A"}, {"champion":"Vi", "score":6.5, "tier":"A"}]},
+    "Nilah":        {"BOT":[{"champion":"Caitlyn", "score":7.0, "tier":"S"}, {"champion":"Draven", "score":6.5, "tier":"A"}, {"champion":"Lucian", "score":6.0, "tier":"A"}]},
+    "Nocturne":     {"JUNGLE":[{"champion":"Pantheon", "score":6.5, "tier":"A"}, {"champion":"Master Yi", "score":6.5, "tier":"A"}, {"champion":"Skarner", "score":6.0, "tier":"A"}]},
+    "Nunu":         {"JUNGLE":[{"champion":"Lee Sin", "score":7.0, "tier":"S"}, {"champion":"Karthus", "score":6.5, "tier":"A"}, {"champion":"Olaf", "score":6.0, "tier":"A"}]},
+    "Olaf":         {"TOP":[{"champion":"Quinn", "score":7.0, "tier":"S"}, {"champion":"Vayne", "score":6.5, "tier":"A"}, {"champion":"Gangplank", "score":6.0, "tier":"A"}], "JUNGLE":[{"champion":"Lillia", "score":6.5, "tier":"A"}, {"champion":"Pantheon", "score":6.0, "tier":"A"}, {"champion":"Master Yi", "score":6.0, "tier":"A"}]},
+    "Orianna":      {"MID":[{"champion":"Yasuo", "score":6.5, "tier":"A"}, {"champion":"Fizz", "score":6.5, "tier":"A"}, {"champion":"Akali", "score":6.0, "tier":"A"}]},
+    "Ornn":         {"TOP":[{"champion":"Vayne", "score":7.0, "tier":"S"}, {"champion":"Quinn", "score":6.5, "tier":"A"}, {"champion":"Trundle", "score":6.5, "tier":"A"}]},
+    "Pantheon":     {"TOP":[{"champion":"Tahm Kench", "score":6.5, "tier":"A"}, {"champion":"Vayne", "score":6.5, "tier":"A"}, {"champion":"Quinn", "score":6.0, "tier":"A"}], "JUNGLE":[{"champion":"Master Yi", "score":6.5, "tier":"A"}, {"champion":"Karthus", "score":6.5, "tier":"A"}, {"champion":"Skarner", "score":6.0, "tier":"A"}], "SUPPORT":[{"champion":"Janna", "score":6.5, "tier":"A"}, {"champion":"Lulu", "score":6.5, "tier":"A"}, {"champion":"Morgana", "score":6.0, "tier":"A"}]},
+    "Poppy":        {"TOP":[{"champion":"Vayne", "score":6.5, "tier":"A"}, {"champion":"Quinn", "score":6.5, "tier":"A"}, {"champion":"Mordekaiser", "score":6.0, "tier":"A"}], "JUNGLE":[{"champion":"Master Yi", "score":6.5, "tier":"A"}, {"champion":"Karthus", "score":6.0, "tier":"A"}, {"champion":"Olaf", "score":6.0, "tier":"A"}]},
+    "Pyke":         {"SUPPORT":[{"champion":"Janna", "score":7.0, "tier":"S"}, {"champion":"Karma", "score":6.5, "tier":"A"}, {"champion":"Soraka", "score":6.0, "tier":"A"}]},
+    "Qiyana":       {"MID":[{"champion":"Annie", "score":7.0, "tier":"S"}, {"champion":"Pantheon", "score":6.5, "tier":"A"}, {"champion":"Galio", "score":6.0, "tier":"A"}]},
+    "Quinn":        {"TOP":[{"champion":"Garen", "score":6.5, "tier":"A"}, {"champion":"Mordekaiser", "score":6.5, "tier":"A"}, {"champion":"Tryndamere", "score":6.0, "tier":"A"}]},
+    "Rakan":        {"SUPPORT":[{"champion":"Janna", "score":6.5, "tier":"A"}, {"champion":"Morgana", "score":6.5, "tier":"A"}, {"champion":"Pyke", "score":6.0, "tier":"A"}]},
+    "Rammus":       {"JUNGLE":[{"champion":"Karthus", "score":6.5, "tier":"A"}, {"champion":"Lillia", "score":6.5, "tier":"A"}, {"champion":"Olaf", "score":6.0, "tier":"A"}]},
+    "RekSai":       {"JUNGLE":[{"champion":"Lillia", "score":6.5, "tier":"A"}, {"champion":"Pantheon", "score":6.5, "tier":"A"}, {"champion":"Skarner", "score":6.0, "tier":"A"}]},
+    "Rell":         {"SUPPORT":[{"champion":"Pyke", "score":6.5, "tier":"A"}, {"champion":"Janna", "score":6.5, "tier":"A"}, {"champion":"Lulu", "score":6.0, "tier":"A"}]},
+    "Renata":       {"SUPPORT":[{"champion":"Pyke", "score":6.5, "tier":"A"}, {"champion":"Blitzcrank", "score":6.5, "tier":"A"}, {"champion":"Leona", "score":6.0, "tier":"A"}]},
+    "Renekton":     {"TOP":[{"champion":"Tahm Kench", "score":7.5, "tier":"S"}, {"champion":"Vladimir", "score":7.0, "tier":"S"}, {"champion":"Garen", "score":6.0, "tier":"A"}]},
+    "Rengar":       {"JUNGLE":[{"champion":"Maokai", "score":7.0, "tier":"S"}, {"champion":"Lillia", "score":6.5, "tier":"A"}, {"champion":"Skarner", "score":6.0, "tier":"A"}]},
+    "Riven":        {"TOP":[{"champion":"Pantheon", "score":7.0, "tier":"S"}, {"champion":"Renekton", "score":6.5, "tier":"A"}, {"champion":"Garen", "score":6.5, "tier":"A"}]},
+    "Rumble":       {"TOP":[{"champion":"Renekton", "score":7.0, "tier":"S"}, {"champion":"Mordekaiser", "score":6.5, "tier":"A"}, {"champion":"Quinn", "score":6.5, "tier":"A"}]},
+    "Ryze":         {"MID":[{"champion":"Yasuo", "score":6.5, "tier":"A"}, {"champion":"Pantheon", "score":6.5, "tier":"A"}, {"champion":"Talon", "score":6.0, "tier":"A"}]},
+    "Samira":       {"BOT":[{"champion":"Caitlyn", "score":7.0, "tier":"S"}, {"champion":"Draven", "score":6.5, "tier":"A"}, {"champion":"Tristana", "score":6.0, "tier":"A"}]},
+    "Sejuani":      {"JUNGLE":[{"champion":"Master Yi", "score":6.5, "tier":"A"}, {"champion":"Karthus", "score":6.0, "tier":"A"}, {"champion":"Olaf", "score":6.5, "tier":"A"}]},
+    "Senna":        {"BOT":[{"champion":"Draven", "score":7.0, "tier":"S"}, {"champion":"Caitlyn", "score":6.5, "tier":"A"}, {"champion":"Tristana", "score":6.5, "tier":"A"}], "SUPPORT":[{"champion":"Pyke", "score":7.0, "tier":"S"}, {"champion":"Blitzcrank", "score":6.5, "tier":"A"}, {"champion":"Leona", "score":6.5, "tier":"A"}]},
+    "Seraphine":    {"BOT":[{"champion":"Caitlyn", "score":7.0, "tier":"S"}, {"champion":"Draven", "score":6.5, "tier":"A"}, {"champion":"Lucian", "score":6.0, "tier":"A"}], "SUPPORT":[{"champion":"Pyke", "score":7.0, "tier":"S"}, {"champion":"Leona", "score":6.5, "tier":"A"}, {"champion":"Blitzcrank", "score":6.0, "tier":"A"}]},
+    "Sett":         {"TOP":[{"champion":"Vayne", "score":7.5, "tier":"S"}, {"champion":"Gangplank", "score":7.0, "tier":"S"}, {"champion":"Quinn", "score":6.5, "tier":"A"}]},
+    "Shaco":        {"JUNGLE":[{"champion":"Lillia", "score":6.5, "tier":"A"}, {"champion":"Master Yi", "score":6.5, "tier":"A"}, {"champion":"Skarner", "score":6.0, "tier":"A"}]},
+    "Shen":         {"TOP":[{"champion":"Yorick", "score":7.0, "tier":"S"}, {"champion":"Mordekaiser", "score":6.5, "tier":"A"}, {"champion":"Quinn", "score":6.0, "tier":"A"}]},
+    "Shyvana":      {"JUNGLE":[{"champion":"Master Yi", "score":6.5, "tier":"A"}, {"champion":"Karthus", "score":6.5, "tier":"A"}, {"champion":"Lee Sin", "score":6.0, "tier":"A"}]},
+    "Singed":       {"TOP":[{"champion":"Vayne", "score":7.0, "tier":"S"}, {"champion":"Quinn", "score":6.5, "tier":"A"}, {"champion":"Pantheon", "score":6.0, "tier":"A"}]},
+    "Sion":         {"TOP":[{"champion":"Vayne", "score":6.5, "tier":"A"}, {"champion":"Quinn", "score":6.5, "tier":"A"}, {"champion":"Tryndamere", "score":6.0, "tier":"A"}]},
+    "Sivir":        {"BOT":[{"champion":"Draven", "score":7.0, "tier":"S"}, {"champion":"Caitlyn", "score":6.5, "tier":"A"}, {"champion":"Vayne", "score":6.0, "tier":"A"}]},
+    "Skarner":      {"JUNGLE":[{"champion":"Lee Sin", "score":6.5, "tier":"A"}, {"champion":"Karthus", "score":6.5, "tier":"A"}, {"champion":"Olaf", "score":6.0, "tier":"A"}]},
+    "Smolder":      {"BOT":[{"champion":"Draven", "score":7.5, "tier":"S"}, {"champion":"Caitlyn", "score":7.0, "tier":"S"}, {"champion":"Lucian", "score":6.5, "tier":"A"}]},
+    "Sona":         {"SUPPORT":[{"champion":"Pyke", "score":7.0, "tier":"S"}, {"champion":"Blitzcrank", "score":6.5, "tier":"A"}, {"champion":"Leona", "score":6.5, "tier":"A"}]},
+    "Soraka":       {"SUPPORT":[{"champion":"Pyke", "score":7.5, "tier":"S"}, {"champion":"Blitzcrank", "score":7.0, "tier":"S"}, {"champion":"Leona", "score":6.5, "tier":"A"}]},
+    "Swain":        {"BOT":[{"champion":"Draven", "score":7.0, "tier":"S"}, {"champion":"Caitlyn", "score":6.5, "tier":"A"}, {"champion":"Tristana", "score":6.0, "tier":"A"}], "SUPPORT":[{"champion":"Pyke", "score":6.5, "tier":"A"}, {"champion":"Blitzcrank", "score":6.5, "tier":"A"}, {"champion":"Janna", "score":6.0, "tier":"A"}]},
+    "Sylas":        {"MID":[{"champion":"Galio", "score":7.0, "tier":"S"}, {"champion":"Pantheon", "score":6.5, "tier":"A"}, {"champion":"Annie", "score":6.5, "tier":"A"}]},
+    "Syndra":       {"MID":[{"champion":"Yasuo", "score":7.0, "tier":"S"}, {"champion":"Yone", "score":6.5, "tier":"A"}, {"champion":"Akali", "score":6.5, "tier":"A"}]},
+    "TahmKench":    {"TOP":[{"champion":"Vayne", "score":7.0, "tier":"S"}, {"champion":"Renekton", "score":6.5, "tier":"A"}, {"champion":"Trundle", "score":6.5, "tier":"A"}], "SUPPORT":[{"champion":"Pyke", "score":6.5, "tier":"A"}, {"champion":"Janna", "score":6.5, "tier":"A"}, {"champion":"Lulu", "score":6.0, "tier":"A"}]},
+    "Taliyah":      {"MID":[{"champion":"Yasuo", "score":7.0, "tier":"S"}, {"champion":"Akali", "score":6.5, "tier":"A"}, {"champion":"Talon", "score":6.0, "tier":"A"}], "JUNGLE":[{"champion":"Lee Sin", "score":6.5, "tier":"A"}, {"champion":"Pantheon", "score":6.5, "tier":"A"}, {"champion":"Skarner", "score":6.0, "tier":"A"}]},
+    "Talon":        {"MID":[{"champion":"Annie", "score":7.0, "tier":"S"}, {"champion":"Galio", "score":6.5, "tier":"A"}, {"champion":"Pantheon", "score":6.5, "tier":"A"}]},
+    "Taric":        {"SUPPORT":[{"champion":"Pyke", "score":6.5, "tier":"A"}, {"champion":"Morgana", "score":6.5, "tier":"A"}, {"champion":"Lulu", "score":6.0, "tier":"A"}]},
+    "Teemo":        {"TOP":[{"champion":"Renekton", "score":7.0, "tier":"S"}, {"champion":"Mordekaiser", "score":6.5, "tier":"A"}, {"champion":"Tahm Kench", "score":6.5, "tier":"A"}]},
+    "Thresh":       {"SUPPORT":[{"champion":"Morgana", "score":7.0, "tier":"S"}, {"champion":"Janna", "score":6.5, "tier":"A"}, {"champion":"Nami", "score":6.0, "tier":"A"}]},
+    "Tristana":     {"BOT":[{"champion":"Caitlyn", "score":7.0, "tier":"S"}, {"champion":"Draven", "score":7.0, "tier":"S"}, {"champion":"Jhin", "score":6.5, "tier":"A"}]},
+    "Trundle":      {"TOP":[{"champion":"Vayne", "score":6.5, "tier":"A"}, {"champion":"Quinn", "score":6.5, "tier":"A"}, {"champion":"Pantheon", "score":6.0, "tier":"A"}], "JUNGLE":[{"champion":"Master Yi", "score":6.5, "tier":"A"}, {"champion":"Karthus", "score":6.0, "tier":"A"}, {"champion":"Olaf", "score":6.0, "tier":"A"}]},
+    "Tryndamere":   {"TOP":[{"champion":"Renekton", "score":7.0, "tier":"S"}, {"champion":"Pantheon", "score":6.5, "tier":"A"}, {"champion":"Quinn", "score":6.5, "tier":"A"}]},
+    "TwistedFate":  {"MID":[{"champion":"Yasuo", "score":7.0, "tier":"S"}, {"champion":"Talon", "score":6.5, "tier":"A"}, {"champion":"Annie", "score":6.5, "tier":"A"}]},
+    "Twitch":       {"BOT":[{"champion":"Caitlyn", "score":7.5, "tier":"S"}, {"champion":"Draven", "score":7.0, "tier":"S"}, {"champion":"Lucian", "score":6.5, "tier":"A"}]},
+    "Udyr":         {"JUNGLE":[{"champion":"Karthus", "score":6.5, "tier":"A"}, {"champion":"Lillia", "score":6.5, "tier":"A"}, {"champion":"Pantheon", "score":6.0, "tier":"A"}]},
+    "Urgot":        {"TOP":[{"champion":"Vayne", "score":7.0, "tier":"S"}, {"champion":"Quinn", "score":6.5, "tier":"A"}, {"champion":"Mordekaiser", "score":6.0, "tier":"A"}]},
+    "Varus":        {"BOT":[{"champion":"Draven", "score":7.0, "tier":"S"}, {"champion":"Caitlyn", "score":6.5, "tier":"A"}, {"champion":"Lucian", "score":6.5, "tier":"A"}]},
+    "Vayne":        {"TOP":[{"champion":"Renekton", "score":7.5, "tier":"S"}, {"champion":"Pantheon", "score":7.0, "tier":"S"}, {"champion":"Garen", "score":6.5, "tier":"A"}], "BOT":[{"champion":"Draven", "score":7.5, "tier":"S"}, {"champion":"Caitlyn", "score":7.5, "tier":"S"}, {"champion":"Tristana", "score":6.5, "tier":"A"}]},
+    "Veigar":       {"MID":[{"champion":"Yasuo", "score":7.5, "tier":"S"}, {"champion":"Fizz", "score":7.0, "tier":"S"}, {"champion":"Yone", "score":6.5, "tier":"A"}]},
+    "Velkoz":       {"MID":[{"champion":"Yasuo", "score":7.0, "tier":"S"}, {"champion":"Talon", "score":6.5, "tier":"A"}, {"champion":"Pantheon", "score":6.5, "tier":"A"}], "SUPPORT":[{"champion":"Pyke", "score":6.5, "tier":"A"}, {"champion":"Blitzcrank", "score":6.5, "tier":"A"}, {"champion":"Leona", "score":6.0, "tier":"A"}]},
+    "Vex":          {"MID":[{"champion":"Yasuo", "score":6.5, "tier":"A"}, {"champion":"Fizz", "score":6.5, "tier":"A"}, {"champion":"Talon", "score":6.0, "tier":"A"}]},
+    "Vi":           {"JUNGLE":[{"champion":"Skarner", "score":6.5, "tier":"A"}, {"champion":"Lillia", "score":6.5, "tier":"A"}, {"champion":"Pantheon", "score":6.0, "tier":"A"}]},
+    "Viego":        {"JUNGLE":[{"champion":"Olaf", "score":7.5, "tier":"S"}, {"champion":"Master Yi", "score":7.0, "tier":"S"}, {"champion":"Warwick", "score":6.5, "tier":"A"}]},
+    "Viktor":       {"MID":[{"champion":"Akshan", "score":6.5, "tier":"A"}, {"champion":"Yasuo", "score":6.5, "tier":"A"}, {"champion":"Talon", "score":6.0, "tier":"A"}]},
+    "Vladimir":     {"TOP":[{"champion":"Renekton", "score":7.0, "tier":"S"}, {"champion":"Mordekaiser", "score":6.5, "tier":"A"}, {"champion":"Pantheon", "score":6.5, "tier":"A"}], "MID":[{"champion":"Yasuo", "score":6.5, "tier":"A"}, {"champion":"Talon", "score":6.5, "tier":"A"}, {"champion":"Pantheon", "score":6.0, "tier":"A"}]},
+    "Volibear":     {"TOP":[{"champion":"Vayne", "score":6.5, "tier":"A"}, {"champion":"Quinn", "score":6.5, "tier":"A"}, {"champion":"Mordekaiser", "score":6.0, "tier":"A"}], "JUNGLE":[{"champion":"Master Yi", "score":6.5, "tier":"A"}, {"champion":"Karthus", "score":6.5, "tier":"A"}, {"champion":"Olaf", "score":6.0, "tier":"A"}]},
+    "Warwick":      {"JUNGLE":[{"champion":"Pantheon", "score":7.0, "tier":"S"}, {"champion":"Karthus", "score":6.5, "tier":"A"}, {"champion":"Lillia", "score":6.0, "tier":"A"}]},
+    "Xayah":        {"BOT":[{"champion":"Draven", "score":7.0, "tier":"S"}, {"champion":"Caitlyn", "score":6.5, "tier":"A"}, {"champion":"Lucian", "score":6.5, "tier":"A"}]},
+    "Xerath":       {"MID":[{"champion":"Yasuo", "score":7.0, "tier":"S"}, {"champion":"Talon", "score":6.5, "tier":"A"}, {"champion":"Akali", "score":6.5, "tier":"A"}], "SUPPORT":[{"champion":"Pyke", "score":7.0, "tier":"S"}, {"champion":"Blitzcrank", "score":6.5, "tier":"A"}, {"champion":"Leona", "score":6.0, "tier":"A"}]},
+    "XinZhao":      {"JUNGLE":[{"champion":"Skarner", "score":6.5, "tier":"A"}, {"champion":"Vi", "score":6.5, "tier":"A"}, {"champion":"Pantheon", "score":6.0, "tier":"A"}]},
+    "Yasuo":        {"MID":[{"champion":"Annie", "score":8.0, "tier":"S+"}, {"champion":"Malzahar", "score":7.5, "tier":"S"}, {"champion":"Pantheon", "score":7.0, "tier":"S"}], "TOP":[{"champion":"Renekton", "score":7.0, "tier":"S"}, {"champion":"Pantheon", "score":6.5, "tier":"A"}, {"champion":"Mordekaiser", "score":6.5, "tier":"A"}]},
+    "Yone":         {"MID":[{"champion":"Pantheon", "score":7.5, "tier":"S"}, {"champion":"Annie", "score":7.0, "tier":"S"}, {"champion":"Galio", "score":6.5, "tier":"A"}], "TOP":[{"champion":"Pantheon", "score":7.5, "tier":"S"}, {"champion":"Malphite", "score":6.5, "tier":"A"}, {"champion":"Renekton", "score":6.0, "tier":"A"}]},
+    "Yorick":       {"TOP":[{"champion":"Fiora", "score":7.0, "tier":"S"}, {"champion":"Vayne", "score":6.5, "tier":"A"}, {"champion":"Camille", "score":6.5, "tier":"A"}]},
+    "Yuumi":        {"SUPPORT":[{"champion":"Pyke", "score":7.0, "tier":"S"}, {"champion":"Blitzcrank", "score":6.5, "tier":"A"}, {"champion":"Leona", "score":6.0, "tier":"A"}]},
+    "Zac":          {"JUNGLE":[{"champion":"Skarner", "score":6.5, "tier":"A"}, {"champion":"Master Yi", "score":6.5, "tier":"A"}, {"champion":"Karthus", "score":6.0, "tier":"A"}]},
+    "Zed":          {"MID":[{"champion":"Lissandra", "score":8.0, "tier":"S+"}, {"champion":"Kassadin", "score":7.5, "tier":"S"}, {"champion":"Malzahar", "score":7.0, "tier":"S"}]},
+    "Zeri":         {"BOT":[{"champion":"Draven", "score":6.5, "tier":"A"}, {"champion":"Caitlyn", "score":6.5, "tier":"A"}, {"champion":"Vayne", "score":6.0, "tier":"A"}]},
+    "Ziggs":        {"MID":[{"champion":"Yasuo", "score":7.0, "tier":"S"}, {"champion":"Talon", "score":6.5, "tier":"A"}, {"champion":"Akali", "score":6.5, "tier":"A"}], "BOT":[{"champion":"Caitlyn", "score":7.0, "tier":"S"}, {"champion":"Draven", "score":6.5, "tier":"A"}, {"champion":"Lucian", "score":6.0, "tier":"A"}]},
+    "Zilean":       {"MID":[{"champion":"Talon", "score":6.5, "tier":"A"}, {"champion":"Yasuo", "score":6.5, "tier":"A"}, {"champion":"Pantheon", "score":6.0, "tier":"A"}], "SUPPORT":[{"champion":"Pyke", "score":6.5, "tier":"A"}, {"champion":"Leona", "score":6.5, "tier":"A"}, {"champion":"Blitzcrank", "score":6.0, "tier":"A"}]},
+    "Zoe":          {"MID":[{"champion":"Annie", "score":7.0, "tier":"S"}, {"champion":"Pantheon", "score":6.5, "tier":"A"}, {"champion":"Talon", "score":6.5, "tier":"A"}]},
+    "Zyra":         {"SUPPORT":[{"champion":"Pyke", "score":6.5, "tier":"A"}, {"champion":"Blitzcrank", "score":6.5, "tier":"A"}, {"champion":"Leona", "score":6.0, "tier":"A"}]},
+    "Yunara":       {"BOT":[{"champion":"Caitlyn", "score":7.0, "tier":"S"}, {"champion":"Draven", "score":6.5, "tier":"A"}, {"champion":"Ashe", "score":6.0, "tier":"A"}]},
+    "Zaahen":       {"MID":[{"champion":"Kassadin", "score":7.0, "tier":"S"}, {"champion":"Galio", "score":6.5, "tier":"A"}, {"champion":"Diana", "score":6.0, "tier":"A"}]}
   }
 }
