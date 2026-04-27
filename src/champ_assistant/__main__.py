@@ -179,9 +179,64 @@ def _run_with_ui(args: argparse.Namespace) -> int:
     qt_app = QApplication(sys.argv[:1])
 
     overlay = MainOverlay(load_persisted_state=True)
+    # System tray icon — only way back to the main overlay during a game
+    # (overlay mode hides the main window). Held as instance attr so Qt
+    # doesn't garbage-collect it.
+    from champ_assistant.ui.tray import TrayController
+    overlay._tray = TrayController(overlay)  # type: ignore[attr-defined]
+
     assistant = _build_assistant(args, overlay)
     # Wire the clickable enemy-role badge to the orchestrator's cycle method.
     overlay.enemy_role_clicked.connect(assistant.cycle_enemy_role_override)
+
+    # Apply Runes: wire the PickCard signal through to the LCU rune-page
+    # creator. Runs as an async task so the UI doesn't freeze on the LCU
+    # round-trip; result lands in the status bar.
+    def _on_apply_runes(champion_key: str, rune_names: list) -> None:
+        async def _run() -> None:
+            from champ_assistant.lcu.client import LcuClient, LcuClientError
+            from champ_assistant.lcu.lockfile import (
+                LockfileNotFound,
+                find_lockfile,
+                parse_lockfile,
+            )
+            from champ_assistant.lcu.perks import apply_rune_page
+            try:
+                lockfile_path = find_lockfile()
+                lockfile = parse_lockfile(lockfile_path)
+            except LockfileNotFound:
+                overlay.status_bar.set_info(
+                    "Apply Runes: League-Client nicht erreichbar",
+                    color="#FF6B6B",
+                )
+                return
+            try:
+                async with LcuClient(lockfile) as lcu:
+                    page = await apply_rune_page(
+                        lcu, champion_key=champion_key, rune_names=rune_names,
+                    )
+            except LcuClientError as exc:
+                overlay.status_bar.set_info(
+                    f"Apply Runes fehlgeschlagen: {exc}",
+                    color="#FF6B6B",
+                )
+                return
+            if page is None:
+                overlay.status_bar.set_info(
+                    f"Apply Runes: Keystone für {champion_key} nicht in Mapping",
+                    color="#FFB84A",
+                )
+            else:
+                overlay.status_bar.set_info(
+                    f"Apply Runes: '{page.get('name')}' aktiviert",
+                    color="#7FCC7F",
+                )
+        import asyncio
+        try:
+            asyncio.create_task(_run())
+        except RuntimeError:
+            pass
+    overlay.apply_runes_requested.connect(_on_apply_runes)
 
     # When the user saves a new Riot API key in Settings, rebuild the
     # profile service so subsequent enemy profile lookups use it.

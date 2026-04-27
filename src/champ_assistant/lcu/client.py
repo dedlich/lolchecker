@@ -127,3 +127,6 @@ class LcuClient:
 
     async def patch(self, path: str, **kwargs: Any) -> httpx.Response:
         return await self.request("PATCH", path, **kwargs)
+
+    async def delete(self, path: str, **kwargs: Any) -> httpx.Response:
+        return await self.request("DELETE", path, **kwargs)

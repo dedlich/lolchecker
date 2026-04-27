@@ -242,18 +242,28 @@ def launch_sidecar(
 ) -> None:
     """Spawn the sidecar bat fully detached, with no visible console window.
 
-    CREATE_NO_WINDOW + DETACHED_PROCESS keeps the bat invisible — users
-    used to see a black console pop up during updates which felt
-    unprofessional. All progress + failure info now goes into the log
-    file at ``update_log_path()`` and is read on next app start.
+    Important: ``CREATE_NO_WINDOW`` and ``DETACHED_PROCESS`` are mutually
+    exclusive per the Win32 docs - combining them silently falls back to
+    a default console (which is why v0.11.4's "silent" mode wasn't).
+    Use CREATE_NO_WINDOW alone, plus a startupinfo with SW_HIDE so older
+    Windows versions also respect the hidden window request.
+
+    All bat output goes to ``update_log_path()`` and is read on next app
+    start so failures aren't invisible.
     """
     creationflags = 0
+    startupinfo = None
     if sys.platform.startswith("win"):
         creationflags = (
             getattr(subprocess, "CREATE_NO_WINDOW", 0)
-            | getattr(subprocess, "DETACHED_PROCESS", 0)
             | getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
         )
+        # Belt-and-suspenders: explicitly tell Windows to hide whatever
+        # window cmd.exe might try to spawn. Required on some Win10 builds
+        # where CREATE_NO_WINDOW alone isn't honoured for batch files.
+        startupinfo = subprocess.STARTUPINFO()
+        startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+        startupinfo.wShowWindow = 0  # SW_HIDE
     log_path = update_log_path()
     log_path.parent.mkdir(parents=True, exist_ok=True)
     subprocess.Popen(
@@ -265,6 +275,7 @@ def launch_sidecar(
             str(log_path),
         ],
         creationflags=creationflags,
+        startupinfo=startupinfo,
         close_fds=True,
         cwd=str(install_directory),
     )

@@ -1,9 +1,15 @@
 """Pick suggestion card."""
 from __future__ import annotations
 
-from PyQt6.QtCore import Qt
+from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtGui import QPixmap
-from PyQt6.QtWidgets import QFrame, QHBoxLayout, QLabel, QVBoxLayout
+from PyQt6.QtWidgets import (
+    QFrame,
+    QHBoxLayout,
+    QLabel,
+    QPushButton,
+    QVBoxLayout,
+)
 
 from ..advisor.picks import PickSuggestion
 from ..data.models import ChampionBuild
@@ -16,6 +22,8 @@ ICON_SIZE = 28
 class PickCard(QFrame):
     """Card showing one suggested pick: icon + champion + tier + score + reasons + build."""
 
+    apply_runes_requested = pyqtSignal(str, list)  # (champion_key, rune_names)
+
     def __init__(
         self,
         suggestion: PickSuggestion,
@@ -25,6 +33,7 @@ class PickCard(QFrame):
         super().__init__()
         self.setProperty("card", True)
         self.suggestion = suggestion
+        self._build = build
 
         outer = QVBoxLayout(self)
         outer.setContentsMargins(10, 8, 10, 8)
@@ -71,6 +80,7 @@ class PickCard(QFrame):
 
         if build is not None:
             self._add_build_lines(outer, build)
+            self._add_apply_button(outer, build)
 
     @staticmethod
     def _add_build_lines(outer: QVBoxLayout, build: ChampionBuild) -> None:
@@ -95,3 +105,33 @@ class PickCard(QFrame):
                 f"color: {styles.TEXT_MUTED}; font-size: 11px;"
             )
             outer.addWidget(summ_label)
+
+    def _add_apply_button(self, outer: QVBoxLayout, build: ChampionBuild) -> None:
+        """Apply Runes button — creates a Champ-Assistant-named rune page
+        in the LeagueClient via LCU and activates it. Only shown if the
+        build has runes; the rune-name → perk-id mapping silently skips
+        anything we can't resolve."""
+        if not build.runes:
+            return
+        row = QHBoxLayout()
+        row.setSpacing(6)
+        row.addStretch(1)
+        apply = QPushButton("Apply Runes")
+        apply.setCursor(Qt.CursorShape.PointingHandCursor)
+        apply.setStyleSheet(
+            f"QPushButton {{ background-color: {styles.ACCENT_DIM};"
+            f" color: {styles.TEXT_PRIMARY};"
+            f" border: 1px solid {styles.ACCENT}; padding: 3px 10px;"
+            f" border-radius: {styles.RADIUS_SMALL}px; font-weight: 600;"
+            f" font-size: 11px; }}"
+            f" QPushButton:hover {{ background-color: {styles.ACCENT}; }}"
+            f" QPushButton:disabled {{ background-color: {styles.BG_TERTIARY};"
+            f" color: {styles.TEXT_MUTED}; border-color: {styles.BORDER}; }}"
+        )
+        apply.clicked.connect(
+            lambda: self.apply_runes_requested.emit(
+                self.suggestion.champion_key, list(build.runes),
+            )
+        )
+        row.addWidget(apply)
+        outer.addLayout(row)

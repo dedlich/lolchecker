@@ -49,6 +49,7 @@ class MainOverlay(QMainWindow):
     refresh_requested = pyqtSignal()
     enemy_role_clicked = pyqtSignal(int)  # cell_id of the clicked enemy slot
     settings_changed = pyqtSignal()       # user saved a new API key
+    apply_runes_requested = pyqtSignal(str, list)  # (champion_key, rune_names)
 
     def __init__(
         self,
@@ -312,7 +313,9 @@ class MainOverlay(QMainWindow):
         for s in view.suggestions:
             icon = self._icon_for_key(s.champion_key)
             build = view.suggestion_builds.get(s.champion_key)
-            self._picks_container.addWidget(PickCard(s, icon=icon, build=build))
+            card = PickCard(s, icon=icon, build=build)
+            card.apply_runes_requested.connect(self.apply_runes_requested.emit)
+            self._picks_container.addWidget(card)
 
     # -- in-game panels visibility ---------------------------------------
 
@@ -556,6 +559,13 @@ class MainOverlay(QMainWindow):
             self._persisted.height = self.height() if self._body.isVisible() else self._persisted.height
             self._persisted.collapsed = not self._body.isVisible()
             overlay_config.save(self._persisted)
+        # When a tray icon is active, X should only hide the main window,
+        # not quit the whole app — the floating widgets + tray live on.
+        # Quit only via the tray menu.
+        if getattr(self, "_tray", None) is not None:
+            event.ignore()
+            self.hide()
+            return
         super().closeEvent(event)
         # Tool windows + frameless flags don't always trigger Qt's "last
         # window closed" path, so the QApplication can stay alive forever.
