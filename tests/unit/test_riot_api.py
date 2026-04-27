@@ -113,6 +113,46 @@ async def test_streak_computes_signed_streak() -> None:
 
 
 @pytest.mark.asyncio
+async def test_league_entries_parses_solo_and_flex() -> None:
+    payload = [
+        {
+            "queueType": "RANKED_SOLO_5x5",
+            "tier": "DIAMOND", "rank": "II",
+            "leaguePoints": 24, "wins": 80, "losses": 70,
+        },
+        {
+            "queueType": "RANKED_FLEX_SR",
+            "tier": "PLATINUM", "rank": "I",
+            "leaguePoints": 88, "wins": 12, "losses": 10,
+        },
+    ]
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json=payload)
+
+    client = _client(handler)
+    entries = await client.league_entries("S-1234")
+    assert len(entries) == 2
+    solo = next(e for e in entries if e.queue_type == "RANKED_SOLO_5x5")
+    assert solo.tier == "DIAMOND"
+    assert solo.division == "II"
+    assert solo.league_points == 24
+    assert solo.games == 150
+    assert solo.win_rate == pytest.approx(80 / 150)
+    await client.aclose()
+
+
+@pytest.mark.asyncio
+async def test_league_entries_returns_empty_on_unranked() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json=[])
+
+    client = _client(handler)
+    assert await client.league_entries("S-x") == []
+    await client.aclose()
+
+
+@pytest.mark.asyncio
 async def test_streak_for_loss_run_is_negative() -> None:
     match_ids = ["L1", "L2", "L3"]
 

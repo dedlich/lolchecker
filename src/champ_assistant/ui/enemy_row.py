@@ -17,6 +17,20 @@ from . import styles
 
 ICON_SIZE = 32
 
+# Tier-color map for the rank badge — Riot's official color hex values.
+_RANK_COLORS = {
+    "IRON":        "#7E7E7E",
+    "BRONZE":      "#A36A45",
+    "SILVER":      "#A0A8B7",
+    "GOLD":        "#E0B046",
+    "PLATINUM":    "#4FA9A1",
+    "EMERALD":     "#3FCB7E",
+    "DIAMOND":     "#5499D6",
+    "MASTER":      "#A269D6",
+    "GRANDMASTER": "#D86060",
+    "CHALLENGER":  "#F4D169",
+}
+
 
 class EnemyRow(QFrame):
     """One enemy slot showing the locked champion and their counters.
@@ -99,12 +113,24 @@ class EnemyRow(QFrame):
 
     def set_profile(self, profile: EnemyProfile | None, *,
                     champion_names: dict[int, str] | None = None) -> None:
-        """Render an optional pre-game profile under the counters line."""
+        """Render an optional pre-game profile under the counters line.
+
+        Format (each piece optional, separated by · ):
+          [RANK]  ·  Mains: A, B, C  ·  WR%  ·  streak
+        Rank is colored by tier so high-elo opponents stand out at a glance.
+        """
         if profile is None or not profile.has_data:
             self._profile_label.hide()
             return
         names = champion_names or {}
+
         bits: list[str] = []
+        if profile.rank.is_ranked:
+            color = _RANK_COLORS.get(profile.rank.tier, styles.TEXT_MUTED)
+            bits.append(
+                f"<span style='color:{color}; font-weight:600'>"
+                f"{profile.rank.short}</span>"
+            )
         if profile.top_champions:
             tops = ", ".join(
                 names.get(c.champion_id, f"#{c.champion_id}")
@@ -122,6 +148,7 @@ class EnemyRow(QFrame):
         if not bits:
             self._profile_label.hide()
             return
+        # Use rich-text so the colored rank span renders correctly.
         self._profile_label.setText(" · ".join(bits))
         self._profile_label.show()
 

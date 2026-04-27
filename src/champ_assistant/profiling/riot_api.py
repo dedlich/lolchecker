@@ -75,6 +75,25 @@ class MasteryEntry:
     level: int
 
 
+@dataclass(frozen=True)
+class RankEntry:
+    """One Riot ranked-queue entry (e.g. solo/duo or flex)."""
+    queue_type: str   # "RANKED_SOLO_5x5" | "RANKED_FLEX_SR"
+    tier: str         # IRON, BRONZE, SILVER, GOLD, PLATINUM, EMERALD, DIAMOND, MASTER, GRANDMASTER, CHALLENGER, "" if unranked
+    division: str     # I, II, III, IV (empty for MASTER+)
+    league_points: int
+    wins: int
+    losses: int
+
+    @property
+    def games(self) -> int:
+        return self.wins + self.losses
+
+    @property
+    def win_rate(self) -> float | None:
+        return self.wins / self.games if self.games else None
+
+
 class RiotApiClient:
     DEFAULT_TIMEOUT = 5.0
 
@@ -155,6 +174,31 @@ class RiotApiClient:
             name=str(data.get("name") or ""),
             level=int(data.get("summonerLevel") or 0),
         )
+
+    async def league_entries(self, summoner_id: str) -> list[RankEntry]:
+        """Return ranked entries for the encrypted-summoner-id, one per queue.
+        Returns an empty list when the player is unranked or the call fails."""
+        path = f"/lol/league/v4/entries/by-summoner/{summoner_id}"
+        try:
+            data = await self._get(self._platform, path)
+        except RiotApiError as exc:
+            logger.info("league_entries_failed: %s", exc)
+            return []
+        if not isinstance(data, list):
+            return []
+        out: list[RankEntry] = []
+        for entry in data:
+            if not isinstance(entry, dict):
+                continue
+            out.append(RankEntry(
+                queue_type=str(entry.get("queueType") or ""),
+                tier=str(entry.get("tier") or ""),
+                division=str(entry.get("rank") or ""),
+                league_points=int(entry.get("leaguePoints") or 0),
+                wins=int(entry.get("wins") or 0),
+                losses=int(entry.get("losses") or 0),
+            ))
+        return out
 
     async def top_mastery(
         self, puuid: str, *, count: int = 3

@@ -23,6 +23,32 @@ class TopChampion:
 
 
 @dataclass(frozen=True)
+class RankBadge:
+    """Solo/duo ranked snapshot — tier + division + LP + wins/losses."""
+    tier: str = ""        # "DIAMOND" / "" if unranked
+    division: str = ""    # "II" / "" for MASTER+
+    league_points: int = 0
+    wins: int = 0
+    losses: int = 0
+
+    @property
+    def games(self) -> int:
+        return self.wins + self.losses
+
+    @property
+    def is_ranked(self) -> bool:
+        return bool(self.tier)
+
+    @property
+    def short(self) -> str:
+        if not self.tier:
+            return "Unranked"
+        if self.tier in ("MASTER", "GRANDMASTER", "CHALLENGER"):
+            return f"{self.tier.title()} {self.league_points}LP"
+        return f"{self.tier.title()} {self.division} {self.league_points}LP"
+
+
+@dataclass(frozen=True)
 class EnemyProfile:
     summoner_name: str
     level: int = 0
@@ -30,6 +56,7 @@ class EnemyProfile:
     wins: int = 0
     losses: int = 0
     streak: int = 0  # positive = win streak, negative = loss streak
+    rank: RankBadge = field(default_factory=RankBadge)
 
     @property
     def win_rate(self) -> float | None:
@@ -40,7 +67,11 @@ class EnemyProfile:
 
     @property
     def has_data(self) -> bool:
-        return bool(self.top_champions) or (self.wins + self.losses) > 0
+        return (
+            bool(self.top_champions)
+            or (self.wins + self.losses) > 0
+            or self.rank.is_ranked
+        )
 
 
 class ProfileService:
@@ -89,7 +120,8 @@ class ProfileService:
         return await self._compose(summoner, cache_key)
 
     async def _compose(self, summoner: object, cache_key: str) -> EnemyProfile:
-        """Shared post-summoner-lookup pipeline: mastery + streak."""
+        """Shared post-summoner-lookup pipeline: mastery + streak + rank
+        all fanned out concurrently."""
         from .riot_api import SummonerInfo
         assert isinstance(summoner, SummonerInfo)
         mastery_task = asyncio.create_task(
@@ -98,6 +130,11 @@ class ProfileService:
         streak_task = asyncio.create_task(
             self._client.win_loss_streak(summoner.puuid)
         )
+        rank_task = (
+            asyncio.create_task(self._client.league_entries(summoner.summoner_id))
+            if summoner.summoner_id else None
+        )
+
         try:
             mastery = await mastery_task
         except RiotApiError as exc:
@@ -108,6 +145,28 @@ class ProfileService:
         except RiotApiError as exc:
             logger.info("profile_streak_failed: %s", exc)
             wins, losses, streak = 0, 0, 0
+
+        rank = RankBadge()
+        if rank_task is not None:
+            try:
+                entries = await rank_task
+            except RiotApiError as exc:
+                logger.info("profile_rank_failed: %s", exc)
+                entries = []
+            # Prefer solo/duo, fall back to flex if that's all they have.
+            solo = next(
+                (e for e in entries if e.queue_type == "RANKED_SOLO_5x5"),
+                None,
+            )
+            chosen = solo or (entries[0] if entries else None)
+            if chosen is not None:
+                rank = RankBadge(
+                    tier=chosen.tier,
+                    division=chosen.division,
+                    league_points=chosen.league_points,
+                    wins=chosen.wins,
+                    losses=chosen.losses,
+                )
 
         profile = EnemyProfile(
             summoner_name=summoner.name or cache_key,
@@ -123,6 +182,7 @@ class ProfileService:
             wins=wins,
             losses=losses,
             streak=streak,
+            rank=rank,
         )
         self._cache[cache_key] = profile
         return profile
