@@ -326,6 +326,7 @@ def _run_with_ui(args: argparse.Namespace) -> int:
     # its own top-level transparent always-on-top window with persisted
     # position. Toggled via overlay_config flags in Settings.
     from champ_assistant import overlay_config as _ovc
+    from champ_assistant.ui.lobby_stats_widget import LobbyStatsWidget
     from champ_assistant.ui.minimap_timers_widget import MinimapTimersWidget
     from champ_assistant.ui.scoreboard_widget import ScoreboardWidget
     persisted = _ovc.load()
@@ -336,6 +337,11 @@ def _run_with_ui(args: argparse.Namespace) -> int:
     if persisted.show_minimap_timers:
         minimap = MinimapTimersWidget()
         floating.append(minimap)
+    lobby_stats: LobbyStatsWidget | None = None
+    if persisted.show_lobby_stats:
+        lobby_stats = LobbyStatsWidget()
+        # Hooked into the SessionView pipeline below (not LCDA).
+        overlay._lobby_stats = lobby_stats  # type: ignore[attr-defined]
 
     lcda_task = loop.create_task(
         _run_lcda_watcher(overlay, floating), name="lcda-watcher"
@@ -473,6 +479,15 @@ async def _hydrate_champions_and_icons(
         )
     overlay.summoner_tracker.set_champion_icons(name_to_pixmap)
     overlay.summoner_tracker.set_spell_icons(spell_pixmaps)
+
+    # Forward champion icons to the floating lobby widget if it's enabled.
+    lobby = getattr(overlay, "_lobby_stats", None)
+    if lobby is not None:
+        lobby.set_champion_icons(pixmaps)
+        # Re-render with the freshly arrived icons if a session was already
+        # in flight when the prefetch finished.
+        if getattr(overlay, "_last_view", None) is not None:
+            lobby.update_view(overlay._last_view)
 
     log.info(
         "icon_prefetch_done champs=%d spells=%d",

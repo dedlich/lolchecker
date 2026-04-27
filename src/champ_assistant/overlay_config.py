@@ -35,6 +35,7 @@ class OverlayState:
     show_spikes: bool = True
     show_scoreboard: bool = True
     show_minimap_timers: bool = True
+    show_lobby_stats: bool = True
     floating_positions: dict | None = None  # widget-key -> [x, y]
 
 
@@ -66,7 +67,7 @@ def load() -> OverlayState:
                   "always_on_top", "frameless", "collapsed",
                   "opacity", "show_objectives", "show_summoners",
                   "show_spikes", "show_scoreboard", "show_minimap_timers",
-                  "floating_positions"):
+                  "show_lobby_stats", "floating_positions"):
         if field in data:
             setattr(state, field, data[field])
     return state

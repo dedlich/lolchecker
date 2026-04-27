@@ -280,6 +280,12 @@ class MainOverlay(QMainWindow):
         self._ban_panel.update_suggestions(
             view.ban_suggestions, self._icon_for_key,
         )
+        # Floating lobby stats widget runs alongside the main overlay's
+        # champ-select panel and reads the same SessionView. Held here so
+        # it gets every refresh without an extra subscription path.
+        lobby = getattr(self, "_lobby_stats", None)
+        if lobby is not None:
+            lobby.update_view(view)
 
     def _icon_for_key(self, key: str | None) -> QPixmap | None:
         if not key:

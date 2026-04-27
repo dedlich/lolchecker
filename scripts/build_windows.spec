@@ -94,6 +94,7 @@ a = Analysis(
         "champ_assistant.ui.floating_widget",
         "champ_assistant.ui.scoreboard_widget",
         "champ_assistant.ui.minimap_timers_widget",
+        "champ_assistant.ui.lobby_stats_widget",
         "champ_assistant.ui.tray",
         "champ_assistant.lcu.perks",
         "champ_assistant.lcu.item_sets",
