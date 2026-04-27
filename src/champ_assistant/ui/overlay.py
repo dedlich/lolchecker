@@ -336,10 +336,19 @@ class MainOverlay(QMainWindow):
             self._switch_mode(target)
         if snapshot is not None and not getattr(self, "_borderless_hint_shown", False):
             self._borderless_hint_shown = True
-            self._status_bar.set_info(
-                "Tipp: League muss in 'Borderless' laufen — Fullscreen blockiert das Overlay",
-                color="#7FCC7F",
-            )
+            from ..lcu.window import find_league_window
+            info = find_league_window()
+            if info is not None and info.fullscreen_exclusive:
+                self._status_bar.set_info(
+                    "League laeuft in Fullscreen — bitte auf 'Borderless' umstellen "
+                    "(Settings → Video). Auch Blitz/Mobalytics brauchen das.",
+                    color="#FFB84A",
+                )
+            else:
+                self._status_bar.set_info(
+                    "Overlay aktiv — Position via Drag in der Titelleiste",
+                    color="#7FCC7F",
+                )
 
     def _switch_mode(self, mode: str) -> None:
         """champselect = wide, opaque, normal z-order; overlay = narrow,
@@ -357,6 +366,8 @@ class MainOverlay(QMainWindow):
             flags &= ~Qt.WindowType.WindowStaysOnTopHint
             target_w = max(self._persisted.width, 560)
             opacity = 1.0
+            # Allow auto-pin to fire again next time we re-enter overlay.
+            self._pinned_for_session = False
         self.setWindowFlags(flags)
         # setWindowFlags hides the window — re-show if it was visible.
         if was_visible:
@@ -366,6 +377,43 @@ class MainOverlay(QMainWindow):
         clamped_w, clamped_h = self._clamp_to_screen(target_w, target_h)
         self.resize(clamped_w, clamped_h)
         self.setWindowOpacity(opacity)
+
+        # In overlay mode, try to auto-pin to the right edge of League's
+        # actual window so the user doesn't manually reposition every game.
+        if mode == "overlay":
+            self._pin_to_league_window()
+
+    def _pin_to_league_window(self) -> None:
+        """Locate League's window via Win32 and park ourselves at its
+        right edge. Falls back to the screen-edge anchor on non-Windows
+        or when League isn't running."""
+        from ..lcu.window import find_league_window
+
+        info = find_league_window()
+        if info is None:
+            return
+        # If the user prefers a custom-saved position, only auto-pin once
+        # per game — set a sentinel on the first pin to avoid fighting
+        # subsequent manual moves.
+        if getattr(self, "_pinned_for_session", False):
+            return
+        self._pinned_for_session = True
+        margin = 8
+        x = info.right - self.width() - margin
+        # Clamp Y inside the league window vertically.
+        y = info.top + margin
+        # Honour the multi-screen safety check we already do for restored
+        # positions — never end up off-screen.
+        from PyQt6.QtGui import QGuiApplication
+        screens = QGuiApplication.screens()
+        for screen in screens:
+            geo = screen.availableGeometry()
+            if geo.left() <= x <= geo.right() - 50:
+                self.move(x, y)
+                return
+        # If the computed pin lands off-screen (e.g. League on disconnected
+        # monitor), fall back to anchored placement.
+        self._anchor_to_screen_edge(self._persisted.anchor)
 
     def _panel_allowed(self, key: str) -> bool:
         """Whether the user-level toggle for ``key`` permits rendering."""

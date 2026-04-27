@@ -52,6 +52,7 @@ a = Analysis(
         "champ_assistant.lcu.client",
         "champ_assistant.lcu.events",
         "champ_assistant.lcu.sources",
+        "champ_assistant.lcu.window",
         "champ_assistant.data",
         "champ_assistant.data.models",
         "champ_assistant.data.loader",
