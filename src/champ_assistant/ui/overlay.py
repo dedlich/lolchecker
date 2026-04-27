@@ -50,7 +50,7 @@ class MainOverlay(QMainWindow):
     refresh_requested = pyqtSignal()
     enemy_role_clicked = pyqtSignal(int)  # cell_id of the clicked enemy slot
     settings_changed = pyqtSignal()       # user saved a new API key
-    apply_runes_requested = pyqtSignal(str, list)  # (champion_key, rune_names)
+    apply_runes_requested = pyqtSignal(str, "PyQt_PyObject")  # (champion_key, rune_names)
 
     def __init__(
         self,

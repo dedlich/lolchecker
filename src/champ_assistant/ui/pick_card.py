@@ -22,7 +22,7 @@ ICON_SIZE = 28
 class PickCard(QFrame):
     """Card showing one suggested pick: icon + champion + tier + score + reasons + build."""
 
-    apply_runes_requested = pyqtSignal(str, list)  # (champion_key, rune_names)
+    apply_runes_requested = pyqtSignal(str, "PyQt_PyObject")  # (champion_key, rune_names)
 
     def __init__(
         self,
