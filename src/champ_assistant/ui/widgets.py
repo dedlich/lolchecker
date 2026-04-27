@@ -42,7 +42,7 @@ class ConnectionStatusBar(QStatusBar):
         self._version_label = QLabel("")
         self._version_label.setStyleSheet(
             f"color: {styles.TEXT_MUTED}; font-family: {styles.FONT_MONO};"
-            " font-size: 10px; padding: 0 6px;"
+            f" font-size: {styles.FS_CAPTION}px; padding: 0 8px;"
         )
         self.addWidget(self._version_label)
 
@@ -53,13 +53,24 @@ class ConnectionStatusBar(QStatusBar):
         self._update_button = QPushButton("Jetzt installieren")
         self._update_button.setObjectName("updateInstallButton")
         self._update_button.setStyleSheet(
-            "QPushButton { background: #4A9EFF; color: white; padding: 2px 10px;"
-            " border-radius: 3px; border: none; font-weight: 600; }"
-            " QPushButton:hover { background: #5FAEFF; }"
-            " QPushButton:disabled { background: #555; color: #aaa; }"
+            f"QPushButton {{"
+            f" background: qlineargradient(x1:0, y1:0, x2:0, y2:1,"
+            f" stop:0 {styles.ACCENT_BRIGHT}, stop:1 {styles.ACCENT});"
+            f" color: white; padding: 3px 14px;"
+            f" border-radius: 6px; border: none; font-weight: 700;"
+            f" font-size: {styles.FS_LABEL}px; }}"
+            f" QPushButton:hover {{ background: {styles.ACCENT_BRIGHT}; }}"
+            f" QPushButton:pressed {{ background: {styles.ACCENT}; }}"
+            f" QPushButton:disabled {{ background: {styles.BG_TERTIARY};"
+            f" color: {styles.TEXT_MUTED}; }}"
         )
         self._update_button.hide()
         self.addPermanentWidget(self._update_button)
+
+        # New: connection-state dot to the right of the text label.
+        from .badges import StateDot
+        self._dot = StateDot("disconnected")
+        self.addPermanentWidget(self._dot)
 
         self._label = QLabel("")  # kept as `_label` for backwards-compat
         self._label.setObjectName("connectionStateLabel")
@@ -72,7 +83,11 @@ class ConnectionStatusBar(QStatusBar):
         text = _STATE_LABELS[state]
         color = _STATE_COLORS[state]
         self._label.setText(text)
-        self._label.setStyleSheet(f"color: {color}; padding: 0 8px;")
+        self._label.setStyleSheet(
+            f"color: {color}; padding: 0 8px;"
+            f" font-size: {styles.FS_LABEL}px; font-weight: 600;"
+        )
+        self._dot.set_state(state)
 
     def set_info(self, text: str, color: str | None = None) -> None:
         """Persistent message in the left slot — survives state refreshes."""
@@ -110,15 +125,5 @@ class ConnectionStatusBar(QStatusBar):
         return self._state
 
 
-class TierBadge(QLabel):
-    """Small colored label showing a champion tier."""
-
-    def __init__(self, tier: str | None) -> None:
-        super().__init__(tier or "—")
-        self.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        color = styles.TIER_COLORS.get(tier or "", styles.TEXT_MUTED)
-        self.setStyleSheet(
-            f"color: {color}; font-weight: 700; padding: 2px 6px; "
-            f"border: 1px solid {color}; border-radius: 4px;"
-        )
-        self.setFixedHeight(20)
+# Re-exported for back-compat — the implementation lives in badges.
+from .badges import TierBadge  # noqa: E402

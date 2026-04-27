@@ -128,14 +128,18 @@ class PickCard(QFrame):
         apply = QPushButton(label)
         apply.setCursor(Qt.CursorShape.PointingHandCursor)
         apply.setStyleSheet(
-            f"QPushButton {{ background-color: {styles.ACCENT_DIM};"
-            f" color: {styles.TEXT_PRIMARY};"
-            f" border: 1px solid {styles.ACCENT}; padding: 3px 10px;"
-            f" border-radius: {styles.RADIUS_SMALL}px; font-weight: 600;"
-            f" font-size: 11px; }}"
-            f" QPushButton:hover {{ background-color: {styles.ACCENT}; }}"
-            f" QPushButton:disabled {{ background-color: {styles.BG_TERTIARY};"
-            f" color: {styles.TEXT_MUTED}; border-color: {styles.BORDER}; }}"
+            f"QPushButton {{"
+            f" background: qlineargradient(x1:0, y1:0, x2:0, y2:1,"
+            f" stop:0 {styles.ACCENT_BRIGHT}, stop:1 {styles.ACCENT});"
+            f" color: white;"
+            f" border: none; padding: 4px 14px;"
+            f" border-radius: 8px; font-weight: 700;"
+            f" font-size: {styles.FS_LABEL}px;"
+            f" letter-spacing: 0.3px; }}"
+            f" QPushButton:hover {{ background: {styles.ACCENT_BRIGHT}; }}"
+            f" QPushButton:pressed {{ background: {styles.ACCENT}; }}"
+            f" QPushButton:disabled {{ background: {styles.BG_TERTIARY};"
+            f" color: {styles.TEXT_MUTED}; }}"
         )
         apply.clicked.connect(
             lambda: self.apply_build_requested.emit(

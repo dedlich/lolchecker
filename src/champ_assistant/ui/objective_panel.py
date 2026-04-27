@@ -46,22 +46,27 @@ class _ObjectiveRow(QFrame):
         self.name = name
 
         layout = QHBoxLayout(self)
-        layout.setContentsMargins(8, 6, 10, 6)
-        layout.setSpacing(8)
+        layout.setContentsMargins(10, 7, 12, 7)
+        layout.setSpacing(10)
 
         self._sigil = QLabel(OBJECTIVE_SIGILS.get(name, "•"))
-        self._sigil.setStyleSheet("font-size: 16px;")
-        self._sigil.setFixedWidth(24)
+        self._sigil.setStyleSheet("font-size: 18px;")
+        self._sigil.setFixedWidth(26)
         self._sigil.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(self._sigil)
 
         text_col = QVBoxLayout()
-        text_col.setSpacing(0)
+        text_col.setSpacing(1)
         text_col.setContentsMargins(0, 0, 0, 0)
         self._name_label = QLabel(name)
-        self._name_label.setStyleSheet("font-weight: 600; font-size: 13px;")
+        self._name_label.setStyleSheet(
+            f"font-weight: 700; font-size: {styles.FS_HEADING}px;"
+            f" color: {styles.TEXT_PRIMARY}; letter-spacing: 0.2px;"
+        )
         self._detail_label = QLabel("")
-        self._detail_label.setStyleSheet(f"color: {styles.TEXT_MUTED}; font-size: 10px;")
+        self._detail_label.setStyleSheet(
+            f"color: {styles.TEXT_MUTED}; font-size: {styles.FS_CAPTION}px;"
+        )
         text_col.addWidget(self._name_label)
         text_col.addWidget(self._detail_label)
         layout.addLayout(text_col, 1)

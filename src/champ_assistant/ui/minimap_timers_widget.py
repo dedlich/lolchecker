@@ -108,8 +108,10 @@ class MinimapTimersWidget(FloatingWidget):
     def __init__(self) -> None:
         super().__init__()
         self.setStyleSheet(
-            f"QFrame[panel='true'] {{ background-color: rgba(11, 15, 20, 150);"
-            f" border: 1px solid rgba(40, 48, 60, 180);"
+            f"QFrame[panel='true'] {{"
+            f" background: qlineargradient(x1:0, y1:0, x2:0, y2:1,"
+            f"  stop:0 rgba(20, 26, 34, 180), stop:1 rgba(10, 14, 20, 180));"
+            f" border: 1px solid rgba(60, 70, 85, 200);"
             f" border-radius: {styles.RADIUS}px; }}"
         )
         outer = QVBoxLayout(self)

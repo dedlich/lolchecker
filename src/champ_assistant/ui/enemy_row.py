@@ -14,22 +14,9 @@ from PyQt6.QtWidgets import (
 from ..data.models import CounterEntry, TeamMember
 from ..profiling.profile import EnemyProfile
 from . import styles
+from .badges import RankPill
 
 ICON_SIZE = 32
-
-# Tier-color map for the rank badge — Riot's official color hex values.
-_RANK_COLORS = {
-    "IRON":        "#7E7E7E",
-    "BRONZE":      "#A36A45",
-    "SILVER":      "#A0A8B7",
-    "GOLD":        "#E0B046",
-    "PLATINUM":    "#4FA9A1",
-    "EMERALD":     "#3FCB7E",
-    "DIAMOND":     "#5499D6",
-    "MASTER":      "#A269D6",
-    "GRANDMASTER": "#D86060",
-    "CHALLENGER":  "#F4D169",
-}
 
 
 class EnemyRow(QFrame):
@@ -82,16 +69,23 @@ class EnemyRow(QFrame):
         head.addWidget(self._icon_label)
         head.addWidget(self._champion_label)
         head.addStretch()
+
+        self._rank_pill = RankPill()
+        self._rank_pill.hide()
+        head.addWidget(self._rank_pill)
+
         head.addWidget(self._role_button)
 
         self._counters_label = QLabel("")
-        self._counters_label.setStyleSheet(f"color: {styles.TEXT_MUTED};")
+        self._counters_label.setStyleSheet(
+            f"color: {styles.TEXT_MUTED}; font-size: {styles.FS_LABEL}px;"
+        )
         self._counters_label.setWordWrap(True)
 
         # Optional profiling line — appears only when a profile is set.
         self._profile_label = QLabel("")
         self._profile_label.setStyleSheet(
-            f"color: {styles.TEXT_SECONDARY}; font-size: 10px;"
+            f"color: {styles.TEXT_SECONDARY}; font-size: {styles.FS_CAPTION}px;"
         )
         self._profile_label.setWordWrap(True)
         self._profile_label.hide()
@@ -110,27 +104,33 @@ class EnemyRow(QFrame):
         self._icon_label.clear()
         self._profile_label.setText("")
         self._profile_label.hide()
+        self._rank_pill.hide()
 
     def set_profile(self, profile: EnemyProfile | None, *,
                     champion_names: dict[int, str] | None = None) -> None:
-        """Render an optional pre-game profile under the counters line.
+        """Render an optional pre-game profile.
 
-        Format (each piece optional, separated by · ):
-          [RANK]  ·  Mains: A, B, C  ·  WR%  ·  streak
-        Rank is colored by tier so high-elo opponents stand out at a glance.
+        Layout:
+          rank pill (in the header, top-right corner)
+          stats line below counters: Mains · WR · streak
         """
         if profile is None or not profile.has_data:
             self._profile_label.hide()
+            self._rank_pill.hide()
             return
-        names = champion_names or {}
 
-        bits: list[str] = []
         if profile.rank.is_ranked:
-            color = _RANK_COLORS.get(profile.rank.tier, styles.TEXT_MUTED)
-            bits.append(
-                f"<span style='color:{color}; font-weight:600'>"
-                f"{profile.rank.short}</span>"
+            self._rank_pill.set_rank(
+                tier=profile.rank.tier,
+                division=profile.rank.division,
+                lp=profile.rank.league_points,
             )
+            self._rank_pill.show()
+        else:
+            self._rank_pill.hide()
+
+        names = champion_names or {}
+        bits: list[str] = []
         if profile.top_champions:
             tops = ", ".join(
                 names.get(c.champion_id, f"#{c.champion_id}")
@@ -148,7 +148,6 @@ class EnemyRow(QFrame):
         if not bits:
             self._profile_label.hide()
             return
-        # Use rich-text so the colored rank span renders correctly.
         self._profile_label.setText(" · ".join(bits))
         self._profile_label.show()
 

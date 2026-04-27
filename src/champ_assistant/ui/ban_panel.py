@@ -20,9 +20,16 @@ class _BanRow(QFrame):
     def __init__(self, suggestion: BanSuggestion, icon: QPixmap | None) -> None:
         super().__init__()
         self.setProperty("role", "row")
+        # Subtle red left-border to make it visually read as an alert/ban row
+        self.setStyleSheet(
+            f"QFrame[role='row'] {{ background-color: {styles.BG_TERTIARY};"
+            f" border-radius: {styles.RADIUS_SMALL}px;"
+            f" border-left: 3px solid {styles.DANGER}; }}"
+            f" QFrame[role='row']:hover {{ background-color: {styles.BG_INTERACT}; }}"
+        )
         layout = QHBoxLayout(self)
-        layout.setContentsMargins(6, 4, 8, 4)
-        layout.setSpacing(8)
+        layout.setContentsMargins(8, 6, 10, 6)
+        layout.setSpacing(10)
 
         portrait = QLabel()
         portrait.setFixedSize(ICON_SIZE, ICON_SIZE)
@@ -30,21 +37,26 @@ class _BanRow(QFrame):
         portrait.setStyleSheet(
             f"background-color: {styles.BG_PRIMARY};"
             f" border-radius: {styles.RADIUS_SMALL}px;"
-            f" border: 1px solid {styles.BORDER};"
+            f" border: 1px solid {styles.BORDER_FAINT};"
         )
         if icon is not None and not icon.isNull():
             portrait.setPixmap(icon)
         layout.addWidget(portrait)
 
         text = QVBoxLayout()
-        text.setSpacing(0)
+        text.setSpacing(1)
         text.setContentsMargins(0, 0, 0, 0)
         name = QLabel(suggestion.champion_key)
-        name.setStyleSheet("font-weight: 600; font-size: 12px;")
+        name.setStyleSheet(
+            f"font-weight: 700; font-size: {styles.FS_BODY}px;"
+            f" color: {styles.TEXT_PRIMARY};"
+        )
         text.addWidget(name)
         if suggestion.reasons:
             reasons = QLabel(" · ".join(suggestion.reasons))
-            reasons.setStyleSheet(f"color: {styles.TEXT_MUTED}; font-size: 10px;")
+            reasons.setStyleSheet(
+                f"color: {styles.TEXT_MUTED}; font-size: {styles.FS_CAPTION}px;"
+            )
             reasons.setWordWrap(True)
             text.addWidget(reasons)
         layout.addLayout(text, 1)
@@ -52,7 +64,11 @@ class _BanRow(QFrame):
         score = QLabel(f"{suggestion.score:.0f}")
         score.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
         score.setStyleSheet(
-            f"color: {styles.DANGER}; font-weight: 700; font-size: 14px;"
+            f"color: {styles.DANGER};"
+            f" background-color: rgba(255, 107, 107, 18);"
+            f" border: 1px solid rgba(255, 107, 107, 60);"
+            f" padding: 2px 10px; border-radius: 8px;"
+            f" font-weight: 700; font-size: {styles.FS_HEADING}px;"
         )
         layout.addWidget(score)
 

@@ -17,22 +17,10 @@ from PyQt6.QtWidgets import QFrame, QHBoxLayout, QLabel, QVBoxLayout
 
 from ..profiling.profile import EnemyProfile
 from . import styles
+from .badges import RankPill
 from .floating_widget import FloatingWidget
 
 PORTRAIT_SIZE = 32
-
-_RANK_COLORS = {
-    "IRON":        "#7E7E7E",
-    "BRONZE":      "#A36A45",
-    "SILVER":      "#A0A8B7",
-    "GOLD":        "#E0B046",
-    "PLATINUM":    "#4FA9A1",
-    "EMERALD":     "#3FCB7E",
-    "DIAMOND":     "#5499D6",
-    "MASTER":      "#A269D6",
-    "GRANDMASTER": "#D86060",
-    "CHALLENGER":  "#F4D169",
-}
 
 
 class _LobbyRow(QFrame):
@@ -70,10 +58,9 @@ class _LobbyRow(QFrame):
         name_col.addWidget(self._summoner)
         head.addLayout(name_col, 1)
 
-        self._rank = QLabel("")
-        self._rank.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-        self._rank.setStyleSheet("font-weight: 600; font-size: 11px;")
-        head.addWidget(self._rank)
+        self._rank_pill = RankPill()
+        self._rank_pill.hide()
+        head.addWidget(self._rank_pill)
 
         outer.addLayout(head)
 
@@ -100,21 +87,19 @@ class _LobbyRow(QFrame):
         self._summoner.setText(summoner_name or "")
 
         if profile is None:
-            self._rank.setText("")
+            self._rank_pill.hide()
             self._stats.setText("")
             return
 
         if profile.rank.is_ranked:
-            color = _RANK_COLORS.get(profile.rank.tier, styles.TEXT_MUTED)
-            self._rank.setText(profile.rank.short)
-            self._rank.setStyleSheet(
-                f"color: {color}; font-weight: 700; font-size: 11px;"
+            self._rank_pill.set_rank(
+                tier=profile.rank.tier,
+                division=profile.rank.division,
+                lp=profile.rank.league_points,
             )
+            self._rank_pill.show()
         else:
-            self._rank.setText("Unranked")
-            self._rank.setStyleSheet(
-                f"color: {styles.TEXT_MUTED}; font-size: 10px;"
-            )
+            self._rank_pill.hide()
 
         bits: list[str] = []
         if profile.top_champions:
@@ -149,11 +134,14 @@ class LobbyStatsWidget(FloatingWidget):
     def __init__(self) -> None:
         super().__init__()
         self.setStyleSheet(
-            f"QFrame[panel='true'] {{ background-color: rgba(11, 15, 20, 165);"
-            f" border: 1px solid rgba(40, 48, 60, 200);"
+            f"QFrame[panel='true'] {{"
+            f" background: qlineargradient(x1:0, y1:0, x2:0, y2:1,"
+            f"  stop:0 rgba(20, 26, 34, 195), stop:1 rgba(10, 14, 20, 195));"
+            f" border: 1px solid rgba(60, 70, 85, 220);"
             f" border-radius: {styles.RADIUS}px; }}"
-            f" QFrame[role='row'] {{ background-color: rgba(31, 38, 50, 120);"
-            f" border-radius: {styles.RADIUS_SMALL}px; }}"
+            f" QFrame[role='row'] {{"
+            f"  background-color: rgba(45, 55, 70, 130);"
+            f"  border-radius: {styles.RADIUS_SMALL}px; }}"
         )
 
         outer = QVBoxLayout(self)

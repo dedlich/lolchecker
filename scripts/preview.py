@@ -243,21 +243,27 @@ def main() -> int:
     overlay.update_lcda_snapshot(snap)  # rerender with cooldowns
 
     # Add fake profile data to the enemy rows for the preview
-    from champ_assistant.profiling.profile import EnemyProfile, TopChampion
+    from champ_assistant.profiling.profile import EnemyProfile, RankBadge, TopChampion
     profiles = {
         122: EnemyProfile("EnemyTop", level=540,
                           top_champions=[TopChampion(122, 580_000, 7),
                                          TopChampion(86, 200_000, 6),
                                          TopChampion(75, 180_000, 6)],
-                          wins=11, losses=4, streak=3),
+                          wins=11, losses=4, streak=3,
+                          rank=RankBadge(tier="DIAMOND", division="II",
+                                         league_points=24, wins=82, losses=70)),
         64: EnemyProfile("EnemyJg", level=320,
                          top_champions=[TopChampion(64, 350_000, 7),
                                         TopChampion(60, 180_000, 6)],
-                         wins=6, losses=8, streak=-1),
+                         wins=6, losses=8, streak=-1,
+                         rank=RankBadge(tier="EMERALD", division="III",
+                                        league_points=42, wins=15, losses=18)),
         103: EnemyProfile("EnemyMid", level=410,
                           top_champions=[TopChampion(103, 420_000, 7),
                                          TopChampion(7, 150_000, 6)],
-                          wins=4, losses=9, streak=-4),  # tilt
+                          wins=4, losses=9, streak=-4,  # tilt
+                          rank=RankBadge(tier="PLATINUM", division="I",
+                                         league_points=88, wins=31, losses=29)),
     }
     enemy_champ_names = {
         122: "Darius", 86: "Garen", 75: "Nasus",

@@ -1,72 +1,110 @@
-"""Design tokens + Qt stylesheet generation.
+"""Design system tokens + global Qt stylesheet.
 
-Layered palette: deep base for the window, lifted secondary for panels,
-soft tertiary for inset rows. Tier colors stay distinct so a glance at the
-pick list reads at a glance.
+Approach:
+  - Layered backgrounds (primary -> secondary -> tertiary -> elevated) so
+    nested cards visually separate without hard borders.
+  - Translucent borders (rgba) instead of solid 1px lines so chrome reads
+    softer at all opacity levels.
+  - Tier / state colors as semantic constants so panels reuse the same
+    blue for "info", same green for "success", etc.
+  - One typographic scale: 10/11/12/14/17 — used consistently.
 """
 from __future__ import annotations
 
-# Base palette
-BG_PRIMARY = "#0B0F14"
-BG_SECONDARY = "#161C24"
-BG_TERTIARY = "#1F2632"
-BG_ELEVATED = "#243042"  # hover / active panels
+# --------------------------------------------------------------------------
+# Backgrounds (layered)
+# --------------------------------------------------------------------------
+BG_PRIMARY    = "#0A0E14"
+BG_SECONDARY  = "#141A22"
+BG_TERTIARY   = "#1D2530"
+BG_ELEVATED   = "#27313F"
+BG_INTERACT   = "#2F3A4A"  # hover
 
-TEXT_PRIMARY = "#E8EAED"
-TEXT_SECONDARY = "#B6BCC4"
-TEXT_MUTED = "#7A848F"
-TEXT_DISABLED = "#4D5662"
+# --------------------------------------------------------------------------
+# Text
+# --------------------------------------------------------------------------
+TEXT_PRIMARY    = "#ECEEF1"
+TEXT_SECONDARY  = "#B6BCC4"
+TEXT_MUTED      = "#7A848F"
+TEXT_DISABLED   = "#4D5662"
 
-ACCENT = "#5BA8FF"
-ACCENT_DIM = "#2A5180"
-DANGER = "#FF6B6B"
-SUCCESS = "#7FCC7F"
-WARNING = "#FFB84A"
+# --------------------------------------------------------------------------
+# Brand + state colors
+# --------------------------------------------------------------------------
+ACCENT          = "#5BA8FF"
+ACCENT_BRIGHT   = "#7DBBFF"
+ACCENT_DIM      = "#2A5180"
+ACCENT_FAINT    = "rgba(91, 168, 255, 30)"
 
-BORDER = "#28303C"
-BORDER_STRONG = "#3A4555"
+DANGER          = "#FF6B6B"
+DANGER_DIM      = "#7D2F2F"
+WARNING         = "#FFB84A"
+SUCCESS         = "#7FCC7F"
+INFO            = ACCENT
 
-TIER_S_PLUS = "#FF6B9D"
-TIER_S = "#FFB84A"
-TIER_A = "#7FCC7F"
-TIER_B = "#9FA8B4"
-TIER_C = TEXT_MUTED
-TIER_D = TEXT_DISABLED
+# --------------------------------------------------------------------------
+# Borders (translucent so they read soft at any opacity)
+# --------------------------------------------------------------------------
+BORDER          = "rgba(60, 70, 85, 180)"
+BORDER_STRONG   = "rgba(90, 105, 125, 220)"
+BORDER_FAINT    = "rgba(60, 70, 85, 90)"
+BORDER_ACCENT   = "rgba(91, 168, 255, 140)"
 
-# Cooldown gradient (for spell timers): hot when fresh, cool when ready
-CD_HOT = "#FF6B6B"        # > 50% remaining
-CD_WARM = "#FFB84A"       # 20-50%
-CD_COOL = "#7FCC7F"       # < 20% / ready
+# --------------------------------------------------------------------------
+# Tier colors (champion strength badges)
+# --------------------------------------------------------------------------
+TIER_S_PLUS     = "#FF6B9D"
+TIER_S          = "#FFB84A"
+TIER_A          = "#7FCC7F"
+TIER_B          = "#9FA8B4"
+TIER_C          = TEXT_MUTED
+TIER_D          = TEXT_DISABLED
 
-# Order: native first (SF Pro on macOS, Segoe UI on Windows), Inter as a
-# nice-to-have fallback if the user has it installed.
-FONT_FAMILY = "-apple-system, Segoe UI, Inter, sans-serif"
-FONT_MONO = "SF Mono, Menlo, Consolas, monospace"
+# Cooldown urgency (used in spell tracker badges)
+CD_HOT          = "#FF6B6B"
+CD_WARM         = "#FFB84A"
+CD_COOL         = "#7FCC7F"
 
-SPACING_GRID = 8
-SPACING_TIGHT = 4
-SPACING_WIDE = 12
-RADIUS = 8
-RADIUS_SMALL = 4
+# --------------------------------------------------------------------------
+# Typography
+# --------------------------------------------------------------------------
+FONT_FAMILY     = "-apple-system, Segoe UI, Inter, sans-serif"
+FONT_MONO       = "SF Mono, Menlo, Consolas, monospace"
 
+FS_CAPTION      = 10
+FS_LABEL        = 11
+FS_BODY         = 12
+FS_HEADING      = 14
+FS_TITLE        = 17
 
+# --------------------------------------------------------------------------
+# Spacing + radius (8pt grid)
+# --------------------------------------------------------------------------
+SPACING_TIGHT   = 4
+SPACING_GRID    = 8
+SPACING_WIDE    = 12
+SPACING_LOOSE   = 16
+
+RADIUS_SMALL    = 4
+RADIUS          = 8
+RADIUS_LARGE    = 12
+
+# --------------------------------------------------------------------------
+# Tier name -> color (used by widgets that show champion/pick tiers)
+# --------------------------------------------------------------------------
 TIER_COLORS: dict[str, str] = {
     "S+": TIER_S_PLUS,
-    "S": TIER_S,
-    "A": TIER_A,
-    "B": TIER_B,
-    "C": TIER_C,
-    "D": TIER_D,
+    "S":  TIER_S,
+    "A":  TIER_A,
+    "B":  TIER_B,
+    "C":  TIER_C,
+    "D":  TIER_D,
 }
 
 
 def cooldown_color(fraction_remaining: float) -> str:
-    """Pick a color for a cooldown timer based on how much time is left.
-
-    ``fraction_remaining`` is the share of the cooldown still ticking
-    (1.0 = just used, 0.0 = ready). Bright/hot when fresh, fading to cool
-    as the timer winds down so the eye can scan the worst threats first.
-    """
+    """Map remaining-fraction (0..1) to a cooldown color. Hot when fresh,
+    cool as the timer winds down."""
     if fraction_remaining > 0.5:
         return CD_HOT
     if fraction_remaining > 0.2:
@@ -75,7 +113,8 @@ def cooldown_color(fraction_remaining: float) -> str:
 
 
 def global_stylesheet() -> str:
-    """Qt stylesheet applied to the top-level window."""
+    """Top-level QApplication stylesheet. Picks defaults that nested widgets
+    inherit unless they override per-property."""
     return f"""
         QMainWindow, QWidget#root {{
             background-color: {BG_PRIMARY};
@@ -91,14 +130,15 @@ def global_stylesheet() -> str:
             color: {TEXT_SECONDARY};
         }}
         QLabel#sectionTitle {{
-            font-size: 11px;
+            font-size: {FS_LABEL}px;
             font-weight: 700;
             color: {TEXT_MUTED};
             text-transform: uppercase;
-            letter-spacing: 0.8px;
+            letter-spacing: 1.2px;
+            padding: 2px 0;
         }}
         QLabel#title {{
-            font-size: 17px;
+            font-size: {FS_TITLE}px;
             font-weight: 700;
             color: {TEXT_PRIMARY};
             letter-spacing: -0.2px;
@@ -107,45 +147,137 @@ def global_stylesheet() -> str:
             font-family: {FONT_MONO};
             font-size: 16px;
             font-weight: 700;
-            letter-spacing: 0.5px;
+            letter-spacing: 0.4px;
         }}
         QLabel[role="timer-small"] {{
             font-family: {FONT_MONO};
-            font-size: 11px;
+            font-size: {FS_LABEL}px;
             font-weight: 700;
             letter-spacing: 0.3px;
         }}
+
+        /* Panels: layered cards with soft borders */
         QFrame[panel="true"] {{
             background-color: {BG_SECONDARY};
             border-radius: {RADIUS}px;
-            border: 1px solid {BORDER};
+            border: 1px solid {BORDER_FAINT};
         }}
         QFrame[card="true"] {{
             background-color: {BG_TERTIARY};
             border-radius: {RADIUS_SMALL}px;
-            border: 1px solid {BORDER};
+            border: 1px solid {BORDER_FAINT};
         }}
         QFrame[card="true"]:hover {{
-            border-color: {BORDER_STRONG};
+            border-color: {BORDER};
+            background-color: {BG_ELEVATED};
         }}
         QFrame[role="row"] {{
             background-color: {BG_TERTIARY};
             border-radius: {RADIUS_SMALL}px;
         }}
         QFrame[role="row"]:hover {{
-            background-color: {BG_ELEVATED};
+            background-color: {BG_INTERACT};
         }}
+
+        /* Status + tray-related */
         QStatusBar {{
             background-color: {BG_SECONDARY};
             color: {TEXT_MUTED};
-            border-top: 1px solid {BORDER};
-            font-size: 11px;
+            border-top: 1px solid {BORDER_FAINT};
+            font-size: {FS_LABEL}px;
         }}
         QToolTip {{
             background-color: {BG_ELEVATED};
             color: {TEXT_PRIMARY};
             border: 1px solid {BORDER_STRONG};
             border-radius: {RADIUS_SMALL}px;
-            padding: 4px 8px;
+            padding: 5px 9px;
+        }}
+
+        /* Generic push-buttons inherit a flat dark style; specific panels
+           override with their own accent treatment. */
+        QPushButton {{
+            background-color: {BG_TERTIARY};
+            color: {TEXT_PRIMARY};
+            border: 1px solid {BORDER};
+            border-radius: {RADIUS_SMALL}px;
+            padding: 4px 12px;
+            font-weight: 600;
+            font-size: {FS_LABEL}px;
+        }}
+        QPushButton:hover {{
+            background-color: {BG_ELEVATED};
+            border-color: {BORDER_STRONG};
+        }}
+        QPushButton:pressed {{
+            background-color: {BG_INTERACT};
+        }}
+        QPushButton:disabled {{
+            background-color: {BG_TERTIARY};
+            color: {TEXT_DISABLED};
+            border-color: {BORDER_FAINT};
+        }}
+
+        /* Combobox + line edit (settings dialog) */
+        QLineEdit, QComboBox {{
+            background-color: {BG_TERTIARY};
+            color: {TEXT_PRIMARY};
+            border: 1px solid {BORDER};
+            border-radius: {RADIUS_SMALL}px;
+            padding: 5px 8px;
+            font-size: {FS_BODY}px;
+            selection-background-color: {ACCENT_DIM};
+        }}
+        QLineEdit:focus, QComboBox:focus {{
+            border-color: {ACCENT};
+        }}
+        QComboBox::drop-down {{
+            width: 20px;
+            border: none;
+        }}
+        QComboBox QAbstractItemView {{
+            background-color: {BG_SECONDARY};
+            border: 1px solid {BORDER};
+            color: {TEXT_PRIMARY};
+            selection-background-color: {ACCENT_DIM};
+        }}
+
+        /* Slider (transparency control in title bar) */
+        QSlider::groove:horizontal {{
+            height: 4px;
+            background: {BG_TERTIARY};
+            border-radius: 2px;
+        }}
+        QSlider::handle:horizontal {{
+            background: {ACCENT};
+            width: 12px;
+            margin: -4px 0;
+            border-radius: 6px;
+        }}
+        QSlider::handle:horizontal:hover {{
+            background: {ACCENT_BRIGHT};
+        }}
+
+        /* Menu (tray context) */
+        QMenu {{
+            background-color: {BG_SECONDARY};
+            color: {TEXT_PRIMARY};
+            border: 1px solid {BORDER};
+            border-radius: {RADIUS_SMALL}px;
+            padding: 4px;
+        }}
+        QMenu::item {{
+            background-color: transparent;
+            padding: 6px 14px;
+            border-radius: {RADIUS_SMALL}px;
+        }}
+        QMenu::item:selected {{
+            background-color: {ACCENT_DIM};
+            color: {TEXT_PRIMARY};
+        }}
+        QMenu::separator {{
+            height: 1px;
+            background-color: {BORDER_FAINT};
+            margin: 4px 8px;
         }}
     """
