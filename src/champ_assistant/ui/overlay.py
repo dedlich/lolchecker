@@ -347,8 +347,11 @@ class MainOverlay(QMainWindow):
             )
 
     def _switch_mode(self, mode: str) -> None:
-        """champselect = wide, opaque, normal z-order; overlay = narrow,
-        translucent, always-on-top (real in-game overlay)."""
+        """champselect = wide, opaque, normal z-order;
+        overlay = narrow, translucent, true game-overlay window flags
+        (Tool + StaysOnTop + DoesNotAcceptFocus + ShowWithoutActivating).
+        That combo is what lets the window render over League's Fullscreen
+        Optimization mode without stealing focus from the game."""
         if mode not in ("champselect", "overlay"):
             return
         self._current_mode = mode
@@ -356,12 +359,20 @@ class MainOverlay(QMainWindow):
         was_visible = self.isVisible()
         if mode == "overlay":
             flags |= Qt.WindowType.WindowStaysOnTopHint
+            flags |= Qt.WindowType.Tool                      # no taskbar entry
+            flags |= Qt.WindowType.WindowDoesNotAcceptFocus  # don't steal focus
             target_w = 320
             opacity = self._persisted.opacity if self._save_state else 0.92
+            # Stop Qt from activating us when shown — keeps the keyboard
+            # focus in League while our window appears over it.
+            self.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating, True)
         else:
             flags &= ~Qt.WindowType.WindowStaysOnTopHint
+            flags &= ~Qt.WindowType.Tool
+            flags &= ~Qt.WindowType.WindowDoesNotAcceptFocus
             target_w = max(self._persisted.width, 560)
             opacity = 1.0
+            self.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating, False)
             # Allow auto-pin to fire again next time we re-enter overlay.
             self._pinned_for_session = False
         self.setWindowFlags(flags)
