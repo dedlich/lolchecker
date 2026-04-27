@@ -37,13 +37,9 @@ jobs:
         run: |
           .\dist\champ-assistant\champ-assistant.exe --help
 
-      - name: Copy update script next to the exe
-        # PyInstaller datas land under _internal/, not at the bundle root.
-        # The updater script needs to sit next to champ-assistant.exe so
-        # users can double-click it.
+      - name: Copy .env.example next to the exe
         shell: pwsh
         run: |
-          Copy-Item scripts\update.bat dist\champ-assistant\update.bat
           Copy-Item .env.example dist\champ-assistant\.env.example
 
       - name: Zip bundle for release attachment

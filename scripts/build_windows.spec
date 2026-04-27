@@ -29,10 +29,6 @@ a = Analysis(
         (str(ROOT / "data" / "tiers.json"), "data"),
         (str(ROOT / "data" / "tags.json"), "data"),
         (str(ROOT / "data" / "builds.json"), "data"),
-        # NB: scripts/update.bat is NOT bundled here — PyInstaller datas
-        # land under _internal/ in one-folder mode, not next to the exe.
-        # The build workflow copies update.bat into dist/champ-assistant/
-        # alongside champ-assistant.exe so users can click it.
         # Demo fixtures so --dry-run works in the packaged exe (default
         # FIXTURE_DIR resolves under _MEIPASS/tests/fixtures/sessions).
         # Skip 12_corrupt.json — it's a parser-robustness test asset, not

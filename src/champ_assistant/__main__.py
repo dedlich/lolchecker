@@ -34,6 +34,7 @@ from champ_assistant.lcu.sources import FixtureLcuSource, LcuSource, RealLcuSour
 from champ_assistant.safety import CrashHandler
 from champ_assistant.ui.overlay import MainOverlay
 
+
 def _resource_root() -> Path:
     """Repo root in dev, bundle root in a PyInstaller frozen exe.
 
@@ -217,7 +218,7 @@ async def _hydrate_champions_and_icons(
         async with DataDragon(cache_dir) as dd:
             try:
                 patch = await dd.fetch_latest_patch()
-            except Exception:  # noqa: BLE001
+            except Exception:
                 patch = "14.8.1"
             log.info("ddragon_patch=%s", patch)
             # Tie the runtime-counter cache to the actual current patch so
@@ -230,14 +231,14 @@ async def _hydrate_champions_and_icons(
                 champions = await dd.fetch_champions(patch)
                 assistant.update_champions(champions)
                 log.info("champions_loaded count=%d", len(champions))
-            except Exception:  # noqa: BLE001
+            except Exception:
                 log.exception("champions_fetch_failed")
                 champions = {c.id: c for c in _STARTER_CHAMPIONS}
 
             keys = sorted({c.key for c in champions.values()})
             log.info("icon_prefetch_start patch=%s keys=%d", patch, len(keys))
             icons_bytes = await dd.prefetch_icons(patch, keys)
-    except Exception:  # noqa: BLE001
+    except Exception:
         log.exception("hydrate_failed")
         return
 
@@ -260,18 +261,58 @@ async def _hydrate_champions_and_icons(
 
 
 async def _check_and_notify_update(overlay: MainOverlay) -> None:
-    """One-shot startup check; if a newer release exists, surface it in the status bar."""
+    """One-shot startup check; if a newer release exists, surface it with an
+    Install-now button. Clicking the button downloads, swaps, and relaunches.
+    """
     from champ_assistant import __version__
-    from champ_assistant.update_check import check_for_update
+    from champ_assistant.update_check import check_for_update, install_dir
 
     info = await check_for_update(__version__)
     if info is None:
         return
-    overlay.status_bar.set_info(
-        f"Update: {info['tag']} verfügbar  —  {info['url']}",
-        color="#4A9EFF",
-    )
-    logging.getLogger(__name__).info("update_available tag=%s url=%s", info["tag"], info["url"])
+    log = logging.getLogger(__name__)
+    log.info("update_available tag=%s url=%s", info["tag"], info["url"])
+
+    target = install_dir()
+    if target is None:
+        # Dev mode (not frozen) — show the URL only, no install button.
+        overlay.status_bar.set_info(
+            f"Update: {info['tag']} verfügbar  —  {info['url']}",
+            color="#4A9EFF",
+        )
+        return
+
+    # Hold a strong reference to the launched task so it isn't GC'd mid-flight
+    # (RUF006). Stored on the overlay since on_click outlives this function.
+    overlay._update_task = None  # type: ignore[attr-defined]
+
+    def on_click() -> None:
+        overlay._update_task = asyncio.ensure_future(  # type: ignore[attr-defined]
+            _run_update(overlay, info["tag"], target)
+        )
+
+    overlay.status_bar.show_update_available(info["tag"], on_click)
+
+
+async def _run_update(overlay: MainOverlay, tag: str, target: Path) -> None:
+    """Download + extract + spawn sidecar + quit the app."""
+    from champ_assistant.update_check import apply_update
+
+    log = logging.getLogger(__name__)
+    bar = overlay.status_bar
+    try:
+        await apply_update(
+            tag,
+            install_directory=target,
+            progress=bar.set_update_progress,
+        )
+    except Exception as exc:
+        log.exception("update_failed")
+        bar.update_failed(f"Update fehlgeschlagen: {exc}")
+        return
+    bar.set_update_progress("App startet neu…")
+    log.info("update_applied tag=%s — quitting to let sidecar swap files", tag)
+    QApplication.quit()
 
 
 async def _run_headless(args: argparse.Namespace) -> int:
@@ -357,7 +398,7 @@ def _load_dotenv_files() -> None:
         if p.is_file():
             try:
                 load_dotenv(p, override=False)
-            except Exception:  # noqa: BLE001
+            except Exception:
                 pass
 
 

@@ -1,8 +1,11 @@
 """Shared Qt widgets (status bar, tier badge)."""
 from __future__ import annotations
 
+import contextlib
+from collections.abc import Callable
+
 from PyQt6.QtCore import Qt
-from PyQt6.QtWidgets import QLabel, QStatusBar
+from PyQt6.QtWidgets import QLabel, QPushButton, QStatusBar
 
 from . import styles
 from .view_model import ConnectionState
@@ -40,6 +43,17 @@ class ConnectionStatusBar(QStatusBar):
         self._info_label.setObjectName("statusInfoLabel")
         self.addWidget(self._info_label, 1)
 
+        self._update_button = QPushButton("Jetzt installieren")
+        self._update_button.setObjectName("updateInstallButton")
+        self._update_button.setStyleSheet(
+            "QPushButton { background: #4A9EFF; color: white; padding: 2px 10px;"
+            " border-radius: 3px; border: none; font-weight: 600; }"
+            " QPushButton:hover { background: #5FAEFF; }"
+            " QPushButton:disabled { background: #555; color: #aaa; }"
+        )
+        self._update_button.hide()
+        self.addPermanentWidget(self._update_button)
+
         self._label = QLabel("")  # kept as `_label` for backwards-compat
         self._label.setObjectName("connectionStateLabel")
         self.addPermanentWidget(self._label)
@@ -62,6 +76,27 @@ class ConnectionStatusBar(QStatusBar):
     def clear_info(self) -> None:
         self._info_label.setText("")
         self._info_label.setStyleSheet("")
+
+    def show_update_available(self, tag: str, on_click: Callable[[], None]) -> None:
+        """Show 'Update X verfügbar' + an Install button that calls ``on_click``."""
+        self.set_info(f"Update {tag} verfügbar", color="#4A9EFF")
+        with contextlib.suppress(TypeError):
+            self._update_button.clicked.disconnect()
+        self._update_button.clicked.connect(on_click)
+        self._update_button.setEnabled(True)
+        self._update_button.setText("Jetzt installieren")
+        self._update_button.show()
+
+    def set_update_progress(self, message: str) -> None:
+        """Surface live progress while the update is being installed."""
+        self.set_info(message, color="#4A9EFF")
+        self._update_button.setEnabled(False)
+        self._update_button.setText("Lädt…")
+
+    def update_failed(self, message: str) -> None:
+        self.set_info(message, color=styles.TIER_S)
+        self._update_button.setEnabled(True)
+        self._update_button.setText("Erneut versuchen")
 
     @property
     def state(self) -> ConnectionState:
