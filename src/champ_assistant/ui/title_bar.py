@@ -27,6 +27,7 @@ class TitleBar(QFrame):
     minimize_clicked = pyqtSignal()
     close_clicked = pyqtSignal()
     settings_clicked = pyqtSignal()
+    passthrough_toggled = pyqtSignal(bool)       # True = clicks passthrough
     drag_delta = pyqtSignal(QPoint)
     drag_started = pyqtSignal(QPoint)
     drag_finished = pyqtSignal()
@@ -95,6 +96,26 @@ class TitleBar(QFrame):
         )
         layout.addWidget(self._opacity_slider)
 
+        self._passthrough = QToolButton()
+        self._passthrough.setText("🔒")
+        self._passthrough.setCheckable(True)
+        self._passthrough.setFixedSize(22, 22)
+        self._passthrough.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._passthrough.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self._passthrough.setToolTip(
+            "Click-through: Klicks gehen durchs Overlay an League weiter "
+            "(Titelleiste bleibt klickbar)."
+        )
+        self._passthrough.setStyleSheet(
+            f"QToolButton {{ background: transparent; color: {styles.TEXT_MUTED};"
+            f" border: none; border-radius: {styles.RADIUS_SMALL}px; font-size: 11px; }}"
+            f" QToolButton:checked {{ color: {styles.WARNING};"
+            f" background-color: {styles.BG_TERTIARY}; }}"
+            f" QToolButton:hover:!checked {{ color: {styles.TEXT_PRIMARY}; }}"
+        )
+        self._passthrough.toggled.connect(self.passthrough_toggled.emit)
+        layout.addWidget(self._passthrough)
+
         self._settings = self._mk_button("⚙")
         self._settings.setToolTip("Einstellungen — API-Keys + Region")
         self._settings.clicked.connect(self.settings_clicked.emit)
@@ -138,6 +159,13 @@ class TitleBar(QFrame):
         self._opacity_slider.blockSignals(True)
         self._opacity_slider.setValue(int(round(opacity * 100)))
         self._opacity_slider.blockSignals(False)
+
+    def set_passthrough(self, on: bool) -> None:
+        """Sync the lock-button state from outside without re-emitting."""
+        self._passthrough.blockSignals(True)
+        self._passthrough.setChecked(on)
+        self._passthrough.setText("🔓" if on else "🔒")
+        self._passthrough.blockSignals(False)
 
     def set_panel_visible(self, key: str, visible: bool) -> None:
         btn = self._toggles.get(key)

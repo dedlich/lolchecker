@@ -116,6 +116,7 @@ class MainOverlay(QMainWindow):
         self._title_bar.settings_clicked.connect(self._open_settings)
         self._title_bar.opacity_changed.connect(self._on_opacity_changed)
         self._title_bar.panel_toggled.connect(self._on_panel_toggled)
+        self._title_bar.passthrough_toggled.connect(self._on_passthrough_toggled)
         if not frameless:
             self._title_bar.hide()
         outer.addWidget(self._title_bar)
@@ -522,6 +523,22 @@ class MainOverlay(QMainWindow):
         from .settings_dialog import open_settings
         if open_settings(self):
             self.settings_changed.emit()
+
+    def _on_passthrough_toggled(self, on: bool) -> None:
+        """Click-through mode: body widget ignores all mouse events so they
+        pass through to League. The title bar stays interactive (it's NOT
+        a child of _body) so users can always toggle back. Also dim the
+        body slightly when click-through is active for visual feedback."""
+        self._body.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, on)
+        # Slight extra fade in passthrough mode so it visually reads as
+        # "frozen / inactive" — but not invisible.
+        if on:
+            base_opacity = self._persisted.opacity if self._save_state else 0.92
+            self.setWindowOpacity(max(0.5, base_opacity * 0.85))
+        else:
+            base_opacity = self._persisted.opacity if self._save_state else 0.92
+            self.setWindowOpacity(base_opacity if self._current_mode == "overlay" else 1.0)
+        self._title_bar.set_passthrough(on)
 
     def _on_opacity_changed(self, opacity: float) -> None:
         self.setWindowOpacity(opacity)
