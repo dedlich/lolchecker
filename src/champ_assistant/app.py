@@ -13,6 +13,7 @@ __main__.py) so the orchestration is unit-testable without an event loop.
 """
 from __future__ import annotations
 
+import asyncio
 import logging
 from collections.abc import Callable
 from pathlib import Path
@@ -25,12 +26,14 @@ from .data.models import (
     ChampionBuild,
     ChampSelectSession,
     Champion,
+    CounterEntry,
     CounterMatrix,
     Role,
     TagsData,
     TeamMember,
     TierList,
 )
+from .data.runtime_counters import RuntimeCounterStore
 
 # Standard draft pick order — Riot fixes the role assignment to cell order in
 # ranked, but the LCU only echoes assignedPosition for *my* team. We infer the
@@ -102,6 +105,7 @@ class ChampAssistant:
         tags: TagsData,
         champions: dict[int, Champion],
         builds: BuildLibrary | None = None,
+        runtime_counters: RuntimeCounterStore | None = None,
         view_callback: Callable[[SessionView], None] | None = None,
     ) -> None:
         self.source = source
@@ -111,6 +115,9 @@ class ChampAssistant:
         self.tags = tags
         self.champions = champions
         self.builds = builds or BuildLibrary()
+        self._runtime_counters = runtime_counters
+        # Track in-flight runtime fetches to avoid duplicate scheduling.
+        self._runtime_inflight: set[tuple[str, str]] = set()
         # Allow tests to observe view updates without going through Qt.
         self._view_callback = view_callback
 
@@ -252,6 +259,57 @@ class ChampAssistant:
                 return inferred
         return _role_at_index(index)
 
+    def _lookup_counters(
+        self, enemy_key: str, role: Role
+    ) -> list[CounterEntry]:
+        """Three-tier counter resolution:
+          1. Seed JSON (deterministic, instant)
+          2. Runtime cache (Groq response we already fetched)
+          3. Fire-and-forget Groq fetch — view will re-render when it lands
+        """
+        seed = find_counters(enemy_key, role, self.counters, limit=5)
+        if seed:
+            return seed
+        if self._runtime_counters is not None:
+            cached = self._runtime_counters.get_cached(enemy_key, role)
+            if cached:
+                return cached
+            self._schedule_runtime_fetch(enemy_key, role)
+        return []
+
+    def _schedule_runtime_fetch(self, enemy_key: str, role: Role) -> None:
+        """Kick off a Groq fetch in the background; re-renders on success.
+
+        Idempotent — returns early if a fetch for this matchup is already
+        in flight or if the runtime store isn't enabled (no API key).
+        """
+        store = self._runtime_counters
+        if store is None or not store.enabled:
+            return
+        key = (enemy_key, role)
+        if key in self._runtime_inflight:
+            return
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            # Not inside an event loop (e.g. unit tests). Skip — caller
+            # can still await store.get() directly if they need the data.
+            return
+        self._runtime_inflight.add(key)
+
+        async def _fetch_and_rerender() -> None:
+            try:
+                counters = await store.get(enemy_key, role)
+                if counters and self._latest_session is not None:
+                    view = self._build_view(self._latest_session)
+                    self._push_view(view)
+            except Exception:  # noqa: BLE001
+                logger.exception("runtime_fetch_failed")
+            finally:
+                self._runtime_inflight.discard(key)
+
+        loop.create_task(_fetch_and_rerender(), name=f"runtime-fetch-{enemy_key}")
+
     def _compute_enemy_counters(
         self, session: ChampSelectSession
     ) -> dict[int, list]:
@@ -263,9 +321,8 @@ class ChampAssistant:
             role = self._resolve_enemy_role(enemy, i, champ)
             if role is None or champ is None:
                 continue
-            result[enemy.cell_id] = find_counters(
-                champ.key, role, self.counters, limit=3
-            )
+            counters = self._lookup_counters(champ.key, role)
+            result[enemy.cell_id] = counters[:3]
         return result
 
     def _compute_enemy_roles(
@@ -310,11 +367,33 @@ class ChampAssistant:
         if me is None or me.assigned_position is None:
             return [], []
 
+        my_role = me.assigned_position
         my_keys = self._team_keys(session.my_team)
         enemy_keys = self._team_keys(session.their_team)
         gaps = analyze_composition(my_keys, self.tags)
+
+        # If the lane opponent is locked in, prioritize counters specifically
+        # against them — but still keep team-comp synergy in the score so
+        # we don't recommend a counter pick that breaks the team's needs.
+        lane_opponent = self._enemy_in_role(session, my_role)
+        if lane_opponent is not None:
+            counters = self._lookup_counters(lane_opponent.key, my_role)
+            if counters:
+                drafted = {k for k in (my_keys + enemy_keys) if k}
+                lane_suggestions = self._suggestions_from_counters(
+                    counters,
+                    lane_opponent_key=lane_opponent.key,
+                    drafted=drafted,
+                    my_role=my_role,
+                    gaps=gaps,
+                )
+                if lane_suggestions:
+                    return lane_suggestions[:5], gaps
+
+        # Fallback: tier-based suggestions when no lane opponent yet OR
+        # we have no counter data for them.
         suggestions = suggest_picks(
-            me.assigned_position,
+            my_role,
             my_keys,
             enemy_keys,
             gaps,
@@ -324,6 +403,73 @@ class ChampAssistant:
             limit=5,
         )
         return suggestions, gaps
+
+    def _enemy_in_role(
+        self, session: ChampSelectSession, target_role: Role
+    ) -> Champion | None:
+        for i, enemy in enumerate(session.their_team):
+            if enemy.champion_id == 0:
+                continue
+            champ = self.champions.get(enemy.champion_id)
+            if champ is None:
+                continue
+            role = self._resolve_enemy_role(enemy, i, champ)
+            if role == target_role:
+                return champ
+        return None
+
+    def _suggestions_from_counters(
+        self,
+        counters: list[CounterEntry],
+        *,
+        lane_opponent_key: str,
+        drafted: set[str],
+        my_role: Role,
+        gaps: list[CompositionGap],
+    ) -> list[PickSuggestion]:
+        """Convert raw counter list into scored PickSuggestions.
+
+        Score combines:
+          - counter strength (CounterEntry.score × 8, range ~0-80) — primary
+          - tier bonus from tiers.json if present (S+: 10, S: 7, A: 4, ...) — secondary
+          - composition gap-fill (matches advisor.picks._GAP_FILL_BONUS) — tertiary
+        Drafted champions excluded; result clamped to [0, 100].
+        """
+        from .advisor.picks import _GAP_FILL_BONUS, _GAP_TAGS, _TIER_SCORE
+
+        out: list[PickSuggestion] = []
+        for c in counters:
+            if c.champion in drafted:
+                continue
+            counter_score = min(c.score * 8.0, 80.0)
+            tier_score = _TIER_SCORE.get(c.tier or "", 0.0) * 0.5  # halved
+            champ_tags = set(self.tags.tags_for(c.champion))
+            gap_score = 0.0
+            gap_reasons: list[str] = []
+            for gap in gaps:
+                tags_for_gap = _GAP_TAGS.get(gap.category, set())
+                if champ_tags & tags_for_gap:
+                    bonus = _GAP_FILL_BONUS.get(gap.severity, 0.0)
+                    gap_score += bonus
+                    gap_reasons.append(f"fills {gap.category}")
+
+            total = max(0.0, min(100.0, counter_score + tier_score + gap_score))
+            reasons = [f"Counters {lane_opponent_key} ({c.score:.1f})"]
+            if c.tier:
+                reasons.append(f"{c.tier} tier")
+            reasons.extend(gap_reasons[:2])
+
+            out.append(
+                PickSuggestion(
+                    champion_key=c.champion,
+                    score=total,
+                    tier=c.tier,
+                    reasons=reasons,
+                )
+            )
+        # Already sorted by counter strength in seed/Groq, but stabilize anyway.
+        out.sort(key=lambda s: -s.score)
+        return out
 
     def _team_keys(self, team: list[TeamMember]) -> list[str]:
         keys: list[str] = []

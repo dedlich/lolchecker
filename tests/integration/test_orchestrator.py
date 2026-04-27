@@ -223,6 +223,67 @@ def test_cycle_enemy_role_advances_through_all_roles(qtbot, champions) -> None: 
     assert cycle_observed == ["TOP", "JUNGLE", "MID", "BOT", "SUPPORT", None, "TOP"]
 
 
+def test_pick_suggestions_prioritize_lane_opponent_counters(qtbot, champions) -> None:  # type: ignore[no-untyped-def]
+    """When the enemy in MY role is locked in, suggestions should be the
+    counters against THEM (filtered + scored), not generic tier-based picks."""
+    overlay = MainOverlay()
+    qtbot.addWidget(overlay)
+    a = ChampAssistant(
+        source=FixtureLcuSource(FIXTURES_DIR, interval=0.0),
+        overlay=overlay,
+        counters=load_counters(DATA_DIR / "counters.json"),
+        tiers=load_tiers(DATA_DIR / "tiers.json"),
+        tags=load_tags(DATA_DIR / "tags.json"),
+        champions=champions,
+    )
+    raw = {
+        "phase": "BAN_PICK",
+        "localPlayerCellId": 0,
+        "myTeam": [
+            {"cellId": 0, "championId": 0, "assignedPosition": "TOP"},
+        ],
+        "theirTeam": [
+            # Garen TOP is locked in cell 5 — our seed has counters for Garen TOP.
+            {"cellId": 5, "championId": 86},
+        ],
+    }
+    view = a.handle_event({"type": "session", "data": raw})
+
+    # The seed counter matrix has Darius S+ and Vayne A as top counters
+    # for Garen TOP. Suggestions should match.
+    keys = [s.champion_key for s in view.suggestions]
+    assert "Darius" in keys
+    # Reasons should call out the lane opponent explicitly.
+    darius = next(s for s in view.suggestions if s.champion_key == "Darius")
+    assert any("Garen" in r for r in darius.reasons)
+
+
+def test_pick_suggestions_fallback_when_lane_opponent_not_locked(qtbot, champions) -> None:  # type: ignore[no-untyped-def]
+    """Without a locked lane opponent, fall back to tier-based suggestions."""
+    overlay = MainOverlay()
+    qtbot.addWidget(overlay)
+    a = ChampAssistant(
+        source=FixtureLcuSource(FIXTURES_DIR, interval=0.0),
+        overlay=overlay,
+        counters=load_counters(DATA_DIR / "counters.json"),
+        tiers=load_tiers(DATA_DIR / "tiers.json"),
+        tags=load_tags(DATA_DIR / "tags.json"),
+        champions=champions,
+    )
+    raw = {
+        "phase": "BAN_PICK",
+        "localPlayerCellId": 0,
+        "myTeam": [{"cellId": 0, "championId": 0, "assignedPosition": "TOP"}],
+        "theirTeam": [{"cellId": 5, "championId": 0}],  # nothing picked yet
+    }
+    view = a.handle_event({"type": "session", "data": raw})
+    # Should still produce suggestions (tier-based for TOP).
+    assert len(view.suggestions) > 0
+    # No suggestion's reasons should mention a specific enemy counter.
+    for s in view.suggestions:
+        assert not any("Counters" in r for r in s.reasons)
+
+
 def test_update_champions_resolves_previously_unknown_enemy(qtbot, champions) -> None:  # type: ignore[no-untyped-def]
     """A session that references champion ids missing from the bootstrap dict
     should fall back to numeric placeholders, then resolve once Data Dragon

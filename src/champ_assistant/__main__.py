@@ -29,6 +29,7 @@ from champ_assistant.data.loader import (
     load_tiers,
 )
 from champ_assistant.data.models import BuildLibrary, Champion
+from champ_assistant.data.runtime_counters import RuntimeCounterStore
 from champ_assistant.lcu.sources import FixtureLcuSource, LcuSource, RealLcuSource
 from champ_assistant.safety import CrashHandler
 from champ_assistant.ui.overlay import MainOverlay
@@ -134,6 +135,12 @@ def _build_assistant(args: argparse.Namespace, overlay: MainOverlay) -> ChampAss
     except DataLoadError:
         builds = BuildLibrary()
 
+    # Runtime counter fetching is opt-in via GROQ_API_KEY (free tier at
+    # https://console.groq.com). Without a key the store is constructed
+    # disabled and never makes a network call — falls back to seed data.
+    cache_dir = args.data_dir.parent / "ddragon_cache" / "runtime_counters"
+    runtime_counters = RuntimeCounterStore(cache_dir)
+
     return ChampAssistant(
         source=_make_source(args),
         overlay=overlay,
@@ -142,6 +149,7 @@ def _build_assistant(args: argparse.Namespace, overlay: MainOverlay) -> ChampAss
         tags=load_tags(args.data_dir / "tags.json"),
         champions=_starter_champion_index(),
         builds=builds,
+        runtime_counters=runtime_counters,
     )
 
 
@@ -328,9 +336,31 @@ def _setup_file_logger(level: int = logging.DEBUG) -> Path:
     return log_file
 
 
+def _load_dotenv_files() -> None:
+    """Load .env from the bundle directory and CWD so users can drop their
+    GROQ_API_KEY into a file next to the exe instead of setting a system
+    environment variable. Failures are swallowed — .env is optional."""
+    try:
+        from dotenv import load_dotenv
+    except ImportError:
+        return
+    candidates = []
+    if getattr(sys, "frozen", False):
+        candidates.append(Path(sys.executable).parent / ".env")
+    candidates.append(Path.cwd() / ".env")
+    for p in candidates:
+        if p.is_file():
+            try:
+                load_dotenv(p, override=False)
+            except Exception:  # noqa: BLE001
+                pass
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
+
+    _load_dotenv_files()
 
     logging.basicConfig(
         level=args.log_level,
