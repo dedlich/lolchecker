@@ -351,9 +351,25 @@ async def _hydrate_champions_and_icons(
 async def _check_and_notify_update(overlay: MainOverlay) -> None:
     """One-shot startup check; if a newer release exists, surface it with an
     Install-now button. Clicking the button downloads, swaps, and relaunches.
+    Also reports the previous update's outcome on first launch so silent
+    failures (AV quarantine, robocopy issue) don't go unnoticed.
     """
     from champ_assistant import __version__
-    from champ_assistant.update_check import check_for_update, install_dir
+    from champ_assistant.update_check import (
+        check_for_update,
+        install_dir,
+        read_last_update_status,
+    )
+
+    # Surface the previous bat run's verdict if it failed. ``ok`` is
+    # silent (success is the default expectation); ``stale`` is also
+    # silent (probably from yesterday).
+    status = read_last_update_status()
+    if status is not None and status[0] == "fail":
+        overlay.status_bar.set_info(
+            f"Letzes Update fehlgeschlagen: {status[1][-80:]}",
+            color="#FFB84A",
+        )
 
     info = await check_for_update(__version__)
     if info is None:

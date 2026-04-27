@@ -137,69 +137,68 @@ def extract_zip(zip_path: Path, dest_dir: Path) -> None:
 
 SIDECAR_BAT_TEMPLATE = r"""@echo off
 REM Champ Assistant in-app updater - waits for parent app to exit, swaps files,
-REM relaunches, then self-deletes. Generated at runtime; do not commit to repo.
+REM relaunches, verifies the new exe is running, self-deletes.
+REM Designed to run silent (CREATE_NO_WINDOW) - no console pops up. All output
+REM goes into LAST_LOG so the next app start can surface failures to the UI.
+chcp 65001 >nul
 setlocal enabledelayedexpansion
 
 set PARENT_PID=%~1
 set STAGED_DIR=%~2
 set INSTALL_DIR=%~3
+set LAST_LOG=%~4
 
-echo [updater] waiting for app to close (pid %PARENT_PID%)...
+REM Wipe the previous run's log so we can detect "the bat ran" vs "stale".
+> "%LAST_LOG%" echo [updater] %DATE% %TIME% start. parent_pid=%PARENT_PID%
+>> "%LAST_LOG%" echo [updater] install_dir=%INSTALL_DIR%
+>> "%LAST_LOG%" echo [updater] staged_dir=%STAGED_DIR%
+
 :waitloop
 tasklist /FI "PID eq %PARENT_PID%" 2>nul | find "%PARENT_PID%" >nul
 if not errorlevel 1 (
     timeout /t 1 /nobreak >nul
     goto waitloop
 )
+>> "%LAST_LOG%" echo [updater] %DATE% %TIME% parent process gone
 
-REM Windows can hold the .exe file lock for ~1-2s after process exit while
-REM the kernel releases handles. Give it a moment before touching files.
-echo [updater] giving Windows 3s to release file handles...
+REM Windows holds the .exe lock for ~1-2s after process exit; let it release.
 timeout /t 3 /nobreak >nul
 
-echo [updater] installing new version (with retry on file locks)...
-REM robocopy is built into Windows since Vista. /MIR mirrors source to dest,
-REM /R:5 retries 5 times on locked files, /W:2 waits 2s between retries,
-REM /NFL/NDL/NJH/NJS keep output readable.
-robocopy "%STAGED_DIR%" "%INSTALL_DIR%" /MIR /R:5 /W:2 /NFL /NDL /NJH /NJS
+>> "%LAST_LOG%" echo [updater] %DATE% %TIME% running robocopy
+robocopy "%STAGED_DIR%" "%INSTALL_DIR%" /MIR /R:5 /W:2 /NFL /NDL /NJH /NJS >> "%LAST_LOG%" 2>&1
 set RC=%errorlevel%
-REM robocopy exit codes: 0-7 = success (0=no change, 1=files copied, etc.),
-REM 8+ = real failure.
+>> "%LAST_LOG%" echo [updater] %DATE% %TIME% robocopy exit=%RC%
+
 if %RC% GEQ 8 (
-    echo.
-    echo [updater] file swap failed (robocopy exit %RC%).
-    echo [updater] Likely cause: another champ-assistant.exe is still running
-    echo            or an antivirus is scanning the file.
-    echo.
-    echo [updater] Manual recovery:
-    echo   1. Close all champ-assistant.exe processes ^(Task Manager^).
-    echo   2. Copy contents of %STAGED_DIR% into %INSTALL_DIR%.
-    echo.
-    pause
+    >> "%LAST_LOG%" echo [updater] FAIL: robocopy could not swap files. Antivirus or running process holding files.
     exit /b 1
 )
 
-echo [updater] starting new version: %INSTALL_DIR%\__EXE__
-REM /D sets working directory explicitly; without it the new exe inherits
-REM the bat's cwd which the launcher doesn't always set. The empty "" is
-REM the start-window-title argument, required when /D is used.
+REM Pre-warm: open the new exe for read so any antivirus on-access scan
+REM completes before we try to launch. Avoids the "exe starts then dies"
+REM scenario when Defender is mid-scan.
+>nul 2>&1 type "%INSTALL_DIR%\__EXE__"
+
+>> "%LAST_LOG%" echo [updater] %DATE% %TIME% launching %INSTALL_DIR%\__EXE__
 start "" /D "%INSTALL_DIR%" "%INSTALL_DIR%\__EXE__"
 if errorlevel 1 (
-    echo.
-    echo [updater] LAUNCH FAILED. Run %INSTALL_DIR%\__EXE__ manually.
-    pause
+    >> "%LAST_LOG%" echo [updater] FAIL: start command returned errorlevel
     exit /b 2
 )
 
-REM Give Windows a moment to spin up the new process before we tear down
-REM the launcher console and staging dir.
-timeout /t 2 /nobreak >nul
+REM Verify the new process actually came up. PyInstaller bootloader can
+REM crash silently if a DLL got AV-quarantined; without this check the bat
+REM would happily delete itself and the user sees nothing.
+timeout /t 4 /nobreak >nul
+tasklist /FI "IMAGENAME eq __EXE__" 2>nul | find /I "__EXE__" >nul
+if errorlevel 1 (
+    >> "%LAST_LOG%" echo [updater] FAIL: __EXE__ not running after 4s. Likely AV quarantine or DLL load failure.
+    exit /b 3
+)
 
-REM Mirror status into a restart log so the next app start can verify the
-REM update applied successfully (and we can diagnose silent failures).
-echo updated %DATE% %TIME% > "%~dp0restart.log"
+>> "%LAST_LOG%" echo [updater] %DATE% %TIME% SUCCESS: new exe is running
 
-REM clean up staging + self-delete
+REM clean up staging + self-delete (success path only)
 rmdir /S /Q "%STAGED_DIR%" 2>nul
 (goto) 2>nul & del "%~f0"
 """
@@ -225,6 +224,15 @@ def write_sidecar_bat(
     return bat_path
 
 
+def update_log_path() -> Path:
+    """Where the bat writes its diagnostic output. The app reads this on
+    next startup to surface "your last update failed" status to the user."""
+    if sys.platform.startswith("win"):
+        base = os.environ.get("LOCALAPPDATA") or str(Path.home() / "AppData" / "Local")
+        return Path(base) / "ChampAssistant" / "logs" / "last-update.log"
+    return Path.home() / ".champ-assistant" / "logs" / "last-update.log"
+
+
 def launch_sidecar(
     bat_path: Path,
     *,
@@ -232,20 +240,65 @@ def launch_sidecar(
     staged_dir: Path,
     install_directory: Path,
 ) -> None:
-    """Spawn the sidecar bat detached so it survives our exit."""
+    """Spawn the sidecar bat fully detached, with no visible console window.
+
+    CREATE_NO_WINDOW + DETACHED_PROCESS keeps the bat invisible — users
+    used to see a black console pop up during updates which felt
+    unprofessional. All progress + failure info now goes into the log
+    file at ``update_log_path()`` and is read on next app start.
+    """
     creationflags = 0
     if sys.platform.startswith("win"):
-        # CREATE_NEW_CONSOLE so the user sees progress; DETACHED would hide it.
         creationflags = (
-            getattr(subprocess, "CREATE_NEW_CONSOLE", 0)
+            getattr(subprocess, "CREATE_NO_WINDOW", 0)
+            | getattr(subprocess, "DETACHED_PROCESS", 0)
             | getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
         )
+    log_path = update_log_path()
+    log_path.parent.mkdir(parents=True, exist_ok=True)
     subprocess.Popen(
-        [str(bat_path), str(parent_pid), str(staged_dir), str(install_directory)],
+        [
+            str(bat_path),
+            str(parent_pid),
+            str(staged_dir),
+            str(install_directory),
+            str(log_path),
+        ],
         creationflags=creationflags,
         close_fds=True,
         cwd=str(install_directory),
     )
+
+
+def read_last_update_status() -> tuple[str, str] | None:
+    """Inspect the previous update's log. Returns (verdict, last_line)
+    or None if no log exists.
+
+    Verdict is one of:
+      - "ok"      successful relaunch
+      - "fail"    bat failed at some step (robocopy / launch / verification)
+      - "stale"   log exists but is older than 10 minutes (probably from a
+                  prior session, not this start)
+    """
+    log_path = update_log_path()
+    if not log_path.is_file():
+        return None
+    try:
+        text = log_path.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return None
+    if not text.strip():
+        return None
+    last = text.strip().splitlines()[-1]
+    if "SUCCESS" in last:
+        return ("ok", last)
+    if "FAIL" in last:
+        return ("fail", last)
+    # Bat in progress or partial — treat as stale unless we know better.
+    import time
+    if (time.time() - log_path.stat().st_mtime) > 600:
+        return ("stale", last)
+    return ("ok", last)
 
 
 def install_dir_writable(target: Path) -> bool:
