@@ -85,27 +85,32 @@ class PickCard(QFrame):
 
     @staticmethod
     def _add_build_lines(outer: QVBoxLayout, build: ChampionBuild) -> None:
-        """Three compact lines for runes / items / summoners. Empty fields skipped."""
+        """Three compact lines for runes / items / summoners. Each line
+        carries a colored leading sigil + bullet-separated content with
+        its own accent so the rows visually parse at a glance."""
         if build.runes:
-            runes_label = QLabel("🛡  " + " · ".join(build.runes))
-            runes_label.setStyleSheet(
-                f"color: {styles.TIER_A}; font-size: 11px;"
-            )
-            runes_label.setWordWrap(True)
-            outer.addWidget(runes_label)
+            outer.addWidget(_build_line(
+                "🛡", build.runes, styles.TIER_A, sep=" • ",
+            ))
         if build.items:
-            items_label = QLabel("⚔  " + " → ".join(build.items))
-            items_label.setStyleSheet(
-                f"color: {styles.TIER_S}; font-size: 11px;"
-            )
-            items_label.setWordWrap(True)
-            outer.addWidget(items_label)
+            outer.addWidget(_build_line(
+                "⚔", build.items, styles.TIER_S, sep="  ›  ",
+            ))
         if build.summoners:
-            summ_label = QLabel("✨  " + " · ".join(build.summoners))
-            summ_label.setStyleSheet(
-                f"color: {styles.TEXT_MUTED}; font-size: 11px;"
-            )
-            outer.addWidget(summ_label)
+            outer.addWidget(_build_line(
+                "✨", build.summoners, styles.TEXT_SECONDARY, sep=" • ",
+            ))
+
+
+def _build_line(sigil: str, items: list[str], color: str, *, sep: str) -> QLabel:
+    label = QLabel(
+        f"<span style='color:{color}; font-size:13px;'>{sigil}</span>  "
+        f"<span style='color:{color}'>"
+        f"{sep.join(items)}</span>"
+    )
+    label.setStyleSheet(f"font-size: {styles.FS_LABEL}px;")
+    label.setWordWrap(True)
+    return label
 
     def _add_apply_button(self, outer: QVBoxLayout, build: ChampionBuild) -> None:
         """Apply Build button — pushes the recommended runes into a new
