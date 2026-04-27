@@ -336,19 +336,15 @@ class MainOverlay(QMainWindow):
             self._switch_mode(target)
         if snapshot is not None and not getattr(self, "_borderless_hint_shown", False):
             self._borderless_hint_shown = True
-            from ..lcu.window import find_league_window
-            info = find_league_window()
-            if info is not None and info.fullscreen_exclusive:
-                self._status_bar.set_info(
-                    "League laeuft in Fullscreen — bitte auf 'Borderless' umstellen "
-                    "(Settings → Video). Auch Blitz/Mobalytics brauchen das.",
-                    color="#FFB84A",
-                )
-            else:
-                self._status_bar.set_info(
-                    "Overlay aktiv — Position via Drag in der Titelleiste",
-                    color="#7FCC7F",
-                )
+            # We used to print a "switch to Borderless" warning here based on
+            # WS_POPUP+WS_CAPTION flag inspection. That heuristic can't tell
+            # Borderless and Fullscreen Exclusive apart (they share flags),
+            # so the warning often misfired. Replaced with a neutral status:
+            # the user can see whether the overlay shows up or not.
+            self._status_bar.set_info(
+                "Overlay aktiv — falls nicht sichtbar: League auf Borderless umstellen",
+                color="#7FCC7F",
+            )
 
     def _switch_mode(self, mode: str) -> None:
         """champselect = wide, opaque, normal z-order; overlay = narrow,
