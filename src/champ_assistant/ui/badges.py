@@ -92,7 +92,8 @@ class TierBadge(QLabel):
 
 
 class StateDot(QLabel):
-    """Small connection-state indicator dot (12x12)."""
+    """Small connection-state indicator dot (12x12). Pulses softly while
+    the pipeline is mid-handshake (waiting / reconnecting)."""
 
     COLORS = {
         "disconnected": styles.TEXT_MUTED,
@@ -104,10 +105,53 @@ class StateDot(QLabel):
     def __init__(self, state: str = "disconnected") -> None:
         super().__init__()
         self.setFixedSize(10, 10)
+        self._state = state
+        self._pulse_phase = 0  # toggles via timer for animation
+
+        from PyQt6.QtCore import QTimer
+        self._pulse = QTimer(self)
+        self._pulse.setInterval(700)
+        self._pulse.timeout.connect(self._tick_pulse)
+
         self.set_state(state)
 
     def set_state(self, state: str) -> None:
-        color = self.COLORS.get(state, styles.TEXT_MUTED)
-        self.setStyleSheet(
-            f"background-color: {color}; border-radius: 5px;"
-        )
+        self._state = state
+        if state in ("waiting", "reconnecting"):
+            if not self._pulse.isActive():
+                self._pulse.start()
+        else:
+            self._pulse.stop()
+            self._pulse_phase = 0
+        self._render()
+
+    def _tick_pulse(self) -> None:
+        self._pulse_phase = 1 - self._pulse_phase
+        self._render()
+
+    def _render(self) -> None:
+        color = self.COLORS.get(self._state, styles.TEXT_MUTED)
+        if self._state == "connected":
+            # Subtle glow on connected: outer halo via a wider inset
+            # gradient, looks like the dot is alive.
+            self.setStyleSheet(
+                f"background-color: {color}; border-radius: 5px;"
+                f" border: 1px solid {color};"
+            )
+        elif self._state in ("waiting", "reconnecting"):
+            # Alpha modulation gives a soft pulse without scaling the widget.
+            alpha = "255" if self._pulse_phase else "120"
+            r, g, b = _hex_to_rgb(color)
+            self.setStyleSheet(
+                f"background-color: rgba({r}, {g}, {b}, {alpha});"
+                f" border-radius: 5px;"
+            )
+        else:
+            self.setStyleSheet(
+                f"background-color: {color}; border-radius: 5px;"
+            )
+
+
+def _hex_to_rgb(hex_color: str) -> tuple[int, int, int]:
+    h = hex_color.lstrip("#")
+    return int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16)

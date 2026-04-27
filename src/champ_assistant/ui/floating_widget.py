@@ -17,8 +17,8 @@ build their internal layout in ``__init__``.
 from __future__ import annotations
 
 from PyQt6.QtCore import QPoint, Qt
-from PyQt6.QtGui import QGuiApplication, QMouseEvent
-from PyQt6.QtWidgets import QFrame
+from PyQt6.QtGui import QColor, QGuiApplication, QMouseEvent
+from PyQt6.QtWidgets import QFrame, QGraphicsDropShadowEffect
 
 from .. import overlay_config
 
@@ -44,6 +44,14 @@ class FloatingWidget(QFrame):
         # Background opacity is controlled per-widget via stylesheet rgba —
         # we don't WA_TranslucentBackground so child widgets render normally.
         self.setProperty("panel", True)
+
+        # Subtle drop shadow so the widget visually lifts off the game
+        # underneath. Cheap to render and matches the modern overlay feel.
+        shadow = QGraphicsDropShadowEffect(self)
+        shadow.setBlurRadius(28)
+        shadow.setOffset(0, 4)
+        shadow.setColor(QColor(0, 0, 0, 180))
+        self.setGraphicsEffect(shadow)
 
         self._drag_origin: QPoint | None = None
         self._load_position()
