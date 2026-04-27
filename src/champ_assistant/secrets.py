@@ -29,8 +29,11 @@ SERVICE: Final[str] = "champ-assistant"
 KEY_RIOT_API: Final[str] = "riot_api_key"
 KEY_RIOT_REGION: Final[str] = "riot_region"
 KEY_GROQ_API: Final[str] = "groq_api_key"
+KEY_LLM_API: Final[str] = "llm_api_key"
+KEY_LLM_PROVIDER: Final[str] = "llm_provider"
 
 DEFAULT_REGION: Final[str] = "EUW"
+DEFAULT_LLM_PROVIDER: Final[str] = "openrouter"
 
 
 def get(key: str, *, env_fallback: str | None = None, default: str = "") -> str:
@@ -75,6 +78,16 @@ def groq_api_key() -> str:
     return get(KEY_GROQ_API, env_fallback="GROQ_API_KEY")
 
 
+def llm_provider() -> str:
+    """Selected LLM provider for live counter lookups (openrouter/groq/gemini)."""
+    return get(KEY_LLM_PROVIDER, default=DEFAULT_LLM_PROVIDER)
+
+
+def llm_api_key() -> str:
+    """Generic LLM key — falls back to legacy GROQ_API_KEY for back-compat."""
+    return get(KEY_LLM_API) or groq_api_key()
+
+
 def set_riot_api_key(value: str) -> None:
     set_(KEY_RIOT_API, value)
 
@@ -85,3 +98,11 @@ def set_riot_region(value: str) -> None:
 
 def set_groq_api_key(value: str) -> None:
     set_(KEY_GROQ_API, value)
+
+
+def set_llm_provider(value: str) -> None:
+    set_(KEY_LLM_PROVIDER, value or DEFAULT_LLM_PROVIDER)
+
+
+def set_llm_api_key(value: str) -> None:
+    set_(KEY_LLM_API, value)

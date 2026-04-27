@@ -1,14 +1,16 @@
-"""Live counter fetching via Groq's free LLM API + persistent disk cache.
+"""Live counter fetching via a pluggable LLM provider + persistent disk cache.
 
-Why Groq: free tier covers ~14000 requests/day with no cost — combined with
-1-week cache, after a handful of champ-select sessions the cache contains
-every matchup the user encounters and the API stops being called.
+Supported providers (selectable from Settings):
+  - OpenRouter (default — easy signup, supports free Llama-3.3-70B)
+  - Groq (faster but signup has had loop issues for some users)
+  - Gemini (Google AI Studio, free quota)
 
-Setup: user signs up at https://console.groq.com (free), copies their API
-key into ``.env`` next to the exe as ``GROQ_API_KEY=<key>``. Without a key
-the store is disabled (``enabled == False``) and ``get()`` always returns
-the cached value or an empty list — graceful degradation, never blocks
-the app from running.
+All three accept the same OpenAI-compatible chat-completions payload —
+only the URL, default model, and a tiny header difference vary.
+
+Without a key the store is disabled (``enabled == False``) and ``get()``
+always returns the cached value or an empty list — graceful degradation,
+never blocks the app from running.
 """
 from __future__ import annotations
 
@@ -17,6 +19,7 @@ import json
 import logging
 import os
 import re
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -27,8 +30,48 @@ from .models import CounterEntry, Role
 
 logger = logging.getLogger(__name__)
 
-GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions"
-DEFAULT_MODEL = "llama-3.3-70b-versatile"
+
+@dataclass(frozen=True)
+class LlmProvider:
+    name: str           # "openrouter" / "groq" / "gemini"
+    url: str            # chat completions endpoint
+    default_model: str  # safe free-tier default
+    signup_url: str
+    extra_headers: dict[str, str] | None = None
+
+
+PROVIDERS: dict[str, LlmProvider] = {
+    "openrouter": LlmProvider(
+        name="openrouter",
+        url="https://openrouter.ai/api/v1/chat/completions",
+        default_model="meta-llama/llama-3.3-70b-instruct:free",
+        signup_url="https://openrouter.ai",
+        extra_headers={
+            "HTTP-Referer": "https://github.com/dedlich/lolchecker",
+            "X-Title": "Champ Assistant",
+        },
+    ),
+    "groq": LlmProvider(
+        name="groq",
+        url="https://api.groq.com/openai/v1/chat/completions",
+        default_model="llama-3.3-70b-versatile",
+        signup_url="https://console.groq.com",
+    ),
+    "gemini": LlmProvider(
+        name="gemini",
+        # Gemini uses an OpenAI-compatible shim path
+        url="https://generativelanguage.googleapis.com/v1beta/openai/chat/completions",
+        default_model="gemini-2.0-flash",
+        signup_url="https://aistudio.google.com/apikey",
+    ),
+}
+
+DEFAULT_PROVIDER = "openrouter"
+
+
+# Backwards-compat: tests + older fixtures still reference these constants.
+GROQ_API_URL = PROVIDERS["groq"].url
+DEFAULT_MODEL = PROVIDERS[DEFAULT_PROVIDER].default_model
 DEFAULT_TIMEOUT = 8.0
 DEFAULT_CACHE_TTL = 365 * 24 * 60 * 60  # ~1 year. The cache key includes the
                                        # current LoL patch — entries become
@@ -63,15 +106,28 @@ class RuntimeCounterStore:
         cache_dir: Path,
         *,
         api_key: str | None = None,
-        model: str = DEFAULT_MODEL,
+        provider: str | LlmProvider = DEFAULT_PROVIDER,
+        model: str | None = None,
         timeout: float = DEFAULT_TIMEOUT,
         cache_ttl: int = DEFAULT_CACHE_TTL,
         client: httpx.AsyncClient | None = None,
         patch: str = "current",
     ) -> None:
         self.cache = diskcache.Cache(str(cache_dir))
-        self.api_key = api_key if api_key is not None else os.environ.get("GROQ_API_KEY", "")
-        self.model = model
+        # Resolve provider config — accepts a name string or an explicit
+        # LlmProvider instance (used by tests).
+        if isinstance(provider, str):
+            self.provider = PROVIDERS.get(provider, PROVIDERS[DEFAULT_PROVIDER])
+        else:
+            self.provider = provider
+        # API-key resolution order: explicit arg → env var matching the
+        # provider name → empty (disabled).
+        if api_key is not None:
+            self.api_key = api_key
+        else:
+            env_var = f"{self.provider.name.upper()}_API_KEY"
+            self.api_key = os.environ.get(env_var, "") or os.environ.get("GROQ_API_KEY", "")
+        self.model = model or self.provider.default_model
         self.timeout = timeout
         self.cache_ttl = cache_ttl
         self.patch = patch
@@ -129,13 +185,16 @@ class RuntimeCounterStore:
             f"Counters against {enemy_key} in {role}? "
             "Return a JSON object with field 'counters' containing 5 counter picks."
         )
+        headers = {
+            "Authorization": f"Bearer {self.api_key}",
+            "Content-Type": "application/json",
+        }
+        if self.provider.extra_headers:
+            headers.update(self.provider.extra_headers)
         try:
             response = await self._client.post(
-                GROQ_API_URL,
-                headers={
-                    "Authorization": f"Bearer {self.api_key}",
-                    "Content-Type": "application/json",
-                },
+                self.provider.url,
+                headers=headers,
                 json={
                     "model": self.model,
                     "messages": [
@@ -150,13 +209,13 @@ class RuntimeCounterStore:
             data = response.json()
         except httpx.HTTPError as exc:
             logger.warning(
-                "groq_http_error",
+                "llm_http_error provider=%s err=%s", self.provider.name, exc,
                 extra={"enemy": enemy_key, "role": role,
                        "error_type": type(exc).__name__},
             )
             return []
         except Exception:  # noqa: BLE001
-            logger.exception("groq_unexpected_error")
+            logger.exception("llm_unexpected_error provider=%s", self.provider.name)
             return []
 
         try:

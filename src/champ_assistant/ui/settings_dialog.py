@@ -89,32 +89,43 @@ class SettingsDialog(QDialog):
         riot_help.setWordWrap(True)
         outer.addWidget(riot_help)
 
-        # -- Groq (live counters) ----------------------------------------
-        groq_section = QLabel("Live Counter Lookup (optional)")
-        groq_section.setStyleSheet(
+        # -- LLM provider (live counters) --------------------------------
+        llm_section = QLabel("Live Counter Lookup (optional)")
+        llm_section.setStyleSheet(
             f"color: {styles.TEXT_MUTED}; font-size: 11px; font-weight: 700;"
             " text-transform: uppercase; letter-spacing: 0.8px; padding-top: 8px;"
         )
-        outer.addWidget(groq_section)
+        outer.addWidget(llm_section)
 
-        groq_form = QFormLayout()
-        groq_form.setHorizontalSpacing(12)
-        groq_form.setVerticalSpacing(8)
+        llm_form = QFormLayout()
+        llm_form.setHorizontalSpacing(12)
+        llm_form.setVerticalSpacing(8)
 
-        self._groq_key = QLineEdit()
-        self._groq_key.setEchoMode(QLineEdit.EchoMode.Password)
-        self._groq_key.setPlaceholderText("gsk_...")
-        self._groq_key.setText(secrets.groq_api_key())
-        groq_form.addRow("Groq Key", self._groq_key)
-        outer.addLayout(groq_form)
+        self._llm_provider = QComboBox()
+        for label, value in (
+            ("OpenRouter (empfohlen)", "openrouter"),
+            ("Groq", "groq"),
+            ("Google Gemini", "gemini"),
+        ):
+            self._llm_provider.addItem(label, value)
+        idx = max(0, self._llm_provider.findData(secrets.llm_provider()))
+        self._llm_provider.setCurrentIndex(idx)
+        llm_form.addRow("Provider", self._llm_provider)
 
-        groq_help = QLabel(
-            "Optional. Ohne Groq-Key benutzt der Assistant nur die mitgelieferten"
-            " Counter-Daten."
-        )
-        groq_help.setStyleSheet(f"color: {styles.TEXT_MUTED}; font-size: 11px;")
-        groq_help.setWordWrap(True)
-        outer.addWidget(groq_help)
+        self._llm_key = QLineEdit()
+        self._llm_key.setEchoMode(QLineEdit.EchoMode.Password)
+        self._llm_key.setPlaceholderText("API-Key")
+        self._llm_key.setText(secrets.llm_api_key())
+        llm_form.addRow("API Key", self._llm_key)
+        outer.addLayout(llm_form)
+
+        self._llm_help = QLabel("")
+        self._llm_help.setOpenExternalLinks(True)
+        self._llm_help.setStyleSheet(f"color: {styles.TEXT_MUTED}; font-size: 11px;")
+        self._llm_help.setWordWrap(True)
+        outer.addWidget(self._llm_help)
+        self._llm_provider.currentIndexChanged.connect(self._refresh_llm_help)
+        self._refresh_llm_help()
 
         # -- Buttons ------------------------------------------------------
         buttons = QDialogButtonBox(
@@ -134,10 +145,30 @@ class SettingsDialog(QDialog):
             )
         outer.addWidget(buttons)
 
+    def _refresh_llm_help(self) -> None:
+        provider = self._llm_provider.currentData() or "openrouter"
+        urls = {
+            "openrouter": "https://openrouter.ai/keys",
+            "groq":       "https://console.groq.com/keys",
+            "gemini":     "https://aistudio.google.com/apikey",
+        }
+        url = urls.get(provider, urls["openrouter"])
+        self._llm_help.setText(
+            "Hol einen kostenlosen Key auf "
+            f'<a style="color:#5BA8FF;" href="{url}">{url}</a> '
+            "und speichere ihn hier. Ohne Key benutzt der Assistant nur die"
+            " mitgelieferten Counter-Daten."
+        )
+
     def _on_save(self) -> None:
         secrets.set_riot_api_key(self._riot_key.text().strip())
         secrets.set_riot_region(self._riot_region.currentText())
-        secrets.set_groq_api_key(self._groq_key.text().strip())
+        secrets.set_llm_provider(self._llm_provider.currentData() or "openrouter")
+        secrets.set_llm_api_key(self._llm_key.text().strip())
+        # Keep legacy GROQ_API_KEY in sync if user is on groq, so existing
+        # env-var users don't get surprised.
+        if self._llm_provider.currentData() == "groq":
+            secrets.set_groq_api_key(self._llm_key.text().strip())
         self.settings_changed.emit()
         self.accept()
 

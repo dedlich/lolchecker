@@ -140,7 +140,12 @@ def _build_assistant(args: argparse.Namespace, overlay: MainOverlay) -> ChampAss
     # https://console.groq.com). Without a key the store is constructed
     # disabled and never makes a network call — falls back to seed data.
     cache_dir = args.data_dir.parent / "ddragon_cache" / "runtime_counters"
-    runtime_counters = RuntimeCounterStore(cache_dir)
+    from champ_assistant import secrets as _sec
+    runtime_counters = RuntimeCounterStore(
+        cache_dir,
+        api_key=_sec.llm_api_key(),
+        provider=_sec.llm_provider(),
+    )
 
     # Enemy profiling — opt-in via Settings dialog (Riot API key persisted
     # in keyring). Disabled service falls through silently.
