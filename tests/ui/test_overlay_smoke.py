@@ -29,7 +29,7 @@ def overlay(qtbot):  # type: ignore[no-untyped-def]
 
 def test_window_creates(overlay) -> None:  # type: ignore[no-untyped-def]
     assert overlay.windowTitle() == "Champ Assistant"
-    assert overlay.size().width() == 320
+    assert overlay.size().width() == 640
     assert overlay.size().height() == 720
     assert len(overlay.enemy_rows) == 5
 

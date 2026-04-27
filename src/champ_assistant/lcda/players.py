@@ -2,15 +2,37 @@
 
 LCDA exposes per-player team, champion, summoner spells, items, and runes.
 We only consume what the in-game UI surfaces — team + champion + the two
-summoner-spell display names — and ignore the rest.
+summoner-spell identifiers — and ignore the rest.
+
+LCDA returns the spell's ``displayName`` localized to the client language
+(e.g. German "Blitz" instead of "Flash"). For matching against our cooldown
+table we use ``rawDisplayName`` which is always
+``GeneratedTip_SummonerSpell_Summoner<INTERNAL>_DisplayName`` regardless of
+locale. The ``<INTERNAL>`` token is what we map to the canonical English
+name we use everywhere else (icon lookup, cooldown table).
 """
 from __future__ import annotations
 
 from dataclasses import dataclass
 
+# Map LCDA's INTERNAL spell id (extracted from rawDisplayName) to the
+# canonical English name. A few spells have non-obvious internal names —
+# Ignite is "Dot", Cleanse is "Boost", Ghost is "Haste".
+INTERNAL_TO_CANONICAL: dict[str, str] = {
+    "Flash":    "Flash",
+    "Dot":      "Ignite",
+    "Heal":     "Heal",
+    "Teleport": "Teleport",
+    "Boost":    "Cleanse",
+    "Barrier":  "Barrier",
+    "Exhaust":  "Exhaust",
+    "Smite":    "Smite",
+    "Haste":    "Ghost",
+    "Snowball": "Snowball",
+}
+
 # Cooldowns from Riot's data dragon ``summoner.json`` (in seconds, base — no
-# Cosmic Insight reduction). Keys are the *raw* spell display name LCDA returns
-# in ``summonerSpells.summonerSpellOne.displayName``.
+# Cosmic Insight reduction). Keyed on the canonical English name.
 SPELL_BASE_COOLDOWN: dict[str, float] = {
     "Flash": 300.0,
     "Ignite": 180.0,
@@ -24,10 +46,23 @@ SPELL_BASE_COOLDOWN: dict[str, float] = {
     "Snowball": 80.0,  # Mark/Dash on ARAM
 }
 
+def _internal_id(raw_display_name: str) -> str:
+    """Extract ``Flash`` / ``Dot`` / ... from
+    ``GeneratedTip_SummonerSpell_SummonerFlash_DisplayName``. The string
+    contains two ``Summoner`` tokens (``SummonerSpell`` and the spell-id
+    one) so we anchor on the segment immediately before ``_DisplayName``
+    rather than using a regex that could match either."""
+    parts = raw_display_name.split("_")
+    if len(parts) >= 2 and parts[-1] == "DisplayName":
+        token = parts[-2]
+        if token.startswith("Summoner") and len(token) > len("Summoner"):
+            return token[len("Summoner"):]
+    return ""
+
 
 @dataclass(frozen=True)
 class LiveSummonerSpell:
-    name: str
+    name: str       # canonical English (Flash, Ignite, ...) for icon + lookup
     cooldown: float  # seconds; 0 if unknown spell
 
 
@@ -40,11 +75,27 @@ class LivePlayer:
     spell_two: LiveSummonerSpell
 
 
+def _canonical_name(raw: dict) -> str:
+    """Resolve a spell entry's canonical English name regardless of client
+    locale. Tries rawDisplayName first (locale-independent); falls back to
+    displayName (works for en_US clients and our test fixtures)."""
+    internal = _internal_id(str(raw.get("rawDisplayName") or ""))
+    canonical = INTERNAL_TO_CANONICAL.get(internal)
+    if canonical is not None:
+        return canonical
+    # Fallback: trust displayName when it already matches a known spell
+    # (en_US clients, tests).
+    display = str(raw.get("displayName") or "").strip()
+    if display in SPELL_BASE_COOLDOWN:
+        return display
+    return display  # unknown — keep something for the UI tooltip
+
+
 def _spell(raw: dict) -> LiveSummonerSpell:
-    name = str(raw.get("displayName") or "").strip()
+    canonical = _canonical_name(raw)
     return LiveSummonerSpell(
-        name=name,
-        cooldown=SPELL_BASE_COOLDOWN.get(name, 0.0),
+        name=canonical,
+        cooldown=SPELL_BASE_COOLDOWN.get(canonical, 0.0),
     )
 
 

@@ -293,7 +293,7 @@ def main() -> int:
         on_click=lambda: None,
     )
 
-    overlay.resize(360, 980)
+    overlay.resize(660, 880)
     overlay.show()
 
     app.processEvents()

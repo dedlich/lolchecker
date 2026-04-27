@@ -62,3 +62,7 @@ crashes/
 
 # Claude Code internal state
 .claude/
+
+# --- Runtime caches ---
+ddragon_cache/
+

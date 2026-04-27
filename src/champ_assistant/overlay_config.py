@@ -23,13 +23,13 @@ logger = logging.getLogger(__name__)
 class OverlayState:
     x: int | None = None
     y: int | None = None
-    width: int = 320
+    width: int = 640         # champ-select-friendly default
     height: int = 720
     anchor: str = "right"  # right | left | none
-    always_on_top: bool = True
+    always_on_top: bool = False  # turned on automatically only in-game
     frameless: bool = True
     collapsed: bool = False  # user-toggled "minimize" state
-    opacity: float = 0.92    # 1.0 = solid, 0.5 = barely visible
+    opacity: float = 0.92    # only applied in overlay mode
     show_objectives: bool = True
     show_summoners: bool = True
     show_spikes: bool = True

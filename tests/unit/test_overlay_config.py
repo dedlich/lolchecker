@@ -19,9 +19,13 @@ def tmp_config(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
 def test_load_returns_defaults_when_missing(tmp_config: Path) -> None:
     state = overlay_config.load()
     assert state.x is None
-    assert state.width == 320
+    # Default width is the champ-select-friendly 640; in-game switches the
+    # window down to ~320 dynamically via _switch_mode("overlay").
+    assert state.width == 640
     assert state.anchor == "right"
-    assert state.always_on_top is True
+    # always_on_top defaults to False; set automatically when LCDA detects
+    # an in-game session.
+    assert state.always_on_top is False
 
 
 def test_save_then_load_roundtrip(tmp_config: Path) -> None:

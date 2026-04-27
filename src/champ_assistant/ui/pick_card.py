@@ -28,7 +28,7 @@ class PickCard(QFrame):
 
         outer = QVBoxLayout(self)
         outer.setContentsMargins(10, 8, 10, 8)
-        outer.setSpacing(3)
+        outer.setSpacing(6)
 
         head = QHBoxLayout()
         head.setSpacing(8)

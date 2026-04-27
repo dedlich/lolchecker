@@ -20,7 +20,14 @@ from __future__ import annotations
 
 from PyQt6.QtCore import QPoint, Qt, pyqtSignal
 from PyQt6.QtGui import QGuiApplication, QKeySequence, QPixmap, QShortcut
-from PyQt6.QtWidgets import QFrame, QLabel, QMainWindow, QVBoxLayout, QWidget
+from PyQt6.QtWidgets import (
+    QFrame,
+    QHBoxLayout,
+    QLabel,
+    QMainWindow,
+    QVBoxLayout,
+    QWidget,
+)
 
 from .. import overlay_config
 from ..lcda.source import LcdaSnapshot
@@ -76,15 +83,16 @@ class MainOverlay(QMainWindow):
         flags = self.windowFlags()
         if frameless:
             flags |= Qt.WindowType.FramelessWindowHint
+        # Always_on_top is no longer set here at construction time — it's
+        # applied dynamically when LCDA reports an in-game session
+        # (overlay mode). Champ-select stays as a normal window so users
+        # can Alt+Tab between LeagueClient and the assistant freely.
         if always_on_top:
             flags |= Qt.WindowType.WindowStaysOnTopHint
         self.setWindowFlags(flags)
 
-        # Light translucency by default — the user can see the game through
-        # the panel chrome but text remains crisp. Adjustable via the slider
-        # in the title bar at runtime.
-        if load_persisted_state:
-            self.setWindowOpacity(self._persisted.opacity)
+        # Channel state for the overlay/champselect mode switcher.
+        self._current_mode: str = "champselect"
 
         root = QWidget()
         root.setObjectName("root")
@@ -123,7 +131,16 @@ class MainOverlay(QMainWindow):
         )
         body_layout.setSpacing(styles.SPACING_GRID)
 
-        # Enemy team section (shown only during champ-select)
+        # Champ-select section: enemy + picks side-by-side. The container
+        # holds them in a horizontal layout so users get more horizontal
+        # breathing room for the long rune/item lines on the pick cards.
+        self._champselect_row = QFrame()
+        self._champselect_row.setStyleSheet("background: transparent;")
+        cs_layout = QHBoxLayout(self._champselect_row)
+        cs_layout.setContentsMargins(0, 0, 0, 0)
+        cs_layout.setSpacing(styles.SPACING_GRID)
+
+        # Enemy team panel (left column)
         self._enemy_panel = QFrame()
         self._enemy_panel.setProperty("panel", True)
         enemy_layout = QVBoxLayout(self._enemy_panel)
@@ -141,9 +158,9 @@ class MainOverlay(QMainWindow):
             self._enemy_rows.append(row)
             enemy_layout.addWidget(row)
 
-        body_layout.addWidget(self._enemy_panel)
+        cs_layout.addWidget(self._enemy_panel, 1)
 
-        # Picks section (champ-select)
+        # Picks panel (right column)
         self._picks_panel = QFrame()
         self._picks_panel.setProperty("panel", True)
         picks_outer = QVBoxLayout(self._picks_panel)
@@ -155,7 +172,7 @@ class MainOverlay(QMainWindow):
         picks_outer.addWidget(picks_title)
 
         self._picks_container = QVBoxLayout()
-        self._picks_container.setSpacing(4)
+        self._picks_container.setSpacing(6)
         picks_outer.addLayout(self._picks_container)
 
         self._no_picks_label = QLabel("(no suggestions yet)")
@@ -163,7 +180,8 @@ class MainOverlay(QMainWindow):
         self._no_picks_label.setStyleSheet(f"color: {styles.TEXT_MUTED};")
         picks_outer.addWidget(self._no_picks_label)
 
-        body_layout.addWidget(self._picks_panel)
+        cs_layout.addWidget(self._picks_panel, 1)
+        body_layout.addWidget(self._champselect_row)
 
         self._power_spike_panel = PowerSpikePanel()
         body_layout.addWidget(self._power_spike_panel)
@@ -295,27 +313,55 @@ class MainOverlay(QMainWindow):
 
     def update_lcda_snapshot(self, snapshot: LcdaSnapshot | None) -> None:
         """Forward LCDA ticks to in-game panels — but only the ones the user
-        hasn't toggled off via the title-bar buttons."""
+        hasn't toggled off via the title-bar buttons. Also drives the
+        champselect <-> overlay mode switch so the window only goes
+        always-on-top + transparent when there's a real game running.
+        """
         if self._panel_allowed("objectives"):
             self._objective_panel.update_snapshot(snapshot)
         if self._panel_allowed("summoners"):
             self._summoner_tracker.update_snapshot(snapshot)
         if self._panel_allowed("spikes"):
             self._power_spike_panel.update_snapshot(snapshot)
-        # Auto-collapse champ-select sections during a real game.
         self.set_phase_visibility(
             in_champ_select=False,
             in_game=snapshot is not None,
         )
-        # On the first live snapshot, drop a borderless-mode hint into the
-        # status bar so users who can't see the overlay over the game know
-        # what to check. Only fires once per session.
+        target = "overlay" if snapshot is not None else "champselect"
+        if target != self._current_mode:
+            self._switch_mode(target)
         if snapshot is not None and not getattr(self, "_borderless_hint_shown", False):
             self._borderless_hint_shown = True
             self._status_bar.set_info(
                 "Tipp: League muss in 'Borderless' laufen — Fullscreen blockiert das Overlay",
                 color="#7FCC7F",
             )
+
+    def _switch_mode(self, mode: str) -> None:
+        """champselect = wide, opaque, normal z-order; overlay = narrow,
+        translucent, always-on-top (real in-game overlay)."""
+        if mode not in ("champselect", "overlay"):
+            return
+        self._current_mode = mode
+        flags = self.windowFlags()
+        was_visible = self.isVisible()
+        if mode == "overlay":
+            flags |= Qt.WindowType.WindowStaysOnTopHint
+            target_w = 320
+            opacity = self._persisted.opacity if self._save_state else 0.92
+        else:
+            flags &= ~Qt.WindowType.WindowStaysOnTopHint
+            target_w = max(self._persisted.width, 560)
+            opacity = 1.0
+        self.setWindowFlags(flags)
+        # setWindowFlags hides the window — re-show if it was visible.
+        if was_visible:
+            self.show()
+        # Clamp + apply size
+        target_h = self.height() if self._body.isVisible() else self.height()
+        clamped_w, clamped_h = self._clamp_to_screen(target_w, target_h)
+        self.resize(clamped_w, clamped_h)
+        self.setWindowOpacity(opacity)
 
     def _panel_allowed(self, key: str) -> bool:
         """Whether the user-level toggle for ``key`` permits rendering."""
@@ -340,8 +386,9 @@ class MainOverlay(QMainWindow):
         stays compact. The objective and summoner panels manage their
         own visibility from LCDA snapshots.
         """
-        self._enemy_panel.setVisible(in_champ_select or not in_game)
-        self._picks_panel.setVisible(in_champ_select or not in_game)
+        # The whole side-by-side champ-select row hides as one block; that
+        # keeps the in-game overlay nice and narrow.
+        self._champselect_row.setVisible(in_champ_select or not in_game)
 
     # -- frameless drag + persistence ------------------------------------
 
