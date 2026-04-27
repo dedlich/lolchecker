@@ -13,6 +13,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from ..advisor.composition import CompositionGap
 from ..advisor.picks import PickSuggestion
 from ..data.models import ChampionBuild, ChampSelectSession, CounterEntry
+from ..profiling.profile import EnemyProfile
 
 ConnectionState = Literal["disconnected", "waiting", "connected", "reconnecting"]
 
@@ -42,3 +43,7 @@ class SessionView(BaseModel):
     suggestion_builds: dict[str, ChampionBuild] = Field(default_factory=dict)
     """Map champion key → recommended build (runes/items/summoners) for the
     suggestions in this view. PickCard renders this when present."""
+
+    enemy_profiles: dict[int, EnemyProfile] = Field(default_factory=dict)
+    """Map enemy cell_id → fetched profile (mains, win-rate, streak) when
+    a Riot API key is configured. Empty dict otherwise."""

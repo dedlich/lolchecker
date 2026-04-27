@@ -135,6 +135,20 @@ class RiotApiClient:
     async def summoner_by_name(self, name: str) -> SummonerInfo:
         path = f"/lol/summoner/v4/summoners/by-name/{name}"
         data = await self._get(self._platform, path)
+        return self._summoner_from(data)
+
+    async def summoner_by_puuid(self, puuid: str) -> SummonerInfo:
+        path = f"/lol/summoner/v4/summoners/by-puuid/{puuid}"
+        data = await self._get(self._platform, path)
+        return self._summoner_from(data)
+
+    async def summoner_by_id(self, summoner_id: int | str) -> SummonerInfo:
+        path = f"/lol/summoner/v4/summoners/{summoner_id}"
+        data = await self._get(self._platform, path)
+        return self._summoner_from(data)
+
+    @staticmethod
+    def _summoner_from(data: Any) -> SummonerInfo:
         return SummonerInfo(
             puuid=str(data.get("puuid") or ""),
             summoner_id=str(data.get("id") or ""),

@@ -106,6 +106,7 @@ class ChampAssistant:
         champions: dict[int, Champion],
         builds: BuildLibrary | None = None,
         runtime_counters: RuntimeCounterStore | None = None,
+        profile_service: object | None = None,
         view_callback: Callable[[SessionView], None] | None = None,
     ) -> None:
         self.source = source
@@ -116,8 +117,11 @@ class ChampAssistant:
         self.champions = champions
         self.builds = builds or BuildLibrary()
         self._runtime_counters = runtime_counters
+        self._profile_service = profile_service
         # Track in-flight runtime fetches to avoid duplicate scheduling.
         self._runtime_inflight: set[tuple[str, str]] = set()
+        self._profile_inflight: set[str] = set()
+        self._enemy_profiles_by_cell: dict[int, object] = {}
         # Allow tests to observe view updates without going through Qt.
         self._view_callback = view_callback
 
@@ -157,6 +161,9 @@ class ChampAssistant:
             logger.info("session_ended_received clearing cached session")
             self._latest_session = None
             self._enemy_role_overrides.clear()
+            self._enemy_profiles_by_cell.clear()
+            if self._profile_service is not None:
+                self._profile_service.clear()
             view = SessionView(connection_state=self._connection_state)
         elif event_type == "connected":
             logger.info("orchestrator_state state=connected")
@@ -243,6 +250,11 @@ class ChampAssistant:
                 if build is not None:
                     suggestion_builds[s.champion_key] = build
 
+        # Kick off async profile fetches for enemies whose puuid/summoner_id
+        # is now visible. Results land in self._enemy_profiles_by_cell and
+        # the next view rebuild will surface them.
+        self._maybe_fetch_profiles(session)
+
         return SessionView(
             connection_state=self._connection_state,
             session=session,
@@ -254,7 +266,52 @@ class ChampAssistant:
             enemy_roles=enemy_roles,
             enemy_role_overridden=set(self._enemy_role_overrides.keys()),
             suggestion_builds=suggestion_builds,
+            enemy_profiles=dict(self._enemy_profiles_by_cell),  # type: ignore[arg-type]
         )
+
+    def _maybe_fetch_profiles(self, session: ChampSelectSession) -> None:
+        """If a Riot API key is configured, fire off async profile lookups
+        for each enemy. Empty/no-key/no-puuid → noop. Cached results show up
+        on the next view rebuild without blocking session rendering."""
+        if self._profile_service is None or not getattr(
+            self._profile_service, "enabled", False
+        ):
+            return
+        for member in session.their_team:
+            if member.cell_id < 0 or member.cell_id in self._enemy_profiles_by_cell:
+                continue
+            if not member.puuid and not member.summoner_id:
+                continue
+            key = member.puuid or f"sid:{member.summoner_id}"
+            if key in self._profile_inflight:
+                continue
+            self._profile_inflight.add(key)
+            try:
+                import asyncio as _aio
+                _aio.create_task(self._fetch_one_profile(member, key))
+            except RuntimeError:
+                # No running loop (tests or sync use) — skip.
+                self._profile_inflight.discard(key)
+
+    async def _fetch_one_profile(
+        self, member: TeamMember, key: str
+    ) -> None:
+        try:
+            assert self._profile_service is not None
+            if member.puuid:
+                profile = await self._profile_service.fetch_by_puuid(member.puuid)
+            else:
+                profile = await self._profile_service.fetch_by_summoner_id(
+                    member.summoner_id
+                )
+            self._enemy_profiles_by_cell[member.cell_id] = profile
+            # Re-render so the freshly fetched profile shows up in the UI.
+            if self._latest_session is not None:
+                self._push_view(self._build_view(self._latest_session))
+        except Exception as exc:  # noqa: BLE001
+            logger.info("profile_fetch_failed cell=%d: %s", member.cell_id, exc)
+        finally:
+            self._profile_inflight.discard(key)
 
     def _resolve_enemy_role(
         self, enemy: TeamMember, index: int, champion: Champion | None

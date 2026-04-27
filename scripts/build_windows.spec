@@ -86,6 +86,8 @@ a = Analysis(
         "champ_assistant.profiling",
         "champ_assistant.profiling.riot_api",
         "champ_assistant.profiling.profile",
+        "champ_assistant.secrets",
+        "champ_assistant.ui.settings_dialog",
     ],
     hookspath=[],
     hooksconfig={},

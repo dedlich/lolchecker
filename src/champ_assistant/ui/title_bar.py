@@ -26,6 +26,7 @@ class TitleBar(QFrame):
 
     minimize_clicked = pyqtSignal()
     close_clicked = pyqtSignal()
+    settings_clicked = pyqtSignal()
     drag_delta = pyqtSignal(QPoint)
     drag_started = pyqtSignal(QPoint)
     drag_finished = pyqtSignal()
@@ -93,6 +94,11 @@ class TitleBar(QFrame):
             lambda v: self.opacity_changed.emit(v / 100.0)
         )
         layout.addWidget(self._opacity_slider)
+
+        self._settings = self._mk_button("⚙")
+        self._settings.setToolTip("Einstellungen — API-Keys + Region")
+        self._settings.clicked.connect(self.settings_clicked.emit)
+        layout.addWidget(self._settings)
 
         self._minimize = self._mk_button("—")  # em-dash as a long minus
         self._minimize.clicked.connect(self.minimize_clicked.emit)

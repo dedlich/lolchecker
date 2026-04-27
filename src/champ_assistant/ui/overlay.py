@@ -48,6 +48,7 @@ class MainOverlay(QMainWindow):
 
     refresh_requested = pyqtSignal()
     enemy_role_clicked = pyqtSignal(int)  # cell_id of the clicked enemy slot
+    settings_changed = pyqtSignal()       # user saved a new API key
 
     def __init__(
         self,
@@ -112,6 +113,7 @@ class MainOverlay(QMainWindow):
         self._title_bar.drag_delta.connect(self._on_title_drag)
         self._title_bar.minimize_clicked.connect(self._toggle_collapsed)
         self._title_bar.close_clicked.connect(self.close)
+        self._title_bar.settings_clicked.connect(self._open_settings)
         self._title_bar.opacity_changed.connect(self._on_opacity_changed)
         self._title_bar.panel_toggled.connect(self._on_panel_toggled)
         if not frameless:
@@ -288,6 +290,8 @@ class MainOverlay(QMainWindow):
                     resolved_role=resolved_role,
                     role_overridden=role_overridden,
                 )
+                profile = view.enemy_profiles.get(member.cell_id)
+                row.set_profile(profile, champion_names=view.enemy_names)
             else:
                 row.clear()
 
@@ -458,6 +462,11 @@ class MainOverlay(QMainWindow):
         max_w = max(280, geo.width() - 16)
         max_h = max(360, geo.height() - 32)
         return min(want_w, max_w), min(want_h, max_h)
+
+    def _open_settings(self) -> None:
+        from .settings_dialog import open_settings
+        if open_settings(self):
+            self.settings_changed.emit()
 
     def _on_opacity_changed(self, opacity: float) -> None:
         self.setWindowOpacity(opacity)

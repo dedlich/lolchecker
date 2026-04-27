@@ -142,6 +142,10 @@ def _build_assistant(args: argparse.Namespace, overlay: MainOverlay) -> ChampAss
     cache_dir = args.data_dir.parent / "ddragon_cache" / "runtime_counters"
     runtime_counters = RuntimeCounterStore(cache_dir)
 
+    # Enemy profiling — opt-in via Settings dialog (Riot API key persisted
+    # in keyring). Disabled service falls through silently.
+    profile_service = _build_profile_service()
+
     return ChampAssistant(
         source=_make_source(args),
         overlay=overlay,
@@ -151,7 +155,19 @@ def _build_assistant(args: argparse.Namespace, overlay: MainOverlay) -> ChampAss
         champions=_starter_champion_index(),
         builds=builds,
         runtime_counters=runtime_counters,
+        profile_service=profile_service,
     )
+
+
+def _build_profile_service():  # type: ignore[no-untyped-def]
+    """Construct a ProfileService from persisted keyring credentials."""
+    from champ_assistant import secrets
+    from champ_assistant.profiling import ProfileService, RiotApiClient
+
+    api_key = secrets.riot_api_key()
+    region = secrets.riot_region()
+    client = RiotApiClient(api_key, region=region)
+    return ProfileService(client)
 
 
 def _run_with_ui(args: argparse.Namespace) -> int:
@@ -161,6 +177,16 @@ def _run_with_ui(args: argparse.Namespace) -> int:
     assistant = _build_assistant(args, overlay)
     # Wire the clickable enemy-role badge to the orchestrator's cycle method.
     overlay.enemy_role_clicked.connect(assistant.cycle_enemy_role_override)
+
+    # When the user saves a new Riot API key in Settings, rebuild the
+    # profile service so subsequent enemy profile lookups use it.
+    def _on_settings_changed() -> None:
+        assistant._profile_service = _build_profile_service()
+        assistant._enemy_profiles_by_cell.clear()
+        if assistant._latest_session is not None:
+            assistant._push_view(assistant._build_view(assistant._latest_session))
+    overlay.settings_changed.connect(_on_settings_changed)
+
     overlay.show()
 
     crash = CrashHandler()

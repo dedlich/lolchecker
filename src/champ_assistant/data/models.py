@@ -159,6 +159,7 @@ class TeamMember(BaseModel):
     cell_id: int = Field(default=-1, alias="cellId")
     champion_id: int = Field(default=0, alias="championId")  # 0 = not picked yet
     summoner_id: int | None = Field(default=None, alias="summonerId")
+    puuid: str | None = Field(default=None, alias="puuid")
     assigned_position: Role | None = Field(default=None, alias="assignedPosition")
     locked: bool = False
 
