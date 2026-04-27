@@ -348,48 +348,34 @@ class MainOverlay(QMainWindow):
             )
 
     def _switch_mode(self, mode: str) -> None:
-        """champselect = wide, opaque, normal z-order;
-        overlay = narrow, translucent, true game-overlay window flags
-        (Tool + StaysOnTop + DoesNotAcceptFocus + ShowWithoutActivating).
-        That combo is what lets the window render over League's Fullscreen
-        Optimization mode without stealing focus from the game."""
+        """champselect = wide, opaque, normal window — visible.
+        overlay = the main window hides entirely; the floating mini-widgets
+        (scoreboard, minimap timers, ...) take over. The user wanted only
+        widgets visible in-game, not the big main panel."""
         if mode not in ("champselect", "overlay"):
             return
         self._current_mode = mode
-        flags = self.windowFlags()
-        was_visible = self.isVisible()
         if mode == "overlay":
-            flags |= Qt.WindowType.WindowStaysOnTopHint
-            flags |= Qt.WindowType.Tool                      # no taskbar entry
-            flags |= Qt.WindowType.WindowDoesNotAcceptFocus  # don't steal focus
-            target_w = 320
-            opacity = self._persisted.opacity if self._save_state else 0.92
-            # Stop Qt from activating us when shown — keeps the keyboard
-            # focus in League while our window appears over it.
-            self.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating, True)
-        else:
-            flags &= ~Qt.WindowType.WindowStaysOnTopHint
-            flags &= ~Qt.WindowType.Tool
-            flags &= ~Qt.WindowType.WindowDoesNotAcceptFocus
-            target_w = max(self._persisted.width, 560)
-            opacity = 1.0
-            self.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating, False)
-            # Allow auto-pin to fire again next time we re-enter overlay.
-            self._pinned_for_session = False
+            # In-game: stash the main window. The floating widgets handle
+            # their own visibility via update_snapshot.
+            self.hide()
+            return
+
+        # champselect: restore as a wide, normal-z-order, opaque window.
+        flags = self.windowFlags()
+        flags &= ~Qt.WindowType.WindowStaysOnTopHint
+        flags &= ~Qt.WindowType.Tool
+        flags &= ~Qt.WindowType.WindowDoesNotAcceptFocus
+        self.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating, False)
+        # Allow auto-pin to fire again next time we re-enter overlay.
+        self._pinned_for_session = False
         self.setWindowFlags(flags)
-        # setWindowFlags hides the window — re-show if it was visible.
-        if was_visible:
-            self.show()
-        # Clamp + apply size
+        target_w = max(self._persisted.width, 560)
         target_h = self.height() if self._body.isVisible() else self.height()
         clamped_w, clamped_h = self._clamp_to_screen(target_w, target_h)
         self.resize(clamped_w, clamped_h)
-        self.setWindowOpacity(opacity)
-
-        # In overlay mode, try to auto-pin to the right edge of League's
-        # actual window so the user doesn't manually reposition every game.
-        if mode == "overlay":
-            self._pin_to_league_window()
+        self.setWindowOpacity(1.0)
+        self.show()
 
     def _pin_to_league_window(self) -> None:
         """Locate League's window via Win32 and park ourselves at its
