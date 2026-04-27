@@ -9,7 +9,14 @@ from __future__ import annotations
 
 from PyQt6.QtCore import QPoint, Qt, pyqtSignal
 from PyQt6.QtGui import QMouseEvent
-from PyQt6.QtWidgets import QFrame, QHBoxLayout, QLabel, QPushButton
+from PyQt6.QtWidgets import (
+    QFrame,
+    QHBoxLayout,
+    QLabel,
+    QPushButton,
+    QSlider,
+    QToolButton,
+)
 
 from . import styles
 
@@ -22,6 +29,8 @@ class TitleBar(QFrame):
     drag_delta = pyqtSignal(QPoint)
     drag_started = pyqtSignal(QPoint)
     drag_finished = pyqtSignal()
+    opacity_changed = pyqtSignal(float)         # 0.0..1.0
+    panel_toggled = pyqtSignal(str, bool)        # panel-name, visible
 
     def __init__(self) -> None:
         super().__init__()
@@ -51,6 +60,39 @@ class TitleBar(QFrame):
             " font-size: 10px; padding-left: 6px;"
         )
         layout.addWidget(self._version, 1)
+
+        # Per-section toggles. Each toggle is a small lettered button that
+        # the user can click to hide that panel — useful in-game when you
+        # only want to see objectives or only summoner cooldowns.
+        self._toggles: dict[str, QToolButton] = {}
+        for label, key, tip in (
+            ("O", "objectives", "Objectives ein/aus"),
+            ("S", "summoners",  "Summoner-Cooldowns ein/aus"),
+            ("!", "spikes",     "Power Spikes ein/aus"),
+        ):
+            btn = self._mk_toggle(label, tip)
+            btn.toggled.connect(
+                lambda checked, k=key: self.panel_toggled.emit(k, checked)
+            )
+            self._toggles[key] = btn
+            layout.addWidget(btn)
+
+        # Opacity slider — 50%..100%. Compact, 60px wide.
+        self._opacity_slider = QSlider(Qt.Orientation.Horizontal)
+        self._opacity_slider.setRange(50, 100)
+        self._opacity_slider.setValue(92)
+        self._opacity_slider.setFixedWidth(60)
+        self._opacity_slider.setToolTip("Transparenz")
+        self._opacity_slider.setStyleSheet(
+            f"QSlider::groove:horizontal {{ height: 4px; background: {styles.BG_TERTIARY};"
+            f" border-radius: 2px; }}"
+            f" QSlider::handle:horizontal {{ background: {styles.ACCENT};"
+            f" width: 10px; margin: -3px 0; border-radius: 5px; }}"
+        )
+        self._opacity_slider.valueChanged.connect(
+            lambda v: self.opacity_changed.emit(v / 100.0)
+        )
+        layout.addWidget(self._opacity_slider)
 
         self._minimize = self._mk_button("—")  # em-dash as a long minus
         self._minimize.clicked.connect(self.minimize_clicked.emit)
@@ -84,6 +126,39 @@ class TitleBar(QFrame):
 
     def set_version(self, version: str) -> None:
         self._version.setText(f"v{version}" if version else "")
+
+    def set_opacity(self, opacity: float) -> None:
+        """Sync the slider to a known opacity (0..1)."""
+        self._opacity_slider.blockSignals(True)
+        self._opacity_slider.setValue(int(round(opacity * 100)))
+        self._opacity_slider.blockSignals(False)
+
+    def set_panel_visible(self, key: str, visible: bool) -> None:
+        btn = self._toggles.get(key)
+        if btn is None:
+            return
+        btn.blockSignals(True)
+        btn.setChecked(visible)
+        btn.blockSignals(False)
+
+    def _mk_toggle(self, glyph: str, tip: str) -> QToolButton:
+        b = QToolButton()
+        b.setText(glyph)
+        b.setCheckable(True)
+        b.setChecked(True)
+        b.setFixedSize(20, 20)
+        b.setCursor(Qt.CursorShape.PointingHandCursor)
+        b.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        b.setToolTip(tip)
+        b.setStyleSheet(
+            f"QToolButton {{ background: transparent; color: {styles.TEXT_MUTED};"
+            f" border: none; border-radius: {styles.RADIUS_SMALL}px; font-size: 11px;"
+            f" font-weight: 700; }}"
+            f" QToolButton:checked {{ color: {styles.ACCENT};"
+            f" background-color: {styles.BG_TERTIARY}; }}"
+            f" QToolButton:hover:!checked {{ color: {styles.TEXT_PRIMARY}; }}"
+        )
+        return b
 
     # -- drag handling ----------------------------------------------------
 

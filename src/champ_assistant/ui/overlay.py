@@ -76,12 +76,15 @@ class MainOverlay(QMainWindow):
         flags = self.windowFlags()
         if frameless:
             flags |= Qt.WindowType.FramelessWindowHint
-            # Tool gives us a slim, no-taskbar window that loses focus quickly
-            # back to the game when the user clicks elsewhere.
-            flags |= Qt.WindowType.Tool
         if always_on_top:
             flags |= Qt.WindowType.WindowStaysOnTopHint
         self.setWindowFlags(flags)
+
+        # Light translucency by default — the user can see the game through
+        # the panel chrome but text remains crisp. Adjustable via the slider
+        # in the title bar at runtime.
+        if load_persisted_state:
+            self.setWindowOpacity(self._persisted.opacity)
 
         root = QWidget()
         root.setObjectName("root")
@@ -101,6 +104,8 @@ class MainOverlay(QMainWindow):
         self._title_bar.drag_delta.connect(self._on_title_drag)
         self._title_bar.minimize_clicked.connect(self._toggle_collapsed)
         self._title_bar.close_clicked.connect(self.close)
+        self._title_bar.opacity_changed.connect(self._on_opacity_changed)
+        self._title_bar.panel_toggled.connect(self._on_panel_toggled)
         if not frameless:
             self._title_bar.hide()
         outer.addWidget(self._title_bar)
@@ -182,6 +187,22 @@ class MainOverlay(QMainWindow):
 
         if load_persisted_state and self._persisted.collapsed:
             self._set_body_visible(False)
+
+        # Sync persisted opacity + per-panel toggle states into the title-bar
+        # buttons. The panels themselves stay hidden until LCDA delivers a
+        # snapshot — _panel_allowed() then gates LCDA forwarding so a
+        # toggled-off panel never gets a show() call.
+        if load_persisted_state:
+            self._title_bar.set_opacity(self._persisted.opacity)
+            self._title_bar.set_panel_visible(
+                "objectives", self._persisted.show_objectives
+            )
+            self._title_bar.set_panel_visible(
+                "summoners", self._persisted.show_summoners
+            )
+            self._title_bar.set_panel_visible(
+                "spikes", self._persisted.show_spikes
+            )
 
         # Hotkeys (kept as instance attrs so tests can introspect / fire them)
         self._hide_shortcut = QShortcut(QKeySequence(self.HOTKEY_HIDE), self)
@@ -273,15 +294,38 @@ class MainOverlay(QMainWindow):
     # -- in-game panels visibility ---------------------------------------
 
     def update_lcda_snapshot(self, snapshot: LcdaSnapshot | None) -> None:
-        """Forward LCDA ticks to in-game panels."""
-        self._objective_panel.update_snapshot(snapshot)
-        self._summoner_tracker.update_snapshot(snapshot)
-        self._power_spike_panel.update_snapshot(snapshot)
+        """Forward LCDA ticks to in-game panels — but only the ones the user
+        hasn't toggled off via the title-bar buttons."""
+        if self._panel_allowed("objectives"):
+            self._objective_panel.update_snapshot(snapshot)
+        if self._panel_allowed("summoners"):
+            self._summoner_tracker.update_snapshot(snapshot)
+        if self._panel_allowed("spikes"):
+            self._power_spike_panel.update_snapshot(snapshot)
         # Auto-collapse champ-select sections during a real game.
         self.set_phase_visibility(
             in_champ_select=False,
             in_game=snapshot is not None,
         )
+        # On the first live snapshot, drop a borderless-mode hint into the
+        # status bar so users who can't see the overlay over the game know
+        # what to check. Only fires once per session.
+        if snapshot is not None and not getattr(self, "_borderless_hint_shown", False):
+            self._borderless_hint_shown = True
+            self._status_bar.set_info(
+                "Tipp: League muss in 'Borderless' laufen — Fullscreen blockiert das Overlay",
+                color="#7FCC7F",
+            )
+
+    def _panel_allowed(self, key: str) -> bool:
+        """Whether the user-level toggle for ``key`` permits rendering."""
+        if not self._save_state:
+            return True
+        return {
+            "objectives": self._persisted.show_objectives,
+            "summoners":  self._persisted.show_summoners,
+            "spikes":     self._persisted.show_spikes,
+        }.get(key, True)
 
     @property
     def power_spike_panel(self) -> PowerSpikePanel:
@@ -367,6 +411,28 @@ class MainOverlay(QMainWindow):
         max_w = max(280, geo.width() - 16)
         max_h = max(360, geo.height() - 32)
         return min(want_w, max_w), min(want_h, max_h)
+
+    def _on_opacity_changed(self, opacity: float) -> None:
+        self.setWindowOpacity(opacity)
+        if self._save_state:
+            self._persisted.opacity = opacity
+            overlay_config.save(self._persisted)
+
+    def _on_panel_toggled(self, key: str, visible: bool) -> None:
+        if key == "objectives":
+            self._objective_panel.setVisible(visible)
+            if self._save_state:
+                self._persisted.show_objectives = visible
+        elif key == "summoners":
+            self._summoner_tracker.setVisible(visible)
+            if self._save_state:
+                self._persisted.show_summoners = visible
+        elif key == "spikes":
+            self._power_spike_panel.setVisible(visible)
+            if self._save_state:
+                self._persisted.show_spikes = visible
+        if self._save_state:
+            overlay_config.save(self._persisted)
 
     def closeEvent(self, event) -> None:  # type: ignore[no-untyped-def]
         if self._save_state:

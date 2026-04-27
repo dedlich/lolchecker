@@ -29,6 +29,10 @@ class OverlayState:
     always_on_top: bool = True
     frameless: bool = True
     collapsed: bool = False  # user-toggled "minimize" state
+    opacity: float = 0.92    # 1.0 = solid, 0.5 = barely visible
+    show_objectives: bool = True
+    show_summoners: bool = True
+    show_spikes: bool = True
 
 
 def _config_dir() -> Path:
@@ -56,7 +60,9 @@ def load() -> OverlayState:
         return OverlayState()
     state = OverlayState()
     for field in ("x", "y", "width", "height", "anchor",
-                  "always_on_top", "frameless", "collapsed"):
+                  "always_on_top", "frameless", "collapsed",
+                  "opacity", "show_objectives", "show_summoners",
+                  "show_spikes"):
         if field in data:
             setattr(state, field, data[field])
     return state
