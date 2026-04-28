@@ -375,26 +375,26 @@ class MainOverlay(QMainWindow):
     def _switch_mode(self, mode: str) -> None:
         """champselect = wide, opaque, normal window — visible.
         overlay = the main window hides entirely; the floating mini-widgets
-        (scoreboard, minimap timers, ...) take over. The user wanted only
-        widgets visible in-game, not the big main panel."""
+        (scoreboard, minimap timers, ...) take over.
+
+        Window-flag handling is delegated to ``window_flags`` so all four
+        consumers (this method + tray show + startup + reconnect) call
+        the same idempotent helper."""
+        from .. import window_flags
         if mode not in ("champselect", "overlay"):
             return
         self._current_mode = mode
         if mode == "overlay":
             # In-game: stash the main window. The floating widgets handle
-            # their own visibility via update_snapshot.
+            # their own visibility via update_snapshot. Apply overlay flags
+            # so when the user does Show via tray we come back correctly.
+            window_flags.apply_overlay_flags(self)
             self.hide()
             return
 
-        # champselect: restore as a wide, normal-z-order, opaque window.
-        flags = self.windowFlags()
-        flags &= ~Qt.WindowType.WindowStaysOnTopHint
-        flags &= ~Qt.WindowType.Tool
-        flags &= ~Qt.WindowType.WindowDoesNotAcceptFocus
-        self.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating, False)
+        window_flags.apply_champselect_flags(self)
         # Allow auto-pin to fire again next time we re-enter overlay.
         self._pinned_for_session = False
-        self.setWindowFlags(flags)
         target_w = max(self._persisted.width, 560)
         target_h = self.height() if self._body.isVisible() else self.height()
         clamped_w, clamped_h = self._clamp_to_screen(target_w, target_h)

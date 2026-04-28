@@ -14,6 +14,8 @@ import sys
 from pathlib import Path
 
 import qasync
+from PyQt6.QtCore import Qt
+from PyQt6.QtGui import QSurfaceFormat
 from PyQt6.QtWidgets import QApplication
 
 # Absolute imports (not relative) so PyInstaller can run this file directly
@@ -175,7 +177,27 @@ def _build_profile_service():  # type: ignore[no-untyped-def]
     return ProfileService(client)
 
 
+def _enable_gpu_backend() -> None:
+    """Force the desktop OpenGL backend before QApplication is created.
+
+    Qt's default on Windows is the ANGLE/software fallback for
+    older drivers; on a modern Win10/11 box with a GPU the desktop-OpenGL
+    backend is faster and lower-CPU for a translucent always-on-top
+    window. Has to be set BEFORE QApplication() — once the app exists
+    it's too late.
+    """
+    QApplication.setAttribute(Qt.ApplicationAttribute.AA_UseDesktopOpenGL, True)
+    # Smooth Z-order updates for layered windows; harmless on others.
+    QApplication.setAttribute(Qt.ApplicationAttribute.AA_ShareOpenGLContexts, True)
+    # Per-screen DPI changes (multi-monitor with mixed scaling) — Qt6 default,
+    # but we set it explicitly so a future Qt5 backport stays correct.
+    fmt = QSurfaceFormat()
+    fmt.setSwapBehavior(QSurfaceFormat.SwapBehavior.DoubleBuffer)
+    QSurfaceFormat.setDefaultFormat(fmt)
+
+
 def _run_with_ui(args: argparse.Namespace) -> int:
+    _enable_gpu_backend()
     qt_app = QApplication(sys.argv[:1])
 
     overlay = MainOverlay(load_persisted_state=True)
@@ -184,6 +206,30 @@ def _run_with_ui(args: argparse.Namespace) -> int:
     # doesn't garbage-collect it.
     from champ_assistant.ui.tray import TrayController
     overlay._tray = TrayController(overlay)  # type: ignore[attr-defined]
+
+    # ------------------------------------------------------------------
+    # Production-grade infrastructure (v0.12.0 architecture upgrade):
+    #   * StateStore  — single immutable source of truth
+    #   * RenderScheduler — coalesces repaints + 1 Hz tick
+    #   * Diagnostics — periodic CPU/FPS/latency logging
+    # The store + scheduler sit ABOVE the existing widget interfaces;
+    # widgets keep their update_view/update_snapshot APIs but get driven
+    # via store subscriptions instead of direct LCDA-source callbacks.
+    # ------------------------------------------------------------------
+    from champ_assistant.diagnostics import Diagnostics
+    from champ_assistant.render_scheduler import RenderScheduler
+    from champ_assistant.state_store import StateStore
+    store = StateStore()
+    scheduler = RenderScheduler()
+    diagnostics = Diagnostics()
+    diagnostics.attach_scheduler(scheduler)
+    diagnostics.attach_store(store)
+    overlay._store = store              # type: ignore[attr-defined]
+    overlay._scheduler = scheduler      # type: ignore[attr-defined]
+    overlay._diagnostics = diagnostics  # type: ignore[attr-defined]
+    # Drive the embedded power-spike panel's fade animation off the
+    # central tick instead of its own QTimer (P5).
+    overlay.power_spike_panel.connect_scheduler(scheduler)
 
     assistant = _build_assistant(args, overlay)
     # Wire the clickable enemy-role badge to the orchestrator's cycle method.
@@ -336,6 +382,7 @@ def _run_with_ui(args: argparse.Namespace) -> int:
         floating.append(scoreboard)
     if persisted.show_minimap_timers:
         minimap = MinimapTimersWidget()
+        minimap.connect_scheduler(scheduler)
         floating.append(minimap)
     lobby_stats: LobbyStatsWidget | None = None
     if persisted.show_lobby_stats:
@@ -346,6 +393,10 @@ def _run_with_ui(args: argparse.Namespace) -> int:
     lcda_task = loop.create_task(
         _run_lcda_watcher(overlay, floating), name="lcda-watcher"
     )
+
+    # Start production-grade infrastructure now that the loop is set up.
+    scheduler.start()
+    diagnostics.start()
 
     try:
         with loop:
@@ -361,27 +412,61 @@ async def _run_lcda_watcher(
     overlay: MainOverlay,
     floating_consumers: list[object],
 ) -> None:
-    """Background task that polls LCDA and pushes snapshots to the overlay
-    AND any floating mini-widgets (scoreboard, minimap timers, ...).
+    """Background task that polls LCDA and routes snapshots through the
+    StateStore. The store's listeners then drive overlay + floating-widget
+    repaints via the RenderScheduler.
 
     LCDA is only reachable while a match is loaded. The source already
-    handles the alive/stale transition; we just forward every callback
-    onto the Qt thread (qasync runs callbacks on it for us).
+    handles the alive/stale transition; we just commit each snapshot to
+    the store and let pub/sub do the dispatch.
     """
+    import time as _time
+
     from champ_assistant.lcda import LcdaClient, LcdaSource
 
     log = logging.getLogger(__name__)
+    store = getattr(overlay, "_store", None)
+    diagnostics = getattr(overlay, "_diagnostics", None)
+    scheduler = getattr(overlay, "_scheduler", None)
 
     async def on_snapshot(snap: object) -> None:
+        arrived = _time.monotonic()
         try:
-            overlay.update_lcda_snapshot(snap)  # type: ignore[arg-type]
+            if store is not None:
+                store.update(
+                    lcda_snapshot=snap,
+                    phase="in_game" if snap is not None else "idle",
+                    last_lcda_received=arrived,
+                    game_time=getattr(snap, "game_time", 0.0) if snap else 0.0,
+                )
+            # Existing widget surfaces stay live too — the store-listener
+            # below routes the same snapshot to them via the scheduler.
+        except Exception:
+            log.exception("lcda_state_commit_failed")
+        if diagnostics is not None:
+            diagnostics.record_event_latency_ms(
+                (_time.monotonic() - arrived) * 1000.0
+            )
+        if scheduler is not None:
+            scheduler.request_repaint()
+
+    # Bridge the store back to the existing widget API: when the lcda
+    # snapshot in state changes, dispatch to overlay + floating widgets.
+    def _dispatch(old, new) -> None:  # type: ignore[no-untyped-def]
+        if old.lcda_snapshot is new.lcda_snapshot:
+            return
+        try:
+            overlay.update_lcda_snapshot(new.lcda_snapshot)  # type: ignore[arg-type]
         except Exception:
             log.exception("lcda_overlay_update_failed")
         for widget in floating_consumers:
             try:
-                widget.update_snapshot(snap)  # type: ignore[attr-defined]
+                widget.update_snapshot(new.lcda_snapshot)  # type: ignore[attr-defined]
             except Exception:
                 log.exception("lcda_floating_widget_update_failed")
+
+    if store is not None:
+        store.subscribe(_dispatch)
 
     client = LcdaClient()
     source = LcdaSource(client, on_snapshot)

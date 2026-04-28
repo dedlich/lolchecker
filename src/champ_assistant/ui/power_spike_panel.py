@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import time
 
-from PyQt6.QtCore import Qt, QTimer
+from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import QFrame, QHBoxLayout, QLabel, QVBoxLayout
 
 from ..lcda.power_spikes import PowerSpike
@@ -58,15 +58,15 @@ class PowerSpikePanel(QFrame):
 
         self._latest_spike: PowerSpike | None = None
         self._latest_spike_at: float = 0.0
-        self._fade_timer = QTimer(self)
-        self._fade_timer.setInterval(1000)
-        self._fade_timer.timeout.connect(self._refresh_visibility)
-
+        # Fade animation now driven by the central scheduler's 1 Hz tick
+        # via ``connect_scheduler`` — no per-widget QTimer (P5).
         self.hide()
+
+    def connect_scheduler(self, scheduler) -> None:  # type: ignore[no-untyped-def]
+        scheduler.tick.connect(self._refresh_visibility)
 
     def update_snapshot(self, snapshot: LcdaSnapshot | None) -> None:
         if snapshot is None:
-            self._fade_timer.stop()
             self.hide()
             return
         self.show()
@@ -80,7 +80,8 @@ class PowerSpikePanel(QFrame):
         if snapshot.new_spikes:
             self._latest_spike = snapshot.new_spikes[-1]
             self._latest_spike_at = time.monotonic()
-            self._fade_timer.start()
+        # Repaint immediately so the fresh spike is visible; the central
+        # scheduler's 1 Hz tick keeps fading it out from there.
         self._refresh_visibility()
 
     def _refresh_visibility(self) -> None:
@@ -95,7 +96,6 @@ class PowerSpikePanel(QFrame):
             self._headline.setText("")
             self._detail.setText("Track your level + item count.")
             self._detail.setStyleSheet(f"color: {styles.TEXT_MUTED}; font-size: 11px;")
-            self._fade_timer.stop()
             return
         # Bright while inside the attention window, dimming towards the end.
         ratio = max(0.0, 1.0 - (elapsed / ATTENTION_WINDOW_S))

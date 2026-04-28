@@ -9,7 +9,7 @@ Compact format, sits on/next to the in-game minimap.
 """
 from __future__ import annotations
 
-from PyQt6.QtCore import Qt, QTimer
+from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QMouseEvent
 from PyQt6.QtWidgets import QHBoxLayout, QLabel, QToolButton, QVBoxLayout
 
@@ -161,25 +161,25 @@ class MinimapTimersWidget(FloatingWidget):
             bottom.addWidget(btn)
         outer.addLayout(bottom)
 
-        # Tick the camp timers every 500ms so they count down smoothly even
-        # in between LCDA snapshots (which arrive every ~2s).
+        # Camp timers count down via the central RenderScheduler's 1 Hz
+        # tick — see ``connect_scheduler`` below. This widget no longer
+        # owns its own QTimer (P5: state-driven UI updates).
         self._latest_game_time = 0.0
-        self._tick = QTimer(self)
-        self._tick.setInterval(500)
-        self._tick.timeout.connect(self._refresh_camps)
 
         self.hide()
+
+    def connect_scheduler(self, scheduler) -> None:  # type: ignore[no-untyped-def]
+        """Hook the central 1 Hz tick. Called by __main__ at startup
+        once the scheduler has been instantiated."""
+        scheduler.tick.connect(self._refresh_camps)
 
     # -- public API -------------------------------------------------------
 
     def update_snapshot(self, snapshot: LcdaSnapshot | None) -> None:
         if snapshot is None:
             self.hide()
-            self._tick.stop()
             return
         self.show()
-        if not self._tick.isActive():
-            self._tick.start()
         self._latest_game_time = snapshot.game_time
         by_name = {o.name: o for o in snapshot.objectives}
         for name, cell in self._cells.items():
