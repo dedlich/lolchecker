@@ -56,7 +56,8 @@ class PickCard(QFrame):
 
         name = QLabel(suggestion.champion_key)
         name.setStyleSheet(
-            f"color: {styles.TEXT_PRIMARY}; font-size: 14px; font-weight: 600;"
+            f"color: {styles.TEXT_PRIMARY};"
+            f" font-size: {styles.FS_HEADING}px; font-weight: 600;"
         )
         head.addWidget(name)
         head.addWidget(TierBadge(suggestion.tier))
@@ -64,7 +65,8 @@ class PickCard(QFrame):
 
         score_label = QLabel(f"{suggestion.score:.0f}")
         score_label.setStyleSheet(
-            f"color: {styles.ACCENT}; font-weight: 700; font-size: 14px;"
+            f"color: {styles.ACCENT}; font-weight: 700;"
+            f" font-size: {styles.FS_HEADING}px;"
         )
         score_label.setAlignment(
             Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
@@ -73,7 +75,9 @@ class PickCard(QFrame):
 
         reasons_text = " · ".join(suggestion.reasons[:3]) if suggestion.reasons else ""
         reasons = QLabel(reasons_text)
-        reasons.setStyleSheet(f"color: {styles.TEXT_MUTED}; font-size: 11px;")
+        reasons.setStyleSheet(
+            f"color: {styles.TEXT_MUTED}; font-size: {styles.FS_LABEL}px;"
+        )
         reasons.setWordWrap(True)
 
         outer.addLayout(head)
@@ -148,7 +152,7 @@ class PickCard(QFrame):
 
 def _build_line(sigil: str, items: list[str], color: str, *, sep: str) -> QLabel:
     label = QLabel(
-        f"<span style='color:{color}; font-size:13px;'>{sigil}</span>  "
+        f"<span style='color:{color}; font-size:{styles.FS_HEADING}px;'>{sigil}</span>  "
         f"<span style='color:{color}'>"
         f"{sep.join(items)}</span>"
     )

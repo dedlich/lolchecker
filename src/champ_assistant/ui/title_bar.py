@@ -110,7 +110,8 @@ class TitleBar(QFrame):
         )
         self._passthrough.setStyleSheet(
             f"QToolButton {{ background: transparent; color: {styles.TEXT_MUTED};"
-            f" border: none; border-radius: {styles.RADIUS_SMALL}px; font-size: 11px; }}"
+            f" border: none; border-radius: {styles.RADIUS_SMALL}px;"
+            f" font-size: {styles.FS_LABEL}px; }}"
             f" QToolButton:checked {{ color: {styles.WARNING};"
             f" background-color: {styles.BG_TERTIARY}; }}"
             f" QToolButton:hover:!checked {{ color: {styles.TEXT_PRIMARY}; }}"
@@ -144,7 +145,8 @@ class TitleBar(QFrame):
         b.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         b.setStyleSheet(
             f"QPushButton {{ background: transparent; color: {styles.TEXT_MUTED};"
-            f" border: none; border-radius: {styles.RADIUS_SMALL}px; font-size: 11px; }}"
+            f" border: none; border-radius: {styles.RADIUS_SMALL}px;"
+            f" font-size: {styles.FS_LABEL}px; }}"
             f" QPushButton:hover {{ background-color: {styles.BG_ELEVATED};"
             f" color: {styles.TEXT_PRIMARY}; }}"
         )
@@ -188,7 +190,8 @@ class TitleBar(QFrame):
         b.setToolTip(tip)
         b.setStyleSheet(
             f"QToolButton {{ background: transparent; color: {styles.TEXT_MUTED};"
-            f" border: none; border-radius: {styles.RADIUS_SMALL}px; font-size: 11px;"
+            f" border: none; border-radius: {styles.RADIUS_SMALL}px;"
+            f" font-size: {styles.FS_LABEL}px;"
             f" font-weight: 700; }}"
             f" QToolButton:checked {{ color: {styles.ACCENT};"
             f" background-color: {styles.BG_TERTIARY}; }}"

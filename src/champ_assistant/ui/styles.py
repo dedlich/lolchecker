@@ -1,131 +1,144 @@
 """Design system tokens + global Qt stylesheet.
 
-Approach:
-  - Layered backgrounds (primary -> secondary -> tertiary -> elevated) so
-    nested cards visually separate without hard borders.
-  - Translucent borders (rgba) instead of solid 1px lines so chrome reads
-    softer at all opacity levels.
-  - Tier / state colors as semantic constants so panels reuse the same
-    blue for "info", same green for "success", etc.
-  - One typographic scale: 10/11/12/14/17 — used consistently.
+This module is a **closed visual contract**. Every UI value the
+application paints with originates here:
+
+  * background / text colors (BG_*, TEXT_*)
+  * brand + state colors (ACCENT, DANGER, WARNING, SUCCESS, INFO,
+    TEAM_*)
+  * borders (BORDER*, with rgba alpha so they soften under panels)
+  * tier colors (TIER_*) and cooldown urgency (CD_*)
+  * typography scale (FS_CAPTION..FS_DISPLAY) + family (FONT_FAMILY,
+    FONT_MONO)
+  * spacing on a 4-pt grid (SPACING_TIGHT/GRID/WIDE/LOOSE)
+  * radius (RADIUS_SMALL/RADIUS/RADIUS_LARGE)
+  * shadow profiles (SHADOW_FLOAT, SHADOW_PANEL)
+  * animation cadence (ANIM_FAST_MS / ANIM_DEFAULT_MS / ANIM_SLOW_MS)
+
+Tokens are annotated ``Final`` to declare the contract: PEP 591 says a
+``Final`` name must not be reassigned. Static type-checkers enforce
+this. Adding a new visual primitive is a deliberate edit to *this* file;
+inline drift in widgets is caught by ``tests/lint/test_design_lockdown.py``.
 """
 from __future__ import annotations
+
+from typing import Final
 
 # --------------------------------------------------------------------------
 # Backgrounds (layered)
 # --------------------------------------------------------------------------
-BG_PRIMARY    = "#0A0E14"
-BG_SECONDARY  = "#141A22"
-BG_TERTIARY   = "#1D2530"
-BG_ELEVATED   = "#27313F"
-BG_INTERACT   = "#2F3A4A"  # hover
+BG_PRIMARY:    Final[str] = "#0A0E14"
+BG_SECONDARY:  Final[str] = "#141A22"
+BG_TERTIARY:   Final[str] = "#1D2530"
+BG_ELEVATED:   Final[str] = "#27313F"
+BG_INTERACT:   Final[str] = "#2F3A4A"   # hover
 
 # --------------------------------------------------------------------------
 # Text
 # --------------------------------------------------------------------------
-TEXT_PRIMARY    = "#ECEEF1"
-TEXT_SECONDARY  = "#B6BCC4"
-TEXT_MUTED      = "#7A848F"
-TEXT_DISABLED   = "#4D5662"
+TEXT_PRIMARY:   Final[str] = "#ECEEF1"
+TEXT_SECONDARY: Final[str] = "#B6BCC4"
+TEXT_MUTED:     Final[str] = "#7A848F"
+TEXT_DISABLED:  Final[str] = "#4D5662"
 
 # --------------------------------------------------------------------------
 # Brand + state colors
 # --------------------------------------------------------------------------
-ACCENT          = "#5BA8FF"
-ACCENT_BRIGHT   = "#7DBBFF"
-ACCENT_DIM      = "#2A5180"
-ACCENT_FAINT    = "rgba(91, 168, 255, 30)"
+ACCENT:         Final[str] = "#5BA8FF"
+ACCENT_BRIGHT:  Final[str] = "#7DBBFF"
+ACCENT_DIM:     Final[str] = "#2A5180"
+ACCENT_FAINT:   Final[str] = "rgba(91, 168, 255, 30)"
 
-DANGER          = "#FF6B6B"
-DANGER_DIM      = "#7D2F2F"
-WARNING         = "#FFB84A"
-SUCCESS         = "#7FCC7F"
-INFO            = ACCENT
+DANGER:         Final[str] = "#FF6B6B"
+DANGER_DIM:     Final[str] = "#7D2F2F"
+WARNING:        Final[str] = "#FFB84A"
+SUCCESS:        Final[str] = "#7FCC7F"
+INFO:           Final[str] = ACCENT
 
 # Team semantic colors — used by the scoreboard and any other widget
 # that paints "ally" vs "enemy" data side by side. Centralized so a
 # colorblind-friendly retheme is a one-line change instead of a sweep.
-TEAM_ALLY       = "#6BBBFF"   # cool blue — ally side
-TEAM_ENEMY      = DANGER      # warm red — enemy side
-TEAM_NEUTRAL    = TEXT_MUTED  # neutral / no-delta separator
+TEAM_ALLY:      Final[str] = "#6BBBFF"   # cool blue — ally side
+TEAM_ENEMY:     Final[str] = DANGER      # warm red — enemy side
+TEAM_NEUTRAL:   Final[str] = TEXT_MUTED  # neutral / no-delta separator
 
 # --------------------------------------------------------------------------
 # Borders (translucent so they read soft at any opacity)
 # --------------------------------------------------------------------------
-BORDER          = "rgba(60, 70, 85, 180)"
-BORDER_STRONG   = "rgba(90, 105, 125, 220)"
-BORDER_FAINT    = "rgba(60, 70, 85, 90)"
-BORDER_ACCENT   = "rgba(91, 168, 255, 140)"
+BORDER:         Final[str] = "rgba(60, 70, 85, 180)"
+BORDER_STRONG:  Final[str] = "rgba(90, 105, 125, 220)"
+BORDER_FAINT:   Final[str] = "rgba(60, 70, 85, 90)"
+BORDER_ACCENT:  Final[str] = "rgba(91, 168, 255, 140)"
 
 # --------------------------------------------------------------------------
 # Tier colors (champion strength badges)
 # --------------------------------------------------------------------------
-TIER_S_PLUS     = "#FF6B9D"
-TIER_S          = "#FFB84A"
-TIER_A          = "#7FCC7F"
-TIER_B          = "#9FA8B4"
-TIER_C          = TEXT_MUTED
-TIER_D          = TEXT_DISABLED
+TIER_S_PLUS:    Final[str] = "#FF6B9D"
+TIER_S:         Final[str] = "#FFB84A"
+TIER_A:         Final[str] = "#7FCC7F"
+TIER_B:         Final[str] = "#9FA8B4"
+TIER_C:         Final[str] = TEXT_MUTED
+TIER_D:         Final[str] = TEXT_DISABLED
 
 # Cooldown urgency (used in spell tracker badges)
-CD_HOT          = "#FF6B6B"
-CD_WARM         = "#FFB84A"
-CD_COOL         = "#7FCC7F"
+CD_HOT:         Final[str] = "#FF6B6B"
+CD_WARM:        Final[str] = "#FFB84A"
+CD_COOL:        Final[str] = "#7FCC7F"
 
 # --------------------------------------------------------------------------
 # Typography
 # --------------------------------------------------------------------------
-FONT_FAMILY     = "-apple-system, Segoe UI, Inter, sans-serif"
-FONT_MONO       = "SF Mono, Menlo, Consolas, monospace"
+FONT_FAMILY:    Final[str] = "-apple-system, Segoe UI, Inter, sans-serif"
+FONT_MONO:      Final[str] = "SF Mono, Menlo, Consolas, monospace"
 
-FS_CAPTION      = 10
-FS_LABEL        = 11
-FS_BODY         = 12
-FS_HEADING      = 14
-FS_TITLE        = 17
-FS_DISPLAY      = 18  # scoreboard kill counters, hotkey-capture preview
+FS_CAPTION:     Final[int] = 10
+FS_LABEL:       Final[int] = 11
+FS_BODY:        Final[int] = 12
+FS_HEADING:     Final[int] = 14
+FS_TITLE:       Final[int] = 17
+FS_DISPLAY:     Final[int] = 18  # scoreboard kill counters, hotkey-capture preview
 
 # --------------------------------------------------------------------------
-# Spacing + radius (8pt grid)
+# Spacing + radius (4pt grid)
 # --------------------------------------------------------------------------
-SPACING_TIGHT   = 4
-SPACING_GRID    = 8
-SPACING_WIDE    = 12
-SPACING_LOOSE   = 16
+SPACING_TIGHT:  Final[int] = 4
+SPACING_GRID:   Final[int] = 8
+SPACING_WIDE:   Final[int] = 12
+SPACING_LOOSE:  Final[int] = 16
 
-RADIUS_SMALL    = 4
-RADIUS          = 8
-RADIUS_LARGE    = 12
+RADIUS_SMALL:   Final[int] = 4
+RADIUS:         Final[int] = 8
+RADIUS_LARGE:   Final[int] = 12
 
 # --------------------------------------------------------------------------
 # Padding/margin scale — explicit (top, right, bottom, left) tuples.
 # Use these instead of inline magic numbers so a sweep audit verifies
 # every widget paints to the same rhythm.
 # --------------------------------------------------------------------------
-PAD_ROW_TIGHT   = (6, 8, 6, 8)     # compact rows (camp buttons, mini lists)
-PAD_ROW         = (7, 10, 7, 10)   # standard rows (objective, summoner, lobby)
-PAD_PANEL       = (10, 12, 10, 12) # outer panel padding
-PAD_DIALOG      = (18, 20, 18, 20) # settings dialog
+PAD_ROW_TIGHT:  Final[tuple[int, int, int, int]] = (6, 8, 6, 8)
+PAD_ROW:        Final[tuple[int, int, int, int]] = (7, 10, 7, 10)
+PAD_PANEL:      Final[tuple[int, int, int, int]] = (10, 12, 10, 12)
+PAD_DIALOG:     Final[tuple[int, int, int, int]] = (18, 20, 18, 20)
 
 # --------------------------------------------------------------------------
 # Shadow profiles — paired with QGraphicsDropShadowEffect. Subtle by
 # default; see the spec ("Avoid heavy glow effects").
 # --------------------------------------------------------------------------
-SHADOW_FLOAT    = {"blur": 22, "x": 0, "y": 3, "alpha": 160}  # floating widgets
-SHADOW_PANEL    = {"blur": 12, "x": 0, "y": 2, "alpha": 90}   # nested panels (rare)
+SHADOW_FLOAT:   Final[dict[str, int]] = {"blur": 22, "x": 0, "y": 3, "alpha": 160}
+SHADOW_PANEL:   Final[dict[str, int]] = {"blur": 12, "x": 0, "y": 2, "alpha": 90}
 
 # --------------------------------------------------------------------------
 # Animation timing — single source so every fade/transition uses the
 # same cadence (spec: 150-200 ms).
 # --------------------------------------------------------------------------
-ANIM_FAST_MS    = 120
-ANIM_DEFAULT_MS = 180
-ANIM_SLOW_MS    = 240
+ANIM_FAST_MS:    Final[int] = 120
+ANIM_DEFAULT_MS: Final[int] = 180
+ANIM_SLOW_MS:    Final[int] = 240
 
 # --------------------------------------------------------------------------
 # Tier name -> color (used by widgets that show champion/pick tiers)
 # --------------------------------------------------------------------------
-TIER_COLORS: dict[str, str] = {
+TIER_COLORS: Final[dict[str, str]] = {
     "S+": TIER_S_PLUS,
     "S":  TIER_S,
     "A":  TIER_A,

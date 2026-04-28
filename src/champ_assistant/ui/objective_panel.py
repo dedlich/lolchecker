@@ -50,7 +50,7 @@ class _ObjectiveRow(QFrame):
         layout.setSpacing(10)
 
         self._sigil = QLabel(OBJECTIVE_SIGILS.get(name, "•"))
-        self._sigil.setStyleSheet("font-size: 18px;")
+        self._sigil.setStyleSheet(f"font-size: {styles.FS_DISPLAY}px;")
         self._sigil.setFixedWidth(26)
         self._sigil.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(self._sigil)
@@ -124,7 +124,7 @@ class ObjectivePanel(QFrame):
         self._game_time_label = QLabel("—")
         self._game_time_label.setStyleSheet(
             f"color: {styles.ACCENT}; font-family: {styles.FONT_MONO};"
-            " font-size: 11px; font-weight: 700;"
+            f" font-size: {styles.FS_LABEL}px; font-weight: 700;"
         )
         header.addWidget(self._game_time_label, 0, Qt.AlignmentFlag.AlignRight)
         outer.addLayout(header)

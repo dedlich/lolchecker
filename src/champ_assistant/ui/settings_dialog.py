@@ -93,14 +93,17 @@ class SettingsDialog(QDialog):
             " — gilt 24h und reicht fuer Solo-Tests."
         )
         riot_help.setOpenExternalLinks(True)
-        riot_help.setStyleSheet(f"color: {styles.TEXT_MUTED}; font-size: 11px;")
+        riot_help.setStyleSheet(
+            f"color: {styles.TEXT_MUTED}; font-size: {styles.FS_LABEL}px;"
+        )
         riot_help.setWordWrap(True)
         outer.addWidget(riot_help)
 
         # -- LLM provider (live counters) --------------------------------
         llm_section = QLabel("Live Counter Lookup (optional)")
         llm_section.setStyleSheet(
-            f"color: {styles.TEXT_MUTED}; font-size: 11px; font-weight: 700;"
+            f"color: {styles.TEXT_MUTED}; font-size: {styles.FS_LABEL}px;"
+            " font-weight: 700;"
             " text-transform: uppercase; letter-spacing: 0.8px; padding-top: 8px;"
         )
         outer.addWidget(llm_section)
@@ -129,7 +132,9 @@ class SettingsDialog(QDialog):
 
         self._llm_help = QLabel("")
         self._llm_help.setOpenExternalLinks(True)
-        self._llm_help.setStyleSheet(f"color: {styles.TEXT_MUTED}; font-size: 11px;")
+        self._llm_help.setStyleSheet(
+            f"color: {styles.TEXT_MUTED}; font-size: {styles.FS_LABEL}px;"
+        )
         self._llm_help.setWordWrap(True)
         outer.addWidget(self._llm_help)
         self._llm_provider.currentIndexChanged.connect(self._refresh_llm_help)
@@ -196,7 +201,7 @@ class SettingsDialog(QDialog):
             "Änderungen an Widgets / Diagnose werden beim nächsten Start aktiv."
         )
         display_hint.setStyleSheet(
-            f"color: {styles.TEXT_MUTED}; font-size: 11px;"
+            f"color: {styles.TEXT_MUTED}; font-size: {styles.FS_LABEL}px;"
         )
         display_hint.setWordWrap(True)
         outer.addWidget(display_hint)

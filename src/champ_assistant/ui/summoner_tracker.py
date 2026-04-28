@@ -262,7 +262,9 @@ class SummonerTrackerPanel(QFrame):
         title.setObjectName("sectionTitle")
         header.addWidget(title, 1)
         self._hint = QLabel("Klick = Cooldown starten · Rechts = reset")
-        self._hint.setStyleSheet(f"color: {styles.TEXT_MUTED}; font-size: 10px;")
+        self._hint.setStyleSheet(
+            f"color: {styles.TEXT_MUTED}; font-size: {styles.FS_CAPTION}px;"
+        )
         header.addWidget(self._hint, 0, Qt.AlignmentFlag.AlignRight)
         outer.addLayout(header)
 

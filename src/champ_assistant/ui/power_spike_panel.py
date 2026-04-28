@@ -89,13 +89,17 @@ class PowerSpikePanel(QFrame):
         if spike is None:
             self._headline.setText("")
             self._detail.setText("Track your level + item count.")
-            self._detail.setStyleSheet(f"color: {styles.TEXT_MUTED}; font-size: 11px;")
+            self._detail.setStyleSheet(
+                f"color: {styles.TEXT_MUTED}; font-size: {styles.FS_LABEL}px;"
+            )
             return
         elapsed = time.monotonic() - self._latest_spike_at
         if elapsed > ATTENTION_WINDOW_S:
             self._headline.setText("")
             self._detail.setText("Track your level + item count.")
-            self._detail.setStyleSheet(f"color: {styles.TEXT_MUTED}; font-size: 11px;")
+            self._detail.setStyleSheet(
+                f"color: {styles.TEXT_MUTED}; font-size: {styles.FS_LABEL}px;"
+            )
             return
         # Bright while inside the attention window, dimming towards the end.
         ratio = max(0.0, 1.0 - (elapsed / ATTENTION_WINDOW_S))
@@ -103,7 +107,10 @@ class PowerSpikePanel(QFrame):
         alpha = int(40 + 215 * ratio)
         self._headline.setText(spike.label.upper())
         self._headline.setStyleSheet(
-            f"color: rgba(255, 184, 74, {alpha}); font-weight: 700; font-size: 14px;"
+            f"color: rgba(255, 184, 74, {alpha}); font-weight: 700;"
+            f" font-size: {styles.FS_HEADING}px;"
         )
         self._detail.setText(spike.detail)
-        self._detail.setStyleSheet(f"color: {styles.TEXT_SECONDARY}; font-size: 11px;")
+        self._detail.setStyleSheet(
+            f"color: {styles.TEXT_SECONDARY}; font-size: {styles.FS_LABEL}px;"
+        )

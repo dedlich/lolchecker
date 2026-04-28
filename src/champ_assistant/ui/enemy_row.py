@@ -203,6 +203,6 @@ class EnemyRow(QFrame):
         self._role_button.setStyleSheet(
             f"QPushButton {{ color: {color}; "
             f"background: transparent; border: none; padding: 2px 6px; "
-            f"font-size: 11px; }}"
+            f"font-size: {styles.FS_LABEL}px; }}"
             f"QPushButton:hover {{ color: {styles.TEXT_PRIMARY}; }}"
         )
