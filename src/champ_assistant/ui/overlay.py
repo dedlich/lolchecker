@@ -367,9 +367,10 @@ class MainOverlay(QMainWindow):
             # Borderless and Fullscreen Exclusive apart (they share flags),
             # so the warning often misfired. Replaced with a neutral status:
             # the user can see whether the overlay shows up or not.
+            from . import styles as _styles
             self._status_bar.set_info(
                 "Overlay aktiv — falls nicht sichtbar: League auf Borderless umstellen",
-                color="#7FCC7F",
+                color=_styles.SUCCESS,
             )
 
     def _switch_mode(self, mode: str) -> None:

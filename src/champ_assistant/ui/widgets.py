@@ -101,7 +101,7 @@ class ConnectionStatusBar(QStatusBar):
 
     def show_update_available(self, tag: str, on_click: Callable[[], None]) -> None:
         """Show 'Update X verfügbar' + an Install button that calls ``on_click``."""
-        self.set_info(f"Update {tag} verfügbar", color="#4A9EFF")
+        self.set_info(f"Update {tag} verfügbar", color=styles.INFO)
         with contextlib.suppress(TypeError):
             self._update_button.clicked.disconnect()
         self._update_button.clicked.connect(on_click)
@@ -111,12 +111,12 @@ class ConnectionStatusBar(QStatusBar):
 
     def set_update_progress(self, message: str) -> None:
         """Surface live progress while the update is being installed."""
-        self.set_info(message, color="#4A9EFF")
+        self.set_info(message, color=styles.INFO)
         self._update_button.setEnabled(False)
         self._update_button.setText("Lädt…")
 
     def update_failed(self, message: str) -> None:
-        self.set_info(message, color=styles.TIER_S)
+        self.set_info(message, color=styles.WARNING)
         self._update_button.setEnabled(True)
         self._update_button.setText("Erneut versuchen")
 

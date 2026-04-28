@@ -56,7 +56,8 @@ class ScoreboardWidget(FloatingWidget):
 
         self._ally_kills = QLabel("0")
         self._ally_kills.setStyleSheet(
-            "color: #6BBBFF; font-family: SF Mono, Consolas, monospace;"
+            f"color: {styles.TEAM_ALLY};"
+            f" font-family: {styles.FONT_MONO};"
             " font-size: 18px; font-weight: 700;"
             " font-variant-numeric: tabular-nums;"
         )
@@ -67,15 +68,20 @@ class ScoreboardWidget(FloatingWidget):
         self._gold_delta.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._gold_delta.setStyleSheet(
             f"color: {styles.TEXT_PRIMARY};"
-            " font-family: SF Mono, Consolas, monospace;"
+            f" font-family: {styles.FONT_MONO};"
             " font-size: 14px; font-weight: 700;"
             " font-variant-numeric: tabular-nums;"
         )
+        # Stable width prevents layout jitter as the lead/deficit value
+        # flips arrow direction (▲/▼/·) — different glyph widths would
+        # otherwise nudge the kill counters left/right between updates.
+        self._gold_delta.setMinimumWidth(180)
         top.addWidget(self._gold_delta, 1)
 
         self._enemy_kills = QLabel("0")
         self._enemy_kills.setStyleSheet(
-            "color: #FF6B6B; font-family: SF Mono, Consolas, monospace;"
+            f"color: {styles.TEAM_ENEMY};"
+            f" font-family: {styles.FONT_MONO};"
             " font-size: 18px; font-weight: 700;"
             " font-variant-numeric: tabular-nums;"
         )
@@ -98,7 +104,7 @@ class ScoreboardWidget(FloatingWidget):
         self._game_time.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._game_time.setStyleSheet(
             f"color: {styles.TEXT_MUTED};"
-            " font-family: SF Mono, Consolas, monospace; font-size: 11px;"
+            f" font-family: {styles.FONT_MONO}; font-size: 11px;"
             " font-variant-numeric: tabular-nums;"
         )
         bottom.addWidget(self._game_time)
@@ -127,12 +133,17 @@ class ScoreboardWidget(FloatingWidget):
         delta = ally.items_value - enemy.items_value
         # Directional arrow + color makes the lead/deficit read at a glance.
         arrow = "▲" if delta > 0 else ("▼" if delta < 0 else "·")
-        color = "#6BBBFF" if delta > 0 else ("#FF6B6B" if delta < 0 else "#888")
+        color = (
+            styles.TEAM_ALLY if delta > 0
+            else styles.TEAM_ENEMY if delta < 0
+            else styles.TEAM_NEUTRAL
+        )
+        muted = styles.TEXT_MUTED
         self._gold_delta.setText(
-            f"<span style='color:#888'>{_fmt_gold(ally.items_value)}</span>"
+            f"<span style='color:{muted}'>{_fmt_gold(ally.items_value)}</span>"
             f"  <span style='color:{color}; font-weight:800'>"
             f"{arrow} {_fmt_gold(abs(delta))}</span>"
-            f"  <span style='color:#888'>{_fmt_gold(enemy.items_value)}</span>"
+            f"  <span style='color:{muted}'>{_fmt_gold(enemy.items_value)}</span>"
         )
 
         self._ally_objectives.setText(self._objectives_line(ally))

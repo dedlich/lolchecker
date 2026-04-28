@@ -87,7 +87,7 @@ class SettingsDialog(QDialog):
         outer.addLayout(riot_form)
 
         riot_help = QLabel(
-            'Hol einen Dev-Key auf <a style="color:#5BA8FF;"'
+            f'Hol einen Dev-Key auf <a style="color:{styles.ACCENT};"'
             ' href="https://developer.riotgames.com">developer.riotgames.com</a>'
             " — gilt 24h und reicht fuer Solo-Tests."
         )
@@ -271,7 +271,7 @@ class SettingsDialog(QDialog):
         url = urls.get(provider, urls["openrouter"])
         self._llm_help.setText(
             "Hol einen kostenlosen Key auf "
-            f'<a style="color:#5BA8FF;" href="{url}">{url}</a> '
+            f'<a style="color:{styles.ACCENT};" href="{url}">{url}</a> '
             "und speichere ihn hier. Ohne Key benutzt der Assistant nur die"
             " mitgelieferten Counter-Daten."
         )

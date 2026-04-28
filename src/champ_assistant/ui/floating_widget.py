@@ -79,8 +79,9 @@ class FloatingWidget(QFrame):
         # Drop-shadow conflicts with QGraphicsOpacityEffect (only one
         # graphics effect per widget). For the fade we temporarily swap
         # the shadow out, then restore it after the animation finishes.
+        from . import styles
         from .anim import fade_in
-        anim = fade_in(self, duration_ms=180)
+        anim = fade_in(self, duration_ms=styles.ANIM_DEFAULT_MS)
         anim.finished.connect(self._restore_shadow)
 
     def _restore_shadow(self) -> None:

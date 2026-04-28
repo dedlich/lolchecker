@@ -211,9 +211,9 @@ class MinimapTimersWidget(FloatingWidget):
     @staticmethod
     def _cell_style(obj: ObjectiveTimer | None, game_time: float) -> str:
         base = (
-            "font-family: SF Mono, Consolas, monospace;"
+            f"font-family: {styles.FONT_MONO};"
             " font-size: 12px; font-weight: 700;"
-            " font-variant-numeric: tabular-nums;"  # P2: stable digit width
+            " font-variant-numeric: tabular-nums;"  # stable digit width
         )
         rem = obj.remaining(game_time) if obj is not None else None
         return f"color: {styles.time_state_color(rem)}; {base}"

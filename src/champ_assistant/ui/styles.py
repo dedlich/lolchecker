@@ -42,6 +42,13 @@ WARNING         = "#FFB84A"
 SUCCESS         = "#7FCC7F"
 INFO            = ACCENT
 
+# Team semantic colors — used by the scoreboard and any other widget
+# that paints "ally" vs "enemy" data side by side. Centralized so a
+# colorblind-friendly retheme is a one-line change instead of a sweep.
+TEAM_ALLY       = "#6BBBFF"   # cool blue — ally side
+TEAM_ENEMY      = DANGER      # warm red — enemy side
+TEAM_NEUTRAL    = TEXT_MUTED  # neutral / no-delta separator
+
 # --------------------------------------------------------------------------
 # Borders (translucent so they read soft at any opacity)
 # --------------------------------------------------------------------------
@@ -195,12 +202,18 @@ def global_stylesheet() -> str:
             font-size: 16px;
             font-weight: 700;
             letter-spacing: 0.4px;
+            font-variant-numeric: tabular-nums;
         }}
         QLabel[role="timer-small"] {{
             font-family: {FONT_MONO};
             font-size: {FS_LABEL}px;
             font-weight: 700;
             letter-spacing: 0.3px;
+            font-variant-numeric: tabular-nums;
+        }}
+        QLabel[role="numeric"] {{
+            font-family: {FONT_MONO};
+            font-variant-numeric: tabular-nums;
         }}
 
         /* Panels: layered cards with soft borders */
