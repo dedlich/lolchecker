@@ -51,10 +51,12 @@ class _LobbyRow(QFrame):
         name_col.setSpacing(0)
         name_col.setContentsMargins(0, 0, 0, 0)
         self._champion = QLabel("")
-        self._champion.setStyleSheet("font-weight: 600; font-size: 12px;")
+        self._champion.setStyleSheet(f"font-weight: 600; font-size: {styles.FS_BODY}px;")
         name_col.addWidget(self._champion)
         self._summoner = QLabel("")
-        self._summoner.setStyleSheet(f"color: {styles.TEXT_MUTED}; font-size: 10px;")
+        self._summoner.setStyleSheet(
+            f"color: {styles.TEXT_MUTED}; font-size: {styles.FS_CAPTION}px;"
+        )
         name_col.addWidget(self._summoner)
         head.addLayout(name_col, 1)
 
@@ -65,7 +67,9 @@ class _LobbyRow(QFrame):
         outer.addLayout(head)
 
         self._stats = QLabel("")
-        self._stats.setStyleSheet(f"color: {styles.TEXT_SECONDARY}; font-size: 10px;")
+        self._stats.setStyleSheet(
+            f"color: {styles.TEXT_SECONDARY}; font-size: {styles.FS_CAPTION}px;"
+        )
         self._stats.setWordWrap(True)
         outer.addWidget(self._stats)
 
@@ -133,15 +137,14 @@ class LobbyStatsWidget(FloatingWidget):
 
     def __init__(self) -> None:
         super().__init__()
+        # Shared floating-panel base + a slightly different row color
+        # treatment unique to this widget's player rows.
         self.setStyleSheet(
-            f"QFrame[panel='true'] {{"
-            f" background: qlineargradient(x1:0, y1:0, x2:0, y2:1,"
-            f"  stop:0 rgba(20, 26, 34, 195), stop:1 rgba(10, 14, 20, 195));"
-            f" border: 1px solid rgba(60, 70, 85, 220);"
-            f" border-radius: {styles.RADIUS}px; }}"
-            f" QFrame[role='row'] {{"
+            styles.floating_panel_stylesheet()
+            + " QFrame[role='row'] {"
             f"  background-color: rgba(45, 55, 70, 130);"
-            f"  border-radius: {styles.RADIUS_SMALL}px; }}"
+            f"  border-radius: {styles.RADIUS_SMALL}px;"
+            " }"
         )
 
         outer = QVBoxLayout(self)

@@ -39,13 +39,7 @@ class ScoreboardWidget(FloatingWidget):
 
     def __init__(self) -> None:
         super().__init__()
-        self.setStyleSheet(
-            f"QFrame[panel='true'] {{"
-            f" background: qlineargradient(x1:0, y1:0, x2:0, y2:1,"
-            f"  stop:0 rgba(20, 26, 34, 180), stop:1 rgba(10, 14, 20, 180));"
-            f" border: 1px solid rgba(60, 70, 85, 200);"
-            f" border-radius: {styles.RADIUS}px; }}"
-        )
+        self.setStyleSheet(styles.floating_panel_stylesheet())
         outer = QVBoxLayout(self)
         outer.setContentsMargins(10, 6, 10, 6)
         outer.setSpacing(2)
@@ -58,7 +52,7 @@ class ScoreboardWidget(FloatingWidget):
         self._ally_kills.setStyleSheet(
             f"color: {styles.TEAM_ALLY};"
             f" font-family: {styles.FONT_MONO};"
-            " font-size: 18px; font-weight: 700;"
+            f" font-size: {styles.FS_DISPLAY}px; font-weight: 700;"
         )
         self._ally_kills.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
         top.addWidget(self._ally_kills)
@@ -68,7 +62,7 @@ class ScoreboardWidget(FloatingWidget):
         self._gold_delta.setStyleSheet(
             f"color: {styles.TEXT_PRIMARY};"
             f" font-family: {styles.FONT_MONO};"
-            " font-size: 14px; font-weight: 700;"
+            f" font-size: {styles.FS_HEADING}px; font-weight: 700;"
         )
         # Stable width prevents layout jitter as the lead/deficit value
         # flips arrow direction (▲/▼/·) — different glyph widths would
@@ -80,7 +74,7 @@ class ScoreboardWidget(FloatingWidget):
         self._enemy_kills.setStyleSheet(
             f"color: {styles.TEAM_ENEMY};"
             f" font-family: {styles.FONT_MONO};"
-            " font-size: 18px; font-weight: 700;"
+            f" font-size: {styles.FS_DISPLAY}px; font-weight: 700;"
         )
         self._enemy_kills.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
         top.addWidget(self._enemy_kills)
@@ -92,7 +86,7 @@ class ScoreboardWidget(FloatingWidget):
         bottom.setSpacing(8)
         self._ally_objectives = QLabel("")
         self._ally_objectives.setStyleSheet(
-            f"color: {styles.TEXT_SECONDARY}; font-size: 11px;"
+            f"color: {styles.TEXT_SECONDARY}; font-size: {styles.FS_LABEL}px;"
         )
         self._ally_objectives.setAlignment(Qt.AlignmentFlag.AlignLeft)
         bottom.addWidget(self._ally_objectives, 1)
@@ -101,13 +95,13 @@ class ScoreboardWidget(FloatingWidget):
         self._game_time.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._game_time.setStyleSheet(
             f"color: {styles.TEXT_MUTED};"
-            f" font-family: {styles.FONT_MONO}; font-size: 11px;"
+            f" font-family: {styles.FONT_MONO}; font-size: {styles.FS_LABEL}px;"
         )
         bottom.addWidget(self._game_time)
 
         self._enemy_objectives = QLabel("")
         self._enemy_objectives.setStyleSheet(
-            f"color: {styles.TEXT_SECONDARY}; font-size: 11px;"
+            f"color: {styles.TEXT_SECONDARY}; font-size: {styles.FS_LABEL}px;"
         )
         self._enemy_objectives.setAlignment(Qt.AlignmentFlag.AlignRight)
         bottom.addWidget(self._enemy_objectives, 1)

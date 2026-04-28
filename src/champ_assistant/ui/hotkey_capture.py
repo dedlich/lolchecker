@@ -54,7 +54,7 @@ class KeyCaptureDialog(QDialog):
             f"background-color: {styles.BG_TERTIARY};"
             f" color: {styles.ACCENT};"
             f" font-family: {styles.FONT_MONO};"
-            f" font-size: 18px; font-weight: 700;"
+            f" font-size: {styles.FS_DISPLAY}px; font-weight: 700;"
             f" padding: 14px; border-radius: {styles.RADIUS}px;"
             f" border: 1px solid {styles.BORDER};"
             f" letter-spacing: 0.5px;"

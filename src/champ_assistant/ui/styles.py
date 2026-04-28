@@ -83,6 +83,7 @@ FS_LABEL        = 11
 FS_BODY         = 12
 FS_HEADING      = 14
 FS_TITLE        = 17
+FS_DISPLAY      = 18  # scoreboard kill counters, hotkey-capture preview
 
 # --------------------------------------------------------------------------
 # Spacing + radius (8pt grid)
@@ -132,6 +133,26 @@ TIER_COLORS: dict[str, str] = {
     "C":  TIER_C,
     "D":  TIER_D,
 }
+
+
+def floating_panel_stylesheet() -> str:
+    """Single source of truth for the dark gradient + accent border that
+    every floating mini-widget (scoreboard, minimap-timers, lobby-stats)
+    paints into its ``QFrame[panel='true']`` root.
+
+    Lives here (not duplicated inline in each widget file) so a future
+    retheme — say, a lighter-mode build — is a one-line change rather
+    than a sweep across every floating widget. Three identical-ish
+    inline gradients with subtly different alphas was the old anti-pattern.
+    """
+    return (
+        "QFrame[panel='true'] {"
+        " background: qlineargradient(x1:0, y1:0, x2:0, y2:1,"
+        "  stop:0 rgba(20, 26, 34, 195), stop:1 rgba(10, 14, 20, 195));"
+        f" border: 1px solid {BORDER};"
+        f" border-radius: {RADIUS}px;"
+        " }"
+    )
 
 
 def cooldown_color(fraction_remaining: float) -> str:

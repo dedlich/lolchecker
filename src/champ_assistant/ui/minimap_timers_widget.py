@@ -151,7 +151,7 @@ class _CampCell(QLabel):
             f"QLabel {{ background: rgba(45, 55, 70, 90);"
             f" color: {styles.TEXT_SECONDARY};"
             f" border: 1px solid rgba(60, 70, 85, 100);"
-            f" border-radius: 8px; font-size: 14px; }}"
+            f" border-radius: 8px; font-size: {styles.FS_HEADING}px; }}"
         )
 
     @staticmethod
@@ -165,15 +165,17 @@ class _CampCell(QLabel):
             f"QLabel {{ background: rgba({success_rgb[0]}, {success_rgb[1]}, {success_rgb[2]}, {bg_alpha});"
             f" color: {success_rgba};"
             f" border: 1px solid {success_rgba};"
-            f" border-radius: 8px; font-size: 14px; font-weight: 700; }}"
+            f" border-radius: 8px; font-size: {styles.FS_HEADING}px; font-weight: 700; }}"
         )
 
     @staticmethod
     def _countdown_style(remaining: float, confidence: float) -> str:
+        # Confidence is encoded by opacity + the ≈ prefix in the LOW band
+        # (added by _format_timer_text). Border style is intentionally
+        # solid across all bands — using dashed-border AS WELL was a
+        # third competing signal that read as visual noise rather than
+        # information. Spec #4: "not all aggressively".
         opacity = _opacity_for(confidence)
-        # Border style flags the LOW band visually — dashed reads as
-        # "estimated" at a glance without competing with the timer text.
-        border_kind = "dashed" if _band_for(confidence) == "low" else "solid"
         border_rgb = _hex_to_rgb_tuple(styles.ACCENT)
         border_alpha = int(255 * opacity)
         bg_alpha = int(60 * opacity)
@@ -185,10 +187,10 @@ class _CampCell(QLabel):
         return (
             f"QLabel {{ background: rgba({border_rgb[0]}, {border_rgb[1]}, {border_rgb[2]}, {bg_alpha});"
             f" color: rgba({urgency_rgb[0]}, {urgency_rgb[1]}, {urgency_rgb[2]}, {urgency_alpha});"
-            f" border: 1px {border_kind} rgba({border_rgb[0]}, {border_rgb[1]}, {border_rgb[2]}, {border_alpha});"
+            f" border: 1px solid rgba({border_rgb[0]}, {border_rgb[1]}, {border_rgb[2]}, {border_alpha});"
             f" border-radius: 8px;"
             f" font-family: {styles.FONT_MONO};"
-            f" font-size: 11px; font-weight: 700; }}"
+            f" font-size: {styles.FS_LABEL}px; font-weight: 700; }}"
         )
 
 
@@ -211,13 +213,7 @@ class MinimapTimersWidget(FloatingWidget):
 
     def __init__(self) -> None:
         super().__init__()
-        self.setStyleSheet(
-            f"QFrame[panel='true'] {{"
-            f" background: qlineargradient(x1:0, y1:0, x2:0, y2:1,"
-            f"  stop:0 rgba(20, 26, 34, 180), stop:1 rgba(10, 14, 20, 180));"
-            f" border: 1px solid rgba(60, 70, 85, 200);"
-            f" border-radius: {styles.RADIUS}px; }}"
-        )
+        self.setStyleSheet(styles.floating_panel_stylesheet())
         outer = QVBoxLayout(self)
         outer.setContentsMargins(8, 4, 8, 4)
         outer.setSpacing(2)
@@ -232,7 +228,7 @@ class MinimapTimersWidget(FloatingWidget):
             cell.setStyleSheet(
                 f"color: {styles.TEXT_PRIMARY};"
                 f" font-family: {styles.FONT_MONO};"
-                " font-size: 12px; font-weight: 700;"
+                f" font-size: {styles.FS_BODY}px; font-weight: 700;"
             )
             self._cells[name] = cell
             top.addWidget(cell, 1)
@@ -321,7 +317,7 @@ class MinimapTimersWidget(FloatingWidget):
         # support font-variant-numeric.
         base = (
             f"font-family: {styles.FONT_MONO};"
-            " font-size: 12px; font-weight: 700;"
+            f" font-size: {styles.FS_BODY}px; font-weight: 700;"
         )
         rem = obj.remaining(game_time) if obj is not None else None
         return f"color: {styles.time_state_color(rem)}; {base}"
