@@ -72,3 +72,42 @@ def test_frame_count_resets(qt_app) -> None:  # type: ignore[no-untyped-def]
     assert sched.frame_count == 1
     sched.reset_frame_count()
     assert sched.frame_count == 0
+
+
+# ----------------------------------------------------------------------
+# Overload guardrail (P5)
+# ----------------------------------------------------------------------
+def test_overload_warning_logged_when_repaint_floods(qt_app, caplog) -> None:  # type: ignore[no-untyped-def]
+    """Simulate a runaway feedback loop: hand the scheduler many fake
+    repaint timestamps clustered inside the rolling window. The warning
+    should fire once we cross OVERLOAD_FACTOR × max_fps and not spam
+    every subsequent frame."""
+    import logging
+    sched = RenderScheduler(max_fps=30)
+    # Inject 100 timestamps in the last 0.5s — well above 2× 30 = 60.
+    import time as _t
+    base = _t.monotonic()
+    sched._repaint_window = [base - 0.5 + i * 0.005 for i in range(100)]
+    with caplog.at_level(logging.WARNING, logger="champ_assistant.render_scheduler"):
+        sched._record_for_overload(base)
+        # Second call inside the cooldown window must not re-log.
+        sched._record_for_overload(base + 0.1)
+    overload_records = [
+        r for r in caplog.records if "render overload" in r.getMessage()
+    ]
+    assert len(overload_records) == 1
+
+
+def test_no_overload_warning_at_normal_rate(qt_app, caplog) -> None:  # type: ignore[no-untyped-def]
+    """Normal coalesced repaints (1 per state-change burst) must not
+    trigger the overload warning."""
+    import logging
+    sched = RenderScheduler(max_fps=30)
+    with caplog.at_level(logging.WARNING, logger="champ_assistant.render_scheduler"):
+        for _ in range(20):
+            sched.request_repaint()
+        _spin(80)
+    overload_records = [
+        r for r in caplog.records if "render overload" in r.getMessage()
+    ]
+    assert overload_records == []

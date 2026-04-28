@@ -34,6 +34,9 @@ class RenderScheduler(QObject):
     tick = pyqtSignal()
 
     DEFAULT_MAX_FPS = 30  # ceiling — actual rate is event-driven, never higher
+    OVERLOAD_FACTOR = 2.0  # warn once we sustain >2× max_fps over the window
+    OVERLOAD_WINDOW_S = 1.0  # rolling window for overload detection
+    OVERLOAD_LOG_COOLDOWN_S = 5.0  # don't spam the log every frame
 
     def __init__(
         self,
@@ -42,6 +45,7 @@ class RenderScheduler(QObject):
         tick_hz: float = 1.0,
     ) -> None:
         super().__init__()
+        self._max_fps = max_fps
         self._min_interval_ms = max(8, int(1000 / max_fps))
         self._dirty = False
 
@@ -58,6 +62,9 @@ class RenderScheduler(QObject):
         # Diagnostics counters
         self._frame_count = 0
         self._last_repaint = 0.0
+        # Overload detection: ring of recent repaint timestamps.
+        self._repaint_window: list[float] = []
+        self._last_overload_log = 0.0
 
     # -- public API --------------------------------------------------------
 
@@ -93,8 +100,42 @@ class RenderScheduler(QObject):
             return
         self._dirty = False
         self._frame_count += 1
-        self._last_repaint = time.monotonic()
+        now = time.monotonic()
+        self._last_repaint = now
+        self._record_for_overload(now)
         self.repaint.emit()
 
     def _fire_tick(self) -> None:
         self.tick.emit()
+
+    def _record_for_overload(self, now: float) -> None:
+        """Sliding-window detector: warn if we sustain more than
+        ``OVERLOAD_FACTOR`` × ``max_fps`` over ``OVERLOAD_WINDOW_S``.
+
+        Catches the failure mode where a feedback loop (state listener
+        calling store.update calling request_repaint calling listener)
+        starts firing the repaint coalescer back-to-back. The QTimer
+        floor of 8ms keeps the absolute rate bounded, but burning ~125 FPS
+        worth of CPU on an idle overlay is still a regression we want to
+        surface in production logs.
+        """
+        cutoff = now - self.OVERLOAD_WINDOW_S
+        # Drop expired timestamps (cheap — list is bounded by max_fps × 2).
+        while self._repaint_window and self._repaint_window[0] < cutoff:
+            self._repaint_window.pop(0)
+        self._repaint_window.append(now)
+
+        threshold = self._max_fps * self.OVERLOAD_FACTOR * self.OVERLOAD_WINDOW_S
+        if len(self._repaint_window) <= threshold:
+            return
+        if (now - self._last_overload_log) < self.OVERLOAD_LOG_COOLDOWN_S:
+            return
+        self._last_overload_log = now
+        logger.warning(
+            "render overload detected: %d repaints in last %.1fs "
+            "(max_fps=%d, threshold=%dx)",
+            len(self._repaint_window),
+            self.OVERLOAD_WINDOW_S,
+            self._max_fps,
+            int(self.OVERLOAD_FACTOR),
+        )
