@@ -52,6 +52,7 @@ MOD_SHIFT    = 0x0004
 MOD_WIN      = 0x0008
 MOD_NOREPEAT = 0x4000  # don't auto-repeat while key is held
 
+VK_D = 0x44
 VK_H = 0x48
 VK_L = 0x4C
 VK_R = 0x52
@@ -97,6 +98,7 @@ DEFAULT_BINDINGS: tuple[HotkeyBinding, ...] = (
     HotkeyBinding("toggle_overlay",  MOD_CONTROL | MOD_ALT, VK_H, "Ctrl+Alt+H"),
     HotkeyBinding("toggle_lock",     MOD_CONTROL | MOD_ALT, VK_L, "Ctrl+Alt+L"),
     HotkeyBinding("reset_positions", MOD_CONTROL | MOD_ALT, VK_R, "Ctrl+Alt+R"),
+    HotkeyBinding("reset_layout",    MOD_CONTROL | MOD_ALT, VK_D, "Ctrl+Alt+D"),
 )
 
 

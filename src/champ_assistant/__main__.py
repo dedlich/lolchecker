@@ -433,20 +433,21 @@ def _run_with_ui(args: argparse.Namespace) -> int:
             store.update(main_visible=not cur.main_visible)
         elif name == "toggle_lock":
             store.update(passthrough=not cur.passthrough)
-        elif name == "reset_positions":
-            _reset_widget_positions(overlay, floating)
+        elif name in ("reset_positions", "reset_layout"):
+            _reset_widget_positions()
 
-    def _reset_widget_positions(overlay_window, fw_list) -> None:
-        from champ_assistant import overlay_config as _ovc
+    def _reset_widget_positions() -> None:
+        from champ_assistant import layout as _layout
         from champ_assistant.ui.floating_widget import FloatingWidget
-        state = _ovc.load()
-        state.floating_positions = {}
-        _ovc.save(state)
+        # Wipe persisted layout (delete file) and snap each live widget
+        # back to its DEFAULT_POS / DEFAULT_SIZE.
+        _layout.store().reset()
         for widget in FloatingWidget._instances:
             x, y = widget.DEFAULT_POS
             w, h = widget.DEFAULT_SIZE
             widget.setGeometry(x, y, w, h)
-        logging.getLogger(__name__).info("hotkey: reset all widget positions")
+            widget.show()  # un-hide if user had hidden it
+        logging.getLogger(__name__).info("hotkey: reset all widget layouts")
 
     def _on_state_change(old, new) -> None:
         # main_visible: hide / show the main panel
@@ -472,6 +473,13 @@ def _run_with_ui(args: argparse.Namespace) -> int:
     overlay._hotkeys = hotkeys  # keep alive
 
     qt_app.aboutToQuit.connect(hotkeys.stop)
+
+    # Flush any pending layout writes that the 500 ms debounce timer
+    # hasn't fired yet — otherwise a quick drag-then-quit loses the move.
+    def _flush_layout() -> None:
+        from champ_assistant import layout as _layout
+        _layout.store().flush_now()
+    qt_app.aboutToQuit.connect(_flush_layout)
 
     try:
         with loop:

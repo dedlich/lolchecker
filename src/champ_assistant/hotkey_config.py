@@ -126,6 +126,7 @@ DEFAULT_HOTKEYS: dict[str, str] = {
     "toggle_overlay":  "Ctrl+Alt+H",
     "toggle_lock":     "Ctrl+Alt+L",
     "reset_positions": "Ctrl+Alt+R",
+    "reset_layout":    "Ctrl+Alt+D",
 }
 
 

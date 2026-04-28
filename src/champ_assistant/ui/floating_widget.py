@@ -20,7 +20,7 @@ from PyQt6.QtCore import QPoint, Qt
 from PyQt6.QtGui import QColor, QGuiApplication, QMouseEvent
 from PyQt6.QtWidgets import QFrame, QGraphicsDropShadowEffect
 
-from .. import overlay_config
+from .. import layout as layout_module
 
 
 class FloatingWidget(QFrame):
@@ -137,27 +137,31 @@ class FloatingWidget(QFrame):
     # -- persistence ------------------------------------------------------
 
     def _load_position(self) -> None:
-        state = overlay_config.load()
-        positions = state.floating_positions or {}
-        pos = positions.get(self.KEY) or list(self.DEFAULT_POS)
-        x, y = int(pos[0]), int(pos[1])
-        x, y = self._clamp_to_screen(x, y)
+        """Read the saved layout for this widget's KEY and apply it.
+        ``layout.safe_position_for`` handles missing-monitor and
+        out-of-bounds clamping so this method never produces an
+        off-screen widget."""
+        saved = layout_module.store().get(self.KEY)
+        x, y = layout_module.safe_position_for(
+            saved,
+            fallback_pos=self.DEFAULT_POS,
+            fallback_size=self.DEFAULT_SIZE,
+            widget_key=self.KEY,
+        )
         w, h = self.DEFAULT_SIZE
         self.setGeometry(x, y, w, h)
+        if saved is not None and not saved.visible:
+            self.hide()
 
     def _save_position(self) -> None:
-        state = overlay_config.load()
-        if state.floating_positions is None:
-            state.floating_positions = {}
-        state.floating_positions[self.KEY] = [self.x(), self.y()]
-        overlay_config.save(state)
-
-    @staticmethod
-    def _clamp_to_screen(x: int, y: int) -> tuple[int, int]:
-        screen = QGuiApplication.primaryScreen()
-        if screen is None:
-            return x, y
-        geo = screen.availableGeometry()
-        x = max(geo.left(), min(geo.right() - 80, x))
-        y = max(geo.top(), min(geo.bottom() - 40, y))
-        return x, y
+        """Mark the current position as dirty in the store. The store
+        debounces the actual disk write to 500 ms after the last move."""
+        layout_module.store().mark(
+            self.KEY,
+            layout_module.WidgetLayout(
+                x=self.x(),
+                y=self.y(),
+                visible=self.isVisible(),
+                monitor_id=layout_module.current_monitor_id(self),
+            ),
+        )
