@@ -197,23 +197,23 @@ def global_stylesheet() -> str:
             color: {TEXT_PRIMARY};
             letter-spacing: -0.2px;
         }}
+        /* Tabular-numeric digit width comes from the FONT_MONO family
+           itself — Qt's Stylesheet engine doesn't support
+           font-variant-numeric (silent ignore + log spam). */
         QLabel[role="timer"] {{
             font-family: {FONT_MONO};
             font-size: 16px;
             font-weight: 700;
             letter-spacing: 0.4px;
-            font-variant-numeric: tabular-nums;
         }}
         QLabel[role="timer-small"] {{
             font-family: {FONT_MONO};
             font-size: {FS_LABEL}px;
             font-weight: 700;
             letter-spacing: 0.3px;
-            font-variant-numeric: tabular-nums;
         }}
         QLabel[role="numeric"] {{
             font-family: {FONT_MONO};
-            font-variant-numeric: tabular-nums;
         }}
 
         /* Panels: layered cards with soft borders */

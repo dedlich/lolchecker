@@ -59,7 +59,6 @@ class ScoreboardWidget(FloatingWidget):
             f"color: {styles.TEAM_ALLY};"
             f" font-family: {styles.FONT_MONO};"
             " font-size: 18px; font-weight: 700;"
-            " font-variant-numeric: tabular-nums;"
         )
         self._ally_kills.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
         top.addWidget(self._ally_kills)
@@ -70,7 +69,6 @@ class ScoreboardWidget(FloatingWidget):
             f"color: {styles.TEXT_PRIMARY};"
             f" font-family: {styles.FONT_MONO};"
             " font-size: 14px; font-weight: 700;"
-            " font-variant-numeric: tabular-nums;"
         )
         # Stable width prevents layout jitter as the lead/deficit value
         # flips arrow direction (▲/▼/·) — different glyph widths would
@@ -83,7 +81,6 @@ class ScoreboardWidget(FloatingWidget):
             f"color: {styles.TEAM_ENEMY};"
             f" font-family: {styles.FONT_MONO};"
             " font-size: 18px; font-weight: 700;"
-            " font-variant-numeric: tabular-nums;"
         )
         self._enemy_kills.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
         top.addWidget(self._enemy_kills)
@@ -105,7 +102,6 @@ class ScoreboardWidget(FloatingWidget):
         self._game_time.setStyleSheet(
             f"color: {styles.TEXT_MUTED};"
             f" font-family: {styles.FONT_MONO}; font-size: 11px;"
-            " font-variant-numeric: tabular-nums;"
         )
         bottom.addWidget(self._game_time)
 
