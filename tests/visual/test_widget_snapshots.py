@@ -71,6 +71,27 @@ def _force_engine_states(engine: JungleTimelineEngine, confidence: float) -> Non
 
 
 # ----------------------------------------------------------------------
+# Canonical state #0: pre-first-spawn — every camp counts down to its
+# initial appearance, exercises the ``game_time < spec.first_spawn_s``
+# branch in _camp_state_at. Without this scenario the pre_spawn code
+# path is never rendered into a snapshot.
+# ----------------------------------------------------------------------
+def test_minimap_timers_pre_spawn(qt_app) -> None:  # type: ignore[no-untyped-def]
+    engine = JungleTimelineEngine()
+    engine.tick(30.0)  # 0:30 — every camp still pre-first-spawn
+    _force_engine_states(engine, confidence=0.95)
+
+    widget = MinimapTimersWidget()
+    widget.attach_engine(engine)
+    _settle(qt_app, widget)
+
+    assert_snapshot_matches(
+        "minimap_timers_pre_spawn",
+        snapshot_widget(widget),
+    )
+
+
+# ----------------------------------------------------------------------
 # Canonical state #1: minimap timers at 10:00 game time, HIGH confidence
 # Covers: in-game mid-objective state from the spec
 # ----------------------------------------------------------------------
@@ -105,6 +126,27 @@ def test_minimap_timers_low_confidence_approximate_mode(qt_app) -> None:  # type
 
     assert_snapshot_matches(
         "minimap_timers_low_confidence",
+        snapshot_widget(widget),
+    )
+
+
+# ----------------------------------------------------------------------
+# Canonical state #1b: midgame at MID confidence band (0.4–0.8).
+# The OPACITY_MID = 0.85 stylesheet path was previously uncovered —
+# any change to the muted-band rendering would have slipped through
+# without this baseline.
+# ----------------------------------------------------------------------
+def test_minimap_timers_midgame_mid_confidence(qt_app) -> None:  # type: ignore[no-untyped-def]
+    engine = JungleTimelineEngine()
+    engine.tick(600.0)
+    _force_engine_states(engine, confidence=0.6)
+
+    widget = MinimapTimersWidget()
+    widget.attach_engine(engine)
+    _settle(qt_app, widget)
+
+    assert_snapshot_matches(
+        "minimap_timers_midgame_mid",
         snapshot_widget(widget),
     )
 
