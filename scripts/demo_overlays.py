@@ -42,14 +42,39 @@ def main() -> int:
     scoreboard.update_snapshot(snapshot)
     scoreboard.show()
 
-    engine = JungleTimelineEngine()
-    engine.tick(snapshot.game_time, list(snapshot.raw_events))
+    # Three minimap widgets at different simulated game-times so all
+    # three confidence bands are on screen at once for visual review.
+    # 200s = early game (HIGH), 1500s = mid (MID band), 3000s = late (LOW).
+    from champ_assistant.jungle_timeline import CampState as _CS, JUNGLE_CAMPS as _JC
 
-    minimap = MinimapTimersWidget()
-    minimap.move(40, 130)
-    minimap.attach_engine(engine)
-    minimap.update_snapshot(snapshot)
-    minimap.show()
+    def _force_confidence(eng: JungleTimelineEngine, conf: float) -> None:
+        """Inject states with a fixed confidence so the demo shows all
+        three bands regardless of where decay would land. Demo-only —
+        production never touches the engine internals like this."""
+        original = eng.states
+        def _states_with_forced_conf() -> dict[str, _CS]:
+            out = {}
+            for cid, st in original().items():
+                out[cid] = _CS(
+                    id=st.id, name=st.name, state=st.state,
+                    next_spawn_at=st.next_spawn_at,
+                    time_remaining=st.time_remaining,
+                    confidence=conf,
+                )
+            return out
+        eng.states = _states_with_forced_conf  # type: ignore[method-assign]
+
+    minimaps = []
+    for idx, (gt, conf) in enumerate([(200.0, 0.9), (1500.0, 0.6), (3000.0, 0.3)]):
+        eng = JungleTimelineEngine()
+        eng.tick(gt, list(snapshot.raw_events))
+        _force_confidence(eng, conf)
+        m = MinimapTimersWidget()
+        m.move(40, 130 + idx * 95)
+        m.attach_engine(eng)
+        m.update_snapshot(snapshot)
+        m.show()
+        minimaps.append((eng, m))
 
     lobby = LobbyStatsWidget()
     lobby.move(40, 220)

@@ -7,6 +7,13 @@
          required, no LCDA kill events needed.
 
 Compact format, sits on/next to the in-game minimap.
+
+Confidence visual encoding (UI-only, never modifies timer values):
+  * HIGH (>= 0.8): full opacity, deterministic display
+  * MID  (0.4–0.8): slightly muted (85% alpha)
+  * LOW  (< 0.4):   approximate mode — "≈" prefix + 70% alpha + dashed
+    border to flag visual estimation. Spec is explicit that this only
+    affects presentation, never the underlying countdown.
 """
 from __future__ import annotations
 
@@ -18,6 +25,52 @@ from ..lcda.objectives import ObjectiveTimer
 from ..lcda.source import LcdaSnapshot
 from . import styles
 from .floating_widget import FloatingWidget
+
+# Confidence thresholds — the spec's three bands. Tunables, but keep
+# in sync with the contract documented in the module docstring.
+CONFIDENCE_HIGH  = 0.8
+CONFIDENCE_LOW   = 0.4
+
+# Per-band opacity (applied via rgba alpha so it survives Qt's
+# stylesheet model — QGraphicsOpacityEffect would conflict with our
+# drop-shadow setup and bring its own overhead).
+OPACITY_HIGH = 1.00
+OPACITY_MID  = 0.85
+OPACITY_LOW  = 0.70
+
+# Cell text width is pre-allocated in _CampCell.__init__ so swapping
+# between "5:00", "≈5:00", and a short glyph never reflows the row.
+APPROXIMATE_PREFIX = "≈"  # ≈
+
+
+def _format_timer_text(state: CampState) -> str:
+    """Render a CampState's countdown to display text. Pure function so
+    the approximate-mode prefix logic can be unit-tested without Qt.
+
+    Time formatting matches the rest of the app: "M:SS" with a leading
+    "0:" for sub-minute values so the text width is constant inside one
+    cell. Approximate prefix is added at the LOW confidence band only.
+    """
+    rem = state.time_remaining
+    minutes, sec = divmod(int(rem + 0.5), 60)
+    text = f"{minutes:d}:{sec:02d}" if minutes else f"0:{sec:02d}"
+    if state.confidence < CONFIDENCE_LOW:
+        return f"{APPROXIMATE_PREFIX}{text}"
+    return text
+
+
+def _band_for(confidence: float) -> str:
+    """Map a confidence score onto its visual band ('high'/'mid'/'low')."""
+    if confidence >= CONFIDENCE_HIGH:
+        return "high"
+    if confidence >= CONFIDENCE_LOW:
+        return "mid"
+    return "low"
+
+
+def _opacity_for(confidence: float) -> float:
+    band = _band_for(confidence)
+    return {"high": OPACITY_HIGH, "mid": OPACITY_MID, "low": OPACITY_LOW}[band]
 
 OBJECTIVE_GLYPHS = {
     "Dragon": "🐉",
@@ -53,33 +106,44 @@ class _CampCell(QLabel):
     timers — purely reactive (P6).
     """
 
+    # Pre-allocated cell size — wide enough for the longest possible
+    # readout ("≈5:00", 5 chars at FONT_MONO 11px ≈ 32px) so swapping
+    # between alive-glyph, plain countdown, and approximate-mode prefix
+    # never reflows the row. Layout integrity (spec #1).
+    CELL_W = 42
+    CELL_H = 30
+
     def __init__(self, glyph: str, parent=None) -> None:  # type: ignore[no-untyped-def]
         super().__init__(parent)
         self._glyph = glyph
         self.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.setFixedSize(38, 30)
+        self.setFixedSize(self.CELL_W, self.CELL_H)
         self.render(None)
 
     def render(self, state: CampState | None) -> None:
-        """Update the cell from a fresh ``CampState`` (or clear if None)."""
+        """Update the cell from a fresh ``CampState`` (or clear if None).
+
+        Confidence drives only the visual band (opacity + border style);
+        the timer value itself is taken verbatim from the deterministic
+        engine. See module docstring for the band thresholds.
+        """
         if state is None:
             self.setText(self._glyph)
             self.setStyleSheet(self._idle_style())
             return
         if state.state == "alive" or state.time_remaining <= 0.5:
-            # Camp is up — emphasise the glyph in success-color.
+            # Camp is up — emphasise the glyph in success-color. Apply
+            # the confidence opacity so a low-confidence "alive" still
+            # reads as approximate without losing the spawn signal.
             self.setText(self._glyph)
-            self.setStyleSheet(self._alive_style())
+            self.setStyleSheet(self._alive_style(state.confidence))
             return
-        # Counting down — colored timer text replaces the glyph for
-        # readability. Color ramps with urgency via ``time_state_color``
-        # so the same scale that drives objective timers also drives
-        # camps (visual consistency, P7).
-        rem = state.time_remaining
-        minutes, sec = divmod(int(rem + 0.5), 60)
-        text = f"{minutes:d}:{sec:02d}" if minutes else f"0:{sec:02d}"
-        self.setText(text)
-        self.setStyleSheet(self._countdown_style(rem, state.confidence))
+        # Counting down. Timer text + ≈ prefix come from the pure
+        # formatter so the prefix logic stays unit-testable.
+        self.setText(_format_timer_text(state))
+        self.setStyleSheet(self._countdown_style(state.time_remaining, state.confidence))
+
+    # -- per-band stylesheets --------------------------------------------
 
     @staticmethod
     def _idle_style() -> str:
@@ -91,29 +155,53 @@ class _CampCell(QLabel):
         )
 
     @staticmethod
-    def _alive_style() -> str:
+    def _alive_style(confidence: float) -> str:
+        opacity = _opacity_for(confidence)
+        bg_alpha = int(50 * opacity)
+        border_alpha = int(255 * opacity)
+        success_rgb = _hex_to_rgb_tuple(styles.SUCCESS)
+        success_rgba = f"rgba({success_rgb[0]}, {success_rgb[1]}, {success_rgb[2]}, {border_alpha})"
         return (
-            f"QLabel {{ background: rgba(127, 204, 127, 50);"
-            f" color: {styles.SUCCESS};"
-            f" border: 1px solid {styles.SUCCESS};"
+            f"QLabel {{ background: rgba({success_rgb[0]}, {success_rgb[1]}, {success_rgb[2]}, {bg_alpha});"
+            f" color: {success_rgba};"
+            f" border: 1px solid {success_rgba};"
             f" border-radius: 8px; font-size: 14px; font-weight: 700; }}"
         )
 
     @staticmethod
     def _countdown_style(remaining: float, confidence: float) -> str:
-        # Confidence in [MIN..1.0] modulates alpha so a low-confidence
-        # prediction visibly reads as "estimated" without changing the
-        # readout itself (P3 spec: never override deterministic values).
-        alpha = int(120 + 135 * max(0.0, min(1.0, confidence)))
-        color = styles.time_state_color(remaining)
+        opacity = _opacity_for(confidence)
+        # Border style flags the LOW band visually — dashed reads as
+        # "estimated" at a glance without competing with the timer text.
+        border_kind = "dashed" if _band_for(confidence) == "low" else "solid"
+        border_rgb = _hex_to_rgb_tuple(styles.ACCENT)
+        border_alpha = int(255 * opacity)
+        bg_alpha = int(60 * opacity)
+        # Convert the urgency color to rgba so opacity travels with it —
+        # otherwise the LOW band has a faded border but full-color text,
+        # which reads as inconsistent.
+        urgency_rgb = _hex_to_rgb_tuple(styles.time_state_color(remaining))
+        urgency_alpha = int(255 * opacity)
         return (
-            f"QLabel {{ background: rgba(91, 168, 255, {alpha // 4});"
-            f" color: {color};"
-            f" border: 1px solid rgba(91, 168, 255, {alpha});"
+            f"QLabel {{ background: rgba({border_rgb[0]}, {border_rgb[1]}, {border_rgb[2]}, {bg_alpha});"
+            f" color: rgba({urgency_rgb[0]}, {urgency_rgb[1]}, {urgency_rgb[2]}, {urgency_alpha});"
+            f" border: 1px {border_kind} rgba({border_rgb[0]}, {border_rgb[1]}, {border_rgb[2]}, {border_alpha});"
             f" border-radius: 8px;"
             f" font-family: {styles.FONT_MONO};"
             f" font-size: 11px; font-weight: 700; }}"
         )
+
+
+def _hex_to_rgb_tuple(value: str) -> tuple[int, int, int]:
+    """Tiny hex->rgb helper. Falls back to a neutral grey for any
+    non-#RRGGBB input rather than raising — confidence-band rendering
+    must never crash the cell."""
+    if not isinstance(value, str) or not value.startswith("#") or len(value) != 7:
+        return (128, 128, 128)
+    try:
+        return (int(value[1:3], 16), int(value[3:5], 16), int(value[5:7], 16))
+    except ValueError:
+        return (128, 128, 128)
 
 
 class MinimapTimersWidget(FloatingWidget):
