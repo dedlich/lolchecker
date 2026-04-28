@@ -14,6 +14,7 @@ import sys
 from pathlib import Path
 
 import qasync
+from collections.abc import Callable
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QSurfaceFormat
 from PyQt6.QtWidgets import QApplication
@@ -33,6 +34,7 @@ from champ_assistant.data.loader import (
 from champ_assistant.data.models import BuildLibrary, Champion
 from champ_assistant.data.runtime_counters import RuntimeCounterStore
 from champ_assistant.lcu.sources import FixtureLcuSource, LcuSource, RealLcuSource
+from champ_assistant.lifecycle import LifecycleManager
 from champ_assistant.safety import CrashHandler
 from champ_assistant.ui.overlay import MainOverlay
 
@@ -196,7 +198,37 @@ def _enable_gpu_backend() -> None:
     QSurfaceFormat.setDefaultFormat(fmt)
 
 
+def _safe_start(name: str, fn: Callable[[], None]) -> bool:
+    """Run a subsystem's start hook isolated from the rest of init.
+
+    A misbehaving subsystem (e.g. psutil import error in diagnostics, a
+    Win32 RegisterHotKey returning 1409 because another app already grabbed
+    the same combo) must NOT prevent the main app window from opening.
+    Logs the failure with a [STARTUP] tag so the production log keeps a
+    clear trace of which subsystems came up and which were skipped.
+    """
+    log = logging.getLogger("champ_assistant.lifecycle")
+    try:
+        fn()
+        log.info("subsystem started: %s", name)
+        return True
+    except Exception:  # noqa: BLE001 — subsystem must not crash the app
+        log.exception("subsystem start failed: %s — continuing degraded", name)
+        return False
+
+
 def _run_with_ui(args: argparse.Namespace) -> int:
+    # ------------------------------------------------------------------
+    # Deterministic startup (P7): each subsystem is registered with the
+    # lifecycle manager in the same order it is brought up. Teardown
+    # walks the list in reverse on aboutToQuit so producers stop before
+    # consumers (e.g. hotkey listener stops before its signal target's
+    # Qt loop shuts down).
+    # Canonical order: logging (already up) → state → window → layout
+    # → hotkeys → update → render.
+    # ------------------------------------------------------------------
+    lifecycle = LifecycleManager()
+
     _enable_gpu_backend()
     qt_app = QApplication(sys.argv[:1])
 
@@ -222,6 +254,8 @@ def _run_with_ui(args: argparse.Namespace) -> int:
     store = StateStore()
     scheduler = RenderScheduler()
     diagnostics = Diagnostics()
+    lifecycle.register("scheduler", scheduler.stop)
+    lifecycle.register("diagnostics", diagnostics.stop)
     diagnostics.attach_scheduler(scheduler)
     diagnostics.attach_store(store)
     overlay._store = store              # type: ignore[attr-defined]
@@ -353,7 +387,7 @@ def _run_with_ui(args: argparse.Namespace) -> int:
     loop = qasync.QEventLoop(qt_app)
     asyncio.set_event_loop(loop)
     crash.install(loop=loop)
-    qt_app.aboutToQuit.connect(loop.stop)
+    lifecycle.register("crash_handler", crash.uninstall)
 
     # Schedule the orchestrator runner via loop.create_task — works on a
     # not-yet-running loop. asyncio.create_task() (and TaskManager.spawn,
@@ -365,8 +399,15 @@ def _run_with_ui(args: argparse.Namespace) -> int:
         name="champion-prefetch",
     )
     update_task = loop.create_task(
-        _check_and_notify_update(overlay), name="update-check"
+        _check_and_notify_update(overlay, lifecycle), name="update-check"
     )
+    # Lifecycle entry: cancel async tasks before tearing down the loop so
+    # in-flight downloads / icon prefetches abort cleanly instead of
+    # raising into qasync's exception handler at shutdown.
+    def _cancel_async_tasks() -> None:
+        for t in (consumer, icon_task, update_task):
+            t.cancel()
+    lifecycle.register("async_tasks", _cancel_async_tasks)
 
     # Floating mini-widgets (Blitz-style independent overlays). Each one is
     # its own top-level transparent always-on-top window with persisted
@@ -393,10 +434,13 @@ def _run_with_ui(args: argparse.Namespace) -> int:
     lcda_task = loop.create_task(
         _run_lcda_watcher(overlay, floating), name="lcda-watcher"
     )
+    lifecycle.register("lcda_task", lcda_task.cancel)
 
     # Start production-grade infrastructure now that the loop is set up.
-    scheduler.start()
-    diagnostics.start()
+    # Each start is isolated — a misbehaving subsystem must not block the
+    # rest of init (subsystem isolation, P2).
+    _safe_start("scheduler", scheduler.start)
+    _safe_start("diagnostics", diagnostics.start)
 
     # ------------------------------------------------------------------
     # Global hotkeys (Win32 RegisterHotKey via dedicated thread).
@@ -469,25 +513,30 @@ def _run_with_ui(args: argparse.Namespace) -> int:
     store.subscribe(_on_state_change)
     from PyQt6.QtCore import Qt as _Qt
     hotkeys.hotkey_pressed.connect(_on_hotkey, _Qt.ConnectionType.QueuedConnection)
-    hotkeys.start()
+    _safe_start("hotkeys", hotkeys.start)
     overlay._hotkeys = hotkeys  # keep alive
+    lifecycle.register("hotkeys", hotkeys.stop)
 
-    qt_app.aboutToQuit.connect(hotkeys.stop)
-
-    # Flush any pending layout writes that the 500 ms debounce timer
-    # hasn't fired yet — otherwise a quick drag-then-quit loses the move.
+    # Layout flush is registered last (= runs first in shutdown) so a
+    # quick drag-then-quit doesn't lose the move to the 500ms debounce.
     def _flush_layout() -> None:
         from champ_assistant import layout as _layout
         _layout.store().flush_now()
-    qt_app.aboutToQuit.connect(_flush_layout)
+    lifecycle.register("layout_flush", _flush_layout)
+    # Qt loop stop runs *after* every other service has torn down so
+    # late callbacks (hotkey signal, state listener) still find a live
+    # event loop to dispatch into.
+    lifecycle.register("qt_loop", loop.stop)
+
+    # Single shutdown entry: aboutToQuit → ordered teardown. Idempotent,
+    # so a fallback finally: shutdown() during an exception path is safe.
+    qt_app.aboutToQuit.connect(lifecycle.shutdown)
 
     try:
         with loop:
             loop.run_forever()
     finally:
-        for t in (consumer, icon_task, update_task, lcda_task):
-            t.cancel()
-        crash.uninstall()
+        lifecycle.shutdown()
     return 0
 
 
@@ -663,11 +712,18 @@ async def _hydrate_champions_and_icons(
     )
 
 
-async def _check_and_notify_update(overlay: MainOverlay) -> None:
+async def _check_and_notify_update(
+    overlay: MainOverlay,
+    lifecycle: LifecycleManager,
+) -> None:
     """One-shot startup check; if a newer release exists, surface it with an
     Install-now button. Clicking the button downloads, swaps, and relaunches.
     Also reports the previous update's outcome on first launch so silent
     failures (AV quarantine, robocopy issue) don't go unnoticed.
+
+    Bails immediately if shutdown has begun — important when the user
+    quits the app during the 5s startup window before the network probe
+    has even returned.
     """
     from champ_assistant import __version__
     from champ_assistant.update_check import (
@@ -675,6 +731,9 @@ async def _check_and_notify_update(overlay: MainOverlay) -> None:
         install_dir,
         read_last_update_status,
     )
+
+    if lifecycle.is_shutting_down:
+        return
 
     # Surface the previous bat run's verdict if it failed. ``ok`` is
     # silent (success is the default expectation); ``stale`` is also
@@ -687,7 +746,7 @@ async def _check_and_notify_update(overlay: MainOverlay) -> None:
         )
 
     info = await check_for_update(__version__)
-    if info is None:
+    if info is None or lifecycle.is_shutting_down:
         return
     log = logging.getLogger(__name__)
     log.info("update_available tag=%s url=%s", info["tag"], info["url"])
@@ -704,31 +763,63 @@ async def _check_and_notify_update(overlay: MainOverlay) -> None:
     # Hold a strong reference to the launched task so it isn't GC'd mid-flight
     # (RUF006). Stored on the overlay since on_click outlives this function.
     overlay._update_task = None  # type: ignore[attr-defined]
+    overlay._update_in_progress = False  # type: ignore[attr-defined]
 
     def on_click() -> None:
+        # Dedup guard: clicking "Install now" twice while the first
+        # download is still streaming would spawn two parallel apply_update
+        # tasks, two sidecar bats, and a race for the install dir.
+        if getattr(overlay, "_update_in_progress", False):
+            log.info("update click ignored — already in progress")
+            return
+        if lifecycle.is_shutting_down:
+            log.info("update click ignored — app is shutting down")
+            return
+        overlay._update_in_progress = True  # type: ignore[attr-defined]
         overlay._update_task = asyncio.ensure_future(  # type: ignore[attr-defined]
-            _run_update(overlay, info["tag"], target)
+            _run_update(overlay, info["tag"], target, lifecycle)
         )
 
     overlay.status_bar.show_update_available(info["tag"], on_click)
 
 
-async def _run_update(overlay: MainOverlay, tag: str, target: Path) -> None:
-    """Download + extract + spawn sidecar + quit the app."""
+async def _run_update(
+    overlay: MainOverlay,
+    tag: str,
+    target: Path,
+    lifecycle: LifecycleManager,
+) -> None:
+    """Download + extract + spawn sidecar + quit the app.
+
+    Aborts cleanly if the app starts shutting down mid-download — the
+    sidecar bat is never written, so a partial download in the staging
+    directory is harmless and gets cleaned up on the next run.
+    """
     from champ_assistant.update_check import apply_update
 
     log = logging.getLogger(__name__)
     bar = overlay.status_bar
     try:
+        if lifecycle.is_shutting_down:
+            log.info("update aborted before start — shutdown in progress")
+            return
         await apply_update(
             tag,
             install_directory=target,
             progress=bar.set_update_progress,
         )
+        if lifecycle.is_shutting_down:
+            log.info("update finished but app is shutting down — sidecar may not run")
+            return
+    except asyncio.CancelledError:
+        log.info("update cancelled — task was torn down")
+        raise
     except Exception as exc:
         log.exception("update_failed")
         bar.update_failed(f"Update fehlgeschlagen: {exc}")
         return
+    finally:
+        overlay._update_in_progress = False  # type: ignore[attr-defined]
     bar.set_update_progress("App startet neu…")
     log.info("update_applied tag=%s — quitting to let sidecar swap files", tag)
     QApplication.quit()
