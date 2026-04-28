@@ -70,6 +70,7 @@ a = Analysis(
         "champ_assistant.render_scheduler",
         "champ_assistant.window_flags",
         "champ_assistant.diagnostics",
+        "champ_assistant.hotkey_service",
         "dotenv",
         "champ_assistant.ui",
         "champ_assistant.ui.overlay",

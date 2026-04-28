@@ -398,6 +398,59 @@ def _run_with_ui(args: argparse.Namespace) -> int:
     scheduler.start()
     diagnostics.start()
 
+    # ------------------------------------------------------------------
+    # Global hotkeys (Win32 RegisterHotKey via dedicated thread).
+    # Hotkey -> StateStore.update -> subscriber -> UI side-effect.
+    # ------------------------------------------------------------------
+    from champ_assistant.hotkey_service import HotkeyService
+    hotkeys = HotkeyService()
+
+    def _on_hotkey(name: str) -> None:
+        cur = store.get()
+        if name == "toggle_overlay":
+            store.update(main_visible=not cur.main_visible)
+        elif name == "toggle_lock":
+            store.update(passthrough=not cur.passthrough)
+        elif name == "reset_positions":
+            _reset_widget_positions(overlay, floating)
+
+    def _reset_widget_positions(overlay_window, fw_list) -> None:
+        from champ_assistant import overlay_config as _ovc
+        from champ_assistant.ui.floating_widget import FloatingWidget
+        state = _ovc.load()
+        state.floating_positions = {}
+        _ovc.save(state)
+        for widget in FloatingWidget._instances:
+            x, y = widget.DEFAULT_POS
+            w, h = widget.DEFAULT_SIZE
+            widget.setGeometry(x, y, w, h)
+        logging.getLogger(__name__).info("hotkey: reset all widget positions")
+
+    def _on_state_change(old, new) -> None:
+        # main_visible: hide / show the main panel
+        if old.main_visible != new.main_visible:
+            if new.main_visible:
+                overlay._switch_mode("champselect")
+                overlay.show()
+                overlay.raise_()
+            else:
+                overlay.hide()
+        # passthrough: route mouse events to the game across all widgets
+        if old.passthrough != new.passthrough:
+            from champ_assistant.window_flags import set_passthrough
+            from champ_assistant.ui.floating_widget import FloatingWidget
+            set_passthrough(overlay._body, new.passthrough)
+            for fw in FloatingWidget._instances:
+                fw.set_passthrough(new.passthrough)
+
+    store.subscribe(_on_state_change)
+    from PyQt6.QtCore import Qt as _Qt
+    hotkeys.hotkey_pressed.connect(_on_hotkey, _Qt.ConnectionType.QueuedConnection)
+    hotkeys.start()
+    overlay._hotkeys = hotkeys  # keep alive
+
+    qt_app.aboutToQuit.connect(hotkeys.stop)
+
     try:
         with loop:
             loop.run_forever()
