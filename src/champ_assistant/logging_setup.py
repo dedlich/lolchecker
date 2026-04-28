@@ -53,6 +53,11 @@ DEFAULT_TAG = "APP"
 
 def _tag_for(name: str) -> str:
     """Resolve a logger name to its bracketed subsystem tag."""
+    # Running via ``python -m champ_assistant`` makes the entry module's
+    # logger name literally "__main__" (no package prefix). Treat as APP
+    # so production logs don't carry a misleading [EXT] tag.
+    if name == "__main__":
+        return DEFAULT_TAG
     if not name.startswith("champ_assistant"):
         # Third-party logger that survived the WARNING-floor list (e.g. an
         # unfamiliar httpx submodule). Tag uniformly so format stays clean.

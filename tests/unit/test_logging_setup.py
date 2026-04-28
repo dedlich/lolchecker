@@ -36,6 +36,13 @@ def test_tag_for_external_logger() -> None:
     assert _tag_for("httpx") == "EXT"
 
 
+def test_tag_for_dunder_main_is_app() -> None:
+    """Running via ``python -m champ_assistant`` makes the entry-point
+    logger name "__main__" (no package prefix) — must surface as [APP],
+    not [EXT]."""
+    assert _tag_for("__main__") == "APP"
+
+
 def test_filter_stamps_record_with_subsystem() -> None:
     f = SubsystemTagFilter()
     record = logging.LogRecord(

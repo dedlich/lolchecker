@@ -101,17 +101,6 @@ class PickCard(QFrame):
                 "✨", build.summoners, styles.TEXT_SECONDARY, sep=" • ",
             ))
 
-
-def _build_line(sigil: str, items: list[str], color: str, *, sep: str) -> QLabel:
-    label = QLabel(
-        f"<span style='color:{color}; font-size:13px;'>{sigil}</span>  "
-        f"<span style='color:{color}'>"
-        f"{sep.join(items)}</span>"
-    )
-    label.setStyleSheet(f"font-size: {styles.FS_LABEL}px;")
-    label.setWordWrap(True)
-    return label
-
     def _add_apply_button(self, outer: QVBoxLayout, build: ChampionBuild) -> None:
         """Apply Build button — pushes the recommended runes into a new
         rune page AND the items into a custom item set in LeagueClient
@@ -155,3 +144,14 @@ def _build_line(sigil: str, items: list[str], color: str, *, sep: str) -> QLabel
         )
         row.addWidget(apply)
         outer.addLayout(row)
+
+
+def _build_line(sigil: str, items: list[str], color: str, *, sep: str) -> QLabel:
+    label = QLabel(
+        f"<span style='color:{color}; font-size:13px;'>{sigil}</span>  "
+        f"<span style='color:{color}'>"
+        f"{sep.join(items)}</span>"
+    )
+    label.setStyleSheet(f"font-size: {styles.FS_LABEL}px;")
+    label.setWordWrap(True)
+    return label
