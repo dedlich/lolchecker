@@ -259,6 +259,12 @@ def _run_with_ui(args: argparse.Namespace) -> int:
     lifecycle.register("diagnostics", diagnostics.stop)
     diagnostics.attach_scheduler(scheduler)
     diagnostics.attach_store(store)
+
+    # Deterministic jungle camp predictor — pure Python, no Qt. Drives
+    # the minimap widget's camp row off a fixed-cycle timeline rather
+    # than user clicks. Subscribes to lcda_snapshot updates below.
+    from champ_assistant.jungle_timeline import JungleTimelineEngine
+    jungle_engine = JungleTimelineEngine()
     overlay._store = store              # type: ignore[attr-defined]
     overlay._scheduler = scheduler      # type: ignore[attr-defined]
     overlay._diagnostics = diagnostics  # type: ignore[attr-defined]
@@ -425,12 +431,24 @@ def _run_with_ui(args: argparse.Namespace) -> int:
     if persisted.show_minimap_timers:
         minimap = MinimapTimersWidget()
         minimap.connect_scheduler(scheduler)
+        minimap.attach_engine(jungle_engine)
         floating.append(minimap)
     lobby_stats: LobbyStatsWidget | None = None
     if persisted.show_lobby_stats:
         lobby_stats = LobbyStatsWidget()
         # Hooked into the SessionView pipeline below (not LCDA).
         overlay._lobby_stats = lobby_stats  # type: ignore[attr-defined]
+
+    # Bridge LCDA snapshots into the jungle timeline. The engine is
+    # purely deterministic — it just needs game_time + the cumulative
+    # event log to bump confidence anchors.
+    def _drive_jungle_engine(old, new) -> None:  # type: ignore[no-untyped-def]
+        snap = new.lcda_snapshot
+        if snap is None:
+            return
+        events = list(getattr(snap, "raw_events", []) or [])
+        jungle_engine.tick(snap.game_time, events)
+    store.subscribe(_drive_jungle_engine)
 
     lcda_task = loop.create_task(
         _run_lcda_watcher(overlay, floating), name="lcda-watcher"

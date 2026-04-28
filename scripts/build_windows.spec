@@ -72,6 +72,7 @@ a = Analysis(
         "champ_assistant.diagnostics",
         "champ_assistant.hotkey_service",
         "champ_assistant.hotkey_config",
+        "champ_assistant.jungle_timeline",
         "champ_assistant.layout",
         "champ_assistant.lifecycle",
         "champ_assistant.logging_setup",

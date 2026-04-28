@@ -19,6 +19,7 @@ from PyQt6.QtWidgets import QApplication
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
+from champ_assistant.jungle_timeline import JungleTimelineEngine  # noqa: E402
 from champ_assistant.lcda.source import LcdaSource  # noqa: E402
 from champ_assistant.ui.lobby_stats_widget import LobbyStatsWidget  # noqa: E402
 from champ_assistant.ui.minimap_timers_widget import MinimapTimersWidget  # noqa: E402
@@ -41,8 +42,12 @@ def main() -> int:
     scoreboard.update_snapshot(snapshot)
     scoreboard.show()
 
+    engine = JungleTimelineEngine()
+    engine.tick(snapshot.game_time, list(snapshot.raw_events))
+
     minimap = MinimapTimersWidget()
     minimap.move(40, 130)
+    minimap.attach_engine(engine)
     minimap.update_snapshot(snapshot)
     minimap.show()
 
