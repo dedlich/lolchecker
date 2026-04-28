@@ -16,12 +16,42 @@ scheduler (which IS Qt-aware) subscribe to it.
 from __future__ import annotations
 
 import logging
+import math
 import threading
 from collections.abc import Callable
 from dataclasses import dataclass, field, replace
 from typing import Any, Optional
 
 logger = logging.getLogger(__name__)
+
+
+_VALID_PHASES = frozenset({"idle", "champ_select", "in_game", "post_game"})
+# Mirrors ``ConnectionState`` Literal in ui.view_model — keep in sync.
+_VALID_CONNECTION_STATES = frozenset({
+    "disconnected", "waiting", "connected", "reconnecting",
+})
+
+
+def _validate_state(state: "GameState") -> tuple[bool, str]:
+    """Sanity-check a candidate GameState before it becomes authoritative.
+
+    Returns ``(ok, reason)`` — caller logs and rejects on ``ok == False``.
+    Rejects: unknown phase, NaN/inf game_time, negative game_time. The
+    cost of dropping one update beats letting a NaN propagate to widget
+    text-render code, where it surfaces as a UI crash inside Qt's paint
+    event (no traceback, just a frozen overlay).
+    """
+    if state.phase not in _VALID_PHASES:
+        return False, f"unknown phase {state.phase!r}"
+    if state.connection_state not in _VALID_CONNECTION_STATES:
+        return False, f"unknown connection_state {state.connection_state!r}"
+    if not isinstance(state.game_time, (int, float)) or isinstance(state.game_time, bool):
+        return False, f"non-numeric game_time {state.game_time!r}"
+    if not math.isfinite(state.game_time):
+        return False, f"non-finite game_time {state.game_time!r}"
+    if state.game_time < 0:
+        return False, f"negative game_time {state.game_time!r}"
+    return True, ""
 
 
 @dataclass(frozen=True)
@@ -88,6 +118,13 @@ class StateStore:
             # Compare ignoring the revision bump so identical content doesn't
             # masquerade as a real change.
             if _equivalent(old, new):
+                return old
+            ok, reason = _validate_state(new)
+            if not ok:
+                logger.warning(
+                    "state_store: rejected update — %s; keeping previous state",
+                    reason,
+                )
                 return old
             self._state = new
 

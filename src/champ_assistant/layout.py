@@ -35,6 +35,7 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 import os
 import sys
 from dataclasses import dataclass, field
@@ -46,6 +47,27 @@ from PyQt6.QtGui import QGuiApplication
 logger = logging.getLogger(__name__)
 
 
+# Sane bounds for any saved coordinate. Real monitors top out at ~16K
+# horizontal pixels even on extreme multi-display setups; values outside
+# this band are corruption (or NaN promoted to a huge int) and we'd
+# rather reject + restore defaults than write them to disk.
+_COORD_MIN = -100_000
+_COORD_MAX = 100_000
+
+
+def _is_valid_coord(value: object) -> bool:
+    """True iff ``value`` is a real, finite int inside the sane bounds.
+
+    Rejects: bool (Python's int subclass surprise), NaN/inf floats that
+    would slip through naive ``int(...)`` callers, anything non-numeric.
+    """
+    if isinstance(value, bool) or not isinstance(value, int):
+        return False
+    if not math.isfinite(value):
+        return False
+    return _COORD_MIN <= value <= _COORD_MAX
+
+
 # --------------------------------------------------------------------------
 # Data model
 # --------------------------------------------------------------------------
@@ -55,6 +77,16 @@ class WidgetLayout:
     y: int
     visible: bool = True
     monitor_id: str = ""  # QScreen.name(), e.g. "\\\\.\\DISPLAY1"
+
+    def __post_init__(self) -> None:
+        # Reject corrupt coordinates at construction time so they can
+        # never end up persisted. Frozen dataclass — raise rather than
+        # silently coerce so the bug surfaces in tests/dev instead of
+        # writing garbage to layout.json.
+        if not _is_valid_coord(self.x) or not _is_valid_coord(self.y):
+            raise ValueError(
+                f"WidgetLayout: invalid coords x={self.x!r} y={self.y!r}"
+            )
 
 
 def _layout_dir() -> Path:
@@ -98,7 +130,17 @@ class LayoutStore(QObject):
 
     def mark(self, key: str, layout: WidgetLayout) -> None:
         """Record a layout change. No-op if identical to the current entry.
-        Debounced — disk write happens 500 ms after the last call."""
+        Debounced — disk write happens 500 ms after the last call.
+
+        Defensively re-validates in case a caller built the layout via
+        ``dataclasses.replace`` (which bypasses ``__post_init__``).
+        """
+        if not _is_valid_coord(layout.x) or not _is_valid_coord(layout.y):
+            logger.warning(
+                "layout: refused mark(%r, x=%r y=%r) — invalid coords",
+                key, layout.x, layout.y,
+            )
+            return
         if self._layouts.get(key) == layout:
             return
         self._layouts[key] = layout
@@ -176,7 +218,10 @@ class LayoutStore(QObject):
                     visible=bool(raw.get("visible", True)),
                     monitor_id=str(raw.get("monitor_id", "")),
                 )
-            except (KeyError, ValueError, TypeError) as exc:
+            except (KeyError, ValueError, TypeError, OverflowError) as exc:
+                # OverflowError catches int(float('inf')); ValueError
+                # catches int(NaN), our own __post_init__ bounds check,
+                # and any non-castable string.
                 logger.warning("layout entry %r unreadable: %s", key, exc)
         logger.info("layout loaded: %d widgets restored", len(self._layouts))
 

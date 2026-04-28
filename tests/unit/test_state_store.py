@@ -86,3 +86,56 @@ def test_metric_hook_fires_on_real_update_only() -> None:
     # No-op didn't record a metric; two real updates did.
     assert len(metrics) == 2
     assert all(m >= 0 for m in metrics)
+
+
+# ----------------------------------------------------------------------
+# State integrity validation (P3)
+# ----------------------------------------------------------------------
+def test_update_rejects_unknown_phase() -> None:
+    store = StateStore()
+    store.update(game_time=1.0)  # baseline
+    rev_before = store.get().revision
+    new = store.update(phase="bogus")
+    # Update was rejected — state and revision unchanged.
+    assert new.phase == "idle"
+    assert store.get().revision == rev_before
+
+
+def test_update_rejects_nan_game_time() -> None:
+    import math
+    store = StateStore()
+    new = store.update(game_time=math.nan)
+    assert new.game_time == 0.0  # untouched default
+
+
+def test_update_rejects_negative_game_time() -> None:
+    store = StateStore()
+    new = store.update(game_time=-5.0)
+    assert new.game_time == 0.0
+
+
+def test_update_rejects_inf_game_time() -> None:
+    import math
+    store = StateStore()
+    new = store.update(game_time=math.inf)
+    assert new.game_time == 0.0
+
+
+def test_update_rejects_bogus_connection_state() -> None:
+    store = StateStore()
+    new = store.update(connection_state="banana")
+    assert new.connection_state == "disconnected"
+
+
+def test_update_accepts_all_documented_phases() -> None:
+    store = StateStore()
+    for phase in ("idle", "champ_select", "in_game", "post_game"):
+        new = store.update(phase=phase)
+        assert new.phase == phase
+
+
+def test_update_accepts_all_documented_connection_states() -> None:
+    store = StateStore()
+    for state in ("disconnected", "waiting", "connected", "reconnecting"):
+        new = store.update(connection_state=state)
+        assert new.connection_state == state

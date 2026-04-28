@@ -163,6 +163,39 @@ def test_negative_coordinate_clamped_to_screen_origin(qt_app) -> None:  # type: 
     assert y == 0
 
 
+# --------------------------------------------------------------------------
+# Coordinate integrity (P3)
+# --------------------------------------------------------------------------
+def test_widget_layout_rejects_nan_coords() -> None:
+    import math
+    with pytest.raises(ValueError):
+        WidgetLayout(x=int(0), y=math.nan)  # type: ignore[arg-type]
+
+
+def test_widget_layout_rejects_extreme_coords() -> None:
+    with pytest.raises(ValueError):
+        WidgetLayout(x=999_999_999, y=0)
+
+
+def test_widget_layout_rejects_bool_coords() -> None:
+    # bool is an int subclass in Python — must be filtered explicitly.
+    with pytest.raises(ValueError):
+        WidgetLayout(x=True, y=0)  # type: ignore[arg-type]
+
+
+def test_mark_silently_drops_setattr_bypass(qt_app, tmp_layout) -> None:  # type: ignore[no-untyped-def]
+    """Belt-and-suspenders: even if a caller forces an out-of-bounds
+    coord onto a frozen instance via object.__setattr__ (e.g. unpickle
+    of a corrupt blob), ``mark()`` re-validates and refuses to persist."""
+    store = layout_module.store()
+    good = WidgetLayout(x=10, y=20)
+    store.mark("k", good)
+    bad = WidgetLayout(x=10, y=20)
+    object.__setattr__(bad, "x", 10**9)  # bypasses __post_init__
+    store.mark("k", bad)
+    assert store.get("k") == good  # bad value rejected
+
+
 def test_uses_correct_monitor_when_multi_screen(qt_app) -> None:  # type: ignore[no-untyped-def]
     primary = _fake_screen(r"\\.\DISPLAY1", QRect(0, 0, 1920, 1080))
     secondary = _fake_screen(r"\\.\DISPLAY2", QRect(1920, 0, 2560, 1440))
