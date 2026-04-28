@@ -82,13 +82,17 @@ class EnemyRow(QFrame):
         )
         self._counters_label.setWordWrap(True)
 
-        # Optional profiling line — appears only when a profile is set.
-        self._profile_label = QLabel("")
+        # Optional profiling line — kept always-visible with empty text
+        # so async profile data arriving doesn't cause a layout shift
+        # (P5: no sudden size changes). When no data, the label still
+        # reserves a single line of vertical space.
+        self._profile_label = QLabel(" ")  # nbsp keeps height = 1 line
         self._profile_label.setStyleSheet(
             f"color: {styles.TEXT_SECONDARY}; font-size: {styles.FS_CAPTION}px;"
+            f" min-height: {styles.FS_CAPTION + 4}px;"
         )
-        self._profile_label.setWordWrap(True)
-        self._profile_label.hide()
+        self._profile_label.setWordWrap(False)
+        self._profile_label.setMinimumHeight(styles.FS_CAPTION + 4)
 
         outer.addLayout(head)
         outer.addWidget(self._counters_label)
@@ -102,8 +106,7 @@ class EnemyRow(QFrame):
         self._update_role_button_style(role="", overridden=False)
         self._counters_label.setText("")
         self._icon_label.clear()
-        self._profile_label.setText("")
-        self._profile_label.hide()
+        self._profile_label.setText(" ")  # keep reserved space
         self._rank_pill.hide()
 
     def set_profile(self, profile: EnemyProfile | None, *,
@@ -113,9 +116,12 @@ class EnemyRow(QFrame):
         Layout:
           rank pill (in the header, top-right corner)
           stats line below counters: Mains · WR · streak
+
+        The profile label always reserves one line of vertical space so
+        async data arrival doesn't trigger a layout shift (P5).
         """
         if profile is None or not profile.has_data:
-            self._profile_label.hide()
+            self._profile_label.setText(" ")  # keep reserved space
             self._rank_pill.hide()
             return
 
@@ -146,10 +152,9 @@ class EnemyRow(QFrame):
         elif profile.streak <= -3:
             bits.append(f"L{abs(profile.streak)} streak (tilt?)")
         if not bits:
-            self._profile_label.hide()
+            self._profile_label.setText(" ")
             return
         self._profile_label.setText(" · ".join(bits))
-        self._profile_label.show()
 
     def set_data(
         self,

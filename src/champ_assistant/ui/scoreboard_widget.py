@@ -58,6 +58,7 @@ class ScoreboardWidget(FloatingWidget):
         self._ally_kills.setStyleSheet(
             "color: #6BBBFF; font-family: SF Mono, Consolas, monospace;"
             " font-size: 18px; font-weight: 700;"
+            " font-variant-numeric: tabular-nums;"
         )
         self._ally_kills.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
         top.addWidget(self._ally_kills)
@@ -68,6 +69,7 @@ class ScoreboardWidget(FloatingWidget):
             f"color: {styles.TEXT_PRIMARY};"
             " font-family: SF Mono, Consolas, monospace;"
             " font-size: 14px; font-weight: 700;"
+            " font-variant-numeric: tabular-nums;"
         )
         top.addWidget(self._gold_delta, 1)
 
@@ -75,6 +77,7 @@ class ScoreboardWidget(FloatingWidget):
         self._enemy_kills.setStyleSheet(
             "color: #FF6B6B; font-family: SF Mono, Consolas, monospace;"
             " font-size: 18px; font-weight: 700;"
+            " font-variant-numeric: tabular-nums;"
         )
         self._enemy_kills.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
         top.addWidget(self._enemy_kills)
@@ -96,6 +99,7 @@ class ScoreboardWidget(FloatingWidget):
         self._game_time.setStyleSheet(
             f"color: {styles.TEXT_MUTED};"
             " font-family: SF Mono, Consolas, monospace; font-size: 11px;"
+            " font-variant-numeric: tabular-nums;"
         )
         bottom.addWidget(self._game_time)
 
@@ -113,7 +117,7 @@ class ScoreboardWidget(FloatingWidget):
         if snapshot is None or snapshot.ally_aggregate is None or snapshot.enemy_aggregate is None:
             self.hide()
             return
-        self.show()
+        self.fade_appear()
         ally = snapshot.ally_aggregate
         enemy = snapshot.enemy_aggregate
 

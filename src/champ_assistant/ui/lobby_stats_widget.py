@@ -179,7 +179,7 @@ class LobbyStatsWidget(FloatingWidget):
             self.hide()
             return
 
-        self.show()
+        self.fade_appear()
         their_team = view.session.their_team
         for i, row in enumerate(self._rows):
             if i >= len(their_team):

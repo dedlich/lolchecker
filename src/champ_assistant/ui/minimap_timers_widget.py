@@ -179,7 +179,7 @@ class MinimapTimersWidget(FloatingWidget):
         if snapshot is None:
             self.hide()
             return
-        self.show()
+        self.fade_appear()
         self._latest_game_time = snapshot.game_time
         by_name = {o.name: o for o in snapshot.objectives}
         for name, cell in self._cells.items():
@@ -213,16 +213,7 @@ class MinimapTimersWidget(FloatingWidget):
         base = (
             "font-family: SF Mono, Consolas, monospace;"
             " font-size: 12px; font-weight: 700;"
+            " font-variant-numeric: tabular-nums;"  # P2: stable digit width
         )
-        if obj is None:
-            return f"color: {styles.TEXT_DISABLED}; {base}"
-        rem = obj.remaining(game_time)
-        if rem is None:
-            return f"color: {styles.TEXT_DISABLED}; {base}"
-        if rem <= 0:
-            return f"color: {styles.SUCCESS}; {base}"
-        if rem <= 30:
-            return f"color: {styles.WARNING}; {base}"
-        if rem <= 60:
-            return f"color: {styles.ACCENT}; {base}"
-        return f"color: {styles.TEXT_PRIMARY}; {base}"
+        rem = obj.remaining(game_time) if obj is not None else None
+        return f"color: {styles.time_state_color(rem)}; {base}"

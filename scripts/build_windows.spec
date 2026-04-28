@@ -81,6 +81,7 @@ a = Analysis(
         "champ_assistant.ui.objective_panel",
         "champ_assistant.ui.summoner_tracker",
         "champ_assistant.ui.badges",
+        "champ_assistant.ui.anim",
         "champ_assistant.lcda",
         "champ_assistant.lcda.client",
         "champ_assistant.lcda.objectives",

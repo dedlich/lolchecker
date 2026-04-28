@@ -90,6 +90,31 @@ RADIUS          = 8
 RADIUS_LARGE    = 12
 
 # --------------------------------------------------------------------------
+# Padding/margin scale — explicit (top, right, bottom, left) tuples.
+# Use these instead of inline magic numbers so a sweep audit verifies
+# every widget paints to the same rhythm.
+# --------------------------------------------------------------------------
+PAD_ROW_TIGHT   = (6, 8, 6, 8)     # compact rows (camp buttons, mini lists)
+PAD_ROW         = (7, 10, 7, 10)   # standard rows (objective, summoner, lobby)
+PAD_PANEL       = (10, 12, 10, 12) # outer panel padding
+PAD_DIALOG      = (18, 20, 18, 20) # settings dialog
+
+# --------------------------------------------------------------------------
+# Shadow profiles — paired with QGraphicsDropShadowEffect. Subtle by
+# default; see the spec ("Avoid heavy glow effects").
+# --------------------------------------------------------------------------
+SHADOW_FLOAT    = {"blur": 22, "x": 0, "y": 3, "alpha": 160}  # floating widgets
+SHADOW_PANEL    = {"blur": 12, "x": 0, "y": 2, "alpha": 90}   # nested panels (rare)
+
+# --------------------------------------------------------------------------
+# Animation timing — single source so every fade/transition uses the
+# same cadence (spec: 150-200 ms).
+# --------------------------------------------------------------------------
+ANIM_FAST_MS    = 120
+ANIM_DEFAULT_MS = 180
+ANIM_SLOW_MS    = 240
+
+# --------------------------------------------------------------------------
 # Tier name -> color (used by widgets that show champion/pick tiers)
 # --------------------------------------------------------------------------
 TIER_COLORS: dict[str, str] = {
@@ -110,6 +135,28 @@ def cooldown_color(fraction_remaining: float) -> str:
     if fraction_remaining > 0.2:
         return CD_WARM
     return CD_COOL
+
+
+def time_state_color(remaining_seconds: float | None) -> str:
+    """Standard color ramp for objective/spawn timers across the whole UI.
+
+    None / >60s → primary (calm / informational)
+    ≤60s        → accent  (heads-up)
+    ≤30s        → warning (urgent)
+    ≤0s         → success (UP / spawned)
+
+    Centralized here so every widget that displays a countdown (objectives,
+    minimap-timers, scoreboard) paints with the same semantics.
+    """
+    if remaining_seconds is None:
+        return TEXT_DISABLED
+    if remaining_seconds <= 0:
+        return SUCCESS
+    if remaining_seconds <= 30:
+        return WARNING
+    if remaining_seconds <= 60:
+        return ACCENT
+    return TEXT_PRIMARY
 
 
 def global_stylesheet() -> str:

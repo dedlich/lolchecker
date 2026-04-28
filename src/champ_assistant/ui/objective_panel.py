@@ -89,15 +89,8 @@ class _ObjectiveRow(QFrame):
 
     @staticmethod
     def _timer_color(obj: ObjectiveTimer, rem: float | None) -> str:
-        if rem is None:
-            return styles.TEXT_DISABLED
-        if rem <= 0:
-            return styles.SUCCESS  # UP — green
-        if rem <= 30:
-            return styles.WARNING
-        if rem <= 60:
-            return styles.ACCENT
-        return styles.TEXT_PRIMARY
+        # Single shared ramp across every countdown in the app.
+        return styles.time_state_color(rem)
 
     @staticmethod
     def _detail(obj: ObjectiveTimer) -> str:

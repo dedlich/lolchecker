@@ -56,12 +56,42 @@ class FloatingWidget(QFrame):
         self._drag_origin: QPoint | None = None
         self._load_position()
         FloatingWidget._instances.append(self)
+        # Track whether the widget was shown at least once this session so
+        # the fade-in animation only fires on the first reveal — not on
+        # every snapshot tick.
+        self._has_appeared = False
 
     def __del__(self) -> None:  # noqa: D401
         try:
             FloatingWidget._instances.remove(self)
         except ValueError:
             pass
+
+    # -- show/hide with fade ---------------------------------------------
+
+    def fade_appear(self) -> None:
+        """Show the widget with a subtle 180 ms fade. Only animates on
+        the first appearance of a session — subsequent updates are
+        instant so the timer numbers don't visibly settle."""
+        if self._has_appeared and self.isVisible():
+            return
+        self._has_appeared = True
+        # Drop-shadow conflicts with QGraphicsOpacityEffect (only one
+        # graphics effect per widget). For the fade we temporarily swap
+        # the shadow out, then restore it after the animation finishes.
+        from .anim import fade_in
+        anim = fade_in(self, duration_ms=180)
+        anim.finished.connect(self._restore_shadow)
+
+    def _restore_shadow(self) -> None:
+        from PyQt6.QtGui import QColor
+        from PyQt6.QtWidgets import QGraphicsDropShadowEffect
+        from . import styles
+        shadow = QGraphicsDropShadowEffect(self)
+        shadow.setBlurRadius(styles.SHADOW_FLOAT["blur"])
+        shadow.setOffset(styles.SHADOW_FLOAT["x"], styles.SHADOW_FLOAT["y"])
+        shadow.setColor(QColor(0, 0, 0, styles.SHADOW_FLOAT["alpha"]))
+        self.setGraphicsEffect(shadow)
 
     # -- pass-through toggle (called via tray + right-click) -------------
 
