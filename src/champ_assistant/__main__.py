@@ -35,6 +35,7 @@ from champ_assistant.data.models import BuildLibrary, Champion
 from champ_assistant.data.runtime_counters import RuntimeCounterStore
 from champ_assistant.lcu.sources import FixtureLcuSource, LcuSource, RealLcuSource
 from champ_assistant.lifecycle import LifecycleManager
+from champ_assistant.logging_setup import install_tag_filter, make_formatter
 from champ_assistant.safety import CrashHandler
 from champ_assistant.ui.overlay import MainOverlay
 
@@ -879,12 +880,8 @@ def _setup_file_logger(level: int = logging.INFO) -> Path:
         backupCount=2,
         encoding="utf-8",
     )
-    handler.setFormatter(
-        logging.Formatter(
-            "%(asctime)s %(levelname)-8s %(name)s: %(message)s",
-            datefmt="%Y-%m-%d %H:%M:%S",
-        )
-    )
+    handler.setFormatter(make_formatter())
+    install_tag_filter(handler)
     handler.setLevel(level)
 
     root = logging.getLogger()
@@ -927,10 +924,23 @@ def main(argv: list[str] | None = None) -> int:
 
     _load_dotenv_files()
 
-    logging.basicConfig(
-        level=args.log_level,
-        format="%(asctime)s %(levelname)s %(name)s: %(message)s",
-    )
+    # Install tagged formatter on the default stderr handler. We can't
+    # rely on logging.basicConfig's `format=` because the stamped
+    # ``subsystem`` field comes from a per-handler Filter, not the
+    # formatter alone — so we configure the root + stderr handler
+    # explicitly here.
+    root = logging.getLogger()
+    root.setLevel(args.log_level)
+    if not any(isinstance(h, logging.StreamHandler) for h in root.handlers):
+        stderr = logging.StreamHandler()
+        stderr.setFormatter(make_formatter())
+        install_tag_filter(stderr)
+        root.addHandler(stderr)
+    else:
+        for h in root.handlers:
+            if isinstance(h, logging.StreamHandler):
+                h.setFormatter(make_formatter())
+                install_tag_filter(h)
     log_file = _setup_file_logger()
     logging.getLogger(__name__).info("startup log_file=%s args=%r", log_file, vars(args))
 

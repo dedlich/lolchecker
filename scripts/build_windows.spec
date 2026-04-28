@@ -73,6 +73,8 @@ a = Analysis(
         "champ_assistant.hotkey_service",
         "champ_assistant.hotkey_config",
         "champ_assistant.layout",
+        "champ_assistant.lifecycle",
+        "champ_assistant.logging_setup",
         "champ_assistant.ui.hotkey_capture",
         "dotenv",
         "champ_assistant.ui",
