@@ -1,0 +1,79 @@
+{
+  "children": [
+    {
+      "children": [],
+      "class": "QLabel",
+      "fixed_size": null,
+      "layout": null,
+      "objectName": "",
+      "stylesheet": "color: #6BBBFF; font-family: SF Mono, Menlo, Consolas, monospace; font-size: 18px; font-weight: 700;",
+      "text": "0",
+      "visible": true
+    },
+    {
+      "children": [],
+      "class": "QLabel",
+      "fixed_size": null,
+      "layout": null,
+      "objectName": "",
+      "stylesheet": "color: #ECEEF1; font-family: SF Mono, Menlo, Consolas, monospace; font-size: 14px; font-weight: 700;",
+      "text": "<span style='color:#7A848F'>0</span>  <span style='color:#7A848F; font-weight:800'>\u00b7 0</span>  <span style='color:#7A848\u2026",
+      "visible": true
+    },
+    {
+      "children": [],
+      "class": "QLabel",
+      "fixed_size": null,
+      "layout": null,
+      "objectName": "",
+      "stylesheet": "color: #FF6B6B; font-family: SF Mono, Menlo, Consolas, monospace; font-size: 18px; font-weight: 700;",
+      "text": "0",
+      "visible": true
+    },
+    {
+      "children": [],
+      "class": "QLabel",
+      "fixed_size": null,
+      "layout": null,
+      "objectName": "",
+      "stylesheet": "color: #B6BCC4; font-size: 11px;",
+      "text": "",
+      "visible": true
+    },
+    {
+      "children": [],
+      "class": "QLabel",
+      "fixed_size": null,
+      "layout": null,
+      "objectName": "",
+      "stylesheet": "color: #7A848F; font-family: SF Mono, Menlo, Consolas, monospace; font-size: 11px;",
+      "text": "27:00",
+      "visible": true
+    },
+    {
+      "children": [],
+      "class": "QLabel",
+      "fixed_size": null,
+      "layout": null,
+      "objectName": "",
+      "stylesheet": "color: #B6BCC4; font-size: 11px;",
+      "text": "",
+      "visible": true
+    }
+  ],
+  "class": "ScoreboardWidget",
+  "fixed_size": null,
+  "layout": {
+    "margins": [
+      10,
+      6,
+      10,
+      6
+    ],
+    "spacing": 2,
+    "type": "QVBoxLayout"
+  },
+  "objectName": "",
+  "stylesheet": "QFrame[panel='true'] { background: qlineargradient(x1:0, y1:0, x2:0, y2:1,  stop:0 rgba(20, 26, 34, 195), stop:1 rgba(10, 14, 20, 195)); border: 1px solid rgba(60, 70, 85, 180); border-radius: 8px; }",
+  "visible": true
+}

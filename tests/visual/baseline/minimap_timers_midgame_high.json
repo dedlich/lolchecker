@@ -1,0 +1,140 @@
+{
+  "children": [
+    {
+      "children": [],
+      "class": "QLabel",
+      "fixed_size": null,
+      "layout": null,
+      "objectName": "",
+      "stylesheet": "color: #ECEEF1; font-family: SF Mono, Menlo, Consolas, monospace; font-size: 12px; font-weight: 700;",
+      "text": "",
+      "visible": true
+    },
+    {
+      "children": [],
+      "class": "QLabel",
+      "fixed_size": null,
+      "layout": null,
+      "objectName": "",
+      "stylesheet": "color: #ECEEF1; font-family: SF Mono, Menlo, Consolas, monospace; font-size: 12px; font-weight: 700;",
+      "text": "",
+      "visible": true
+    },
+    {
+      "children": [],
+      "class": "QLabel",
+      "fixed_size": null,
+      "layout": null,
+      "objectName": "",
+      "stylesheet": "color: #ECEEF1; font-family: SF Mono, Menlo, Consolas, monospace; font-size: 12px; font-weight: 700;",
+      "text": "",
+      "visible": true
+    },
+    {
+      "children": [],
+      "class": "_CampCell",
+      "fixed_size": [
+        42,
+        30
+      ],
+      "layout": null,
+      "objectName": "",
+      "stylesheet": "QLabel { background: rgba(91, 168, 255, 60); color: rgba(236, 238, 241, 255); border: 1px solid rgba(91, 168, 255, 255); border-radius: 8px; font-family: SF Mono, Menlo, Consolas, monospace; font-size: 11px; font-weight: 700; }",
+      "text": "1:30",
+      "visible": true
+    },
+    {
+      "children": [],
+      "class": "_CampCell",
+      "fixed_size": [
+        42,
+        30
+      ],
+      "layout": null,
+      "objectName": "",
+      "stylesheet": "QLabel { background: rgba(91, 168, 255, 60); color: rgba(236, 238, 241, 255); border: 1px solid rgba(91, 168, 255, 255); border-radius: 8px; font-family: SF Mono, Menlo, Consolas, monospace; font-size: 11px; font-weight: 700; }",
+      "text": "1:30",
+      "visible": true
+    },
+    {
+      "children": [],
+      "class": "_CampCell",
+      "fixed_size": [
+        42,
+        30
+      ],
+      "layout": null,
+      "objectName": "",
+      "stylesheet": "QLabel { background: rgba(91, 168, 255, 60); color: rgba(255, 184, 74, 255); border: 1px solid rgba(91, 168, 255, 255); border-radius: 8px; font-family: SF Mono, Menlo, Consolas, monospace; font-size: 11px; font-weight: 700; }",
+      "text": "0:30",
+      "visible": true
+    },
+    {
+      "children": [],
+      "class": "_CampCell",
+      "fixed_size": [
+        42,
+        30
+      ],
+      "layout": null,
+      "objectName": "",
+      "stylesheet": "QLabel { background: rgba(91, 168, 255, 60); color: rgba(255, 184, 74, 255); border: 1px solid rgba(91, 168, 255, 255); border-radius: 8px; font-family: SF Mono, Menlo, Consolas, monospace; font-size: 11px; font-weight: 700; }",
+      "text": "0:30",
+      "visible": true
+    },
+    {
+      "children": [],
+      "class": "_CampCell",
+      "fixed_size": [
+        42,
+        30
+      ],
+      "layout": null,
+      "objectName": "",
+      "stylesheet": "QLabel { background: rgba(91, 168, 255, 60); color: rgba(255, 184, 74, 255); border: 1px solid rgba(91, 168, 255, 255); border-radius: 8px; font-family: SF Mono, Menlo, Consolas, monospace; font-size: 11px; font-weight: 700; }",
+      "text": "0:30",
+      "visible": true
+    },
+    {
+      "children": [],
+      "class": "_CampCell",
+      "fixed_size": [
+        42,
+        30
+      ],
+      "layout": null,
+      "objectName": "",
+      "stylesheet": "QLabel { background: rgba(91, 168, 255, 60); color: rgba(255, 184, 74, 255); border: 1px solid rgba(91, 168, 255, 255); border-radius: 8px; font-family: SF Mono, Menlo, Consolas, monospace; font-size: 11px; font-weight: 700; }",
+      "text": "0:30",
+      "visible": true
+    },
+    {
+      "children": [],
+      "class": "_CampCell",
+      "fixed_size": [
+        42,
+        30
+      ],
+      "layout": null,
+      "objectName": "",
+      "stylesheet": "QLabel { background: rgba(91, 168, 255, 60); color: rgba(91, 168, 255, 255); border: 1px solid rgba(91, 168, 255, 255); border-radius: 8px; font-family: SF Mono, Menlo, Consolas, monospace; font-size: 11px; font-weight: 700; }",
+      "text": "0:45",
+      "visible": true
+    }
+  ],
+  "class": "MinimapTimersWidget",
+  "fixed_size": null,
+  "layout": {
+    "margins": [
+      8,
+      4,
+      8,
+      4
+    ],
+    "spacing": 2,
+    "type": "QVBoxLayout"
+  },
+  "objectName": "",
+  "stylesheet": "QFrame[panel='true'] { background: qlineargradient(x1:0, y1:0, x2:0, y2:1,  stop:0 rgba(20, 26, 34, 195), stop:1 rgba(10, 14, 20, 195)); border: 1px solid rgba(60, 70, 85, 180); border-radius: 8px; }",
+  "visible": true
+}
