@@ -37,6 +37,12 @@ class OverlayState:
     show_minimap_timers: bool = True
     show_lobby_stats: bool = True
     floating_positions: dict | None = None  # widget-key -> [x, y]
+    # First-launch onboarding banner — flips to True the first time the
+    # user dismisses it (or skips). Default False = show on next start.
+    onboarding_seen: bool = False
+    # Diagnostics logging (CPU/mem/FPS every 10s). Default on so existing
+    # users keep their behavior; toggleable via Settings → Diagnostics.
+    diagnostics_enabled: bool = True
 
 
 def _config_dir() -> Path:
@@ -67,7 +73,8 @@ def load() -> OverlayState:
                   "always_on_top", "frameless", "collapsed",
                   "opacity", "show_objectives", "show_summoners",
                   "show_spikes", "show_scoreboard", "show_minimap_timers",
-                  "show_lobby_stats", "floating_positions"):
+                  "show_lobby_stats", "floating_positions",
+                  "onboarding_seen", "diagnostics_enabled"):
         if field in data:
             setattr(state, field, data[field])
     return state

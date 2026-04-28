@@ -137,6 +137,18 @@ class MainOverlay(QMainWindow):
         )
         body_layout.setSpacing(styles.SPACING_GRID)
 
+        # First-launch onboarding banner — created hidden, shown only on
+        # first run via show_onboarding_if_needed(). Sits at the top of
+        # the body so it's the first thing the user sees.
+        from .onboarding import OnboardingBanner
+        from .. import overlay_config as _ovc
+        def _on_onboarding_dismissed() -> None:
+            state = _ovc.load()
+            state.onboarding_seen = True
+            _ovc.save(state)
+        self._onboarding = OnboardingBanner(_on_onboarding_dismissed, parent=self._body)
+        body_layout.addWidget(self._onboarding)
+
         # Champ-select section: enemy + picks side-by-side. The container
         # holds them in a horizontal layout so users get more horizontal
         # breathing room for the long rune/item lines on the pick cards.
@@ -277,6 +289,14 @@ class MainOverlay(QMainWindow):
         self._champion_icons.update(icons)
         if self._last_view is not None:
             self.update_view(self._last_view)
+
+    def show_onboarding_if_needed(self) -> None:
+        """Surface the welcome banner only on the user's very first run.
+        Read from overlay_config so the decision lives next to the rest
+        of the persisted UI state."""
+        from .. import overlay_config as _ovc
+        state = _ovc.load()
+        self._onboarding.maybe_show(already_seen=state.onboarding_seen)
 
     def update_view(self, view: SessionView) -> None:
         self._last_view = view

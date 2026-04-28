@@ -50,6 +50,7 @@ class ConnectionStatusBar(QStatusBar):
         self._info_label.setObjectName("statusInfoLabel")
         self.addWidget(self._info_label, 1)
 
+        # Update install button (accent gradient).
         self._update_button = QPushButton("Jetzt installieren")
         self._update_button.setObjectName("updateInstallButton")
         self._update_button.setStyleSheet(
@@ -66,6 +67,23 @@ class ConnectionStatusBar(QStatusBar):
         )
         self._update_button.hide()
         self.addPermanentWidget(self._update_button)
+
+        # "Later" button — flat / muted next to the install button so it
+        # never out-competes Install visually but is always available so
+        # the user has a clean dismiss path during gameplay.
+        self._snooze_button = QPushButton("Später")
+        self._snooze_button.setObjectName("updateSnoozeButton")
+        self._snooze_button.setStyleSheet(
+            f"QPushButton {{ background: transparent;"
+            f" color: {styles.TEXT_MUTED};"
+            f" border: 1px solid {styles.BORDER};"
+            f" border-radius: 6px; padding: 3px 10px;"
+            f" font-size: {styles.FS_LABEL}px; }}"
+            f" QPushButton:hover {{ background: {styles.BG_TERTIARY};"
+            f" color: {styles.TEXT_PRIMARY}; }}"
+        )
+        self._snooze_button.hide()
+        self.addPermanentWidget(self._snooze_button)
 
         # New: connection-state dot to the right of the text label.
         from .badges import StateDot
@@ -99,8 +117,18 @@ class ConnectionStatusBar(QStatusBar):
         self._info_label.setText("")
         self._info_label.setStyleSheet("")
 
-    def show_update_available(self, tag: str, on_click: Callable[[], None]) -> None:
-        """Show 'Update X verfügbar' + an Install button that calls ``on_click``."""
+    def show_update_available(
+        self,
+        tag: str,
+        on_click: Callable[[], None],
+        on_snooze: Callable[[], None] | None = None,
+    ) -> None:
+        """Show 'Update X verfügbar' + Install + Later buttons.
+
+        The Later button persists a snooze so the user isn't pestered
+        for the same tag for 24h. Omitting ``on_snooze`` hides the
+        button (e.g. for in-progress / retry states where snoozing
+        wouldn't make sense)."""
         self.set_info(f"Update {tag} verfügbar", color=styles.INFO)
         with contextlib.suppress(TypeError):
             self._update_button.clicked.disconnect()
@@ -108,12 +136,27 @@ class ConnectionStatusBar(QStatusBar):
         self._update_button.setEnabled(True)
         self._update_button.setText("Jetzt installieren")
         self._update_button.show()
+        if on_snooze is not None:
+            with contextlib.suppress(TypeError):
+                self._snooze_button.clicked.disconnect()
+            self._snooze_button.clicked.connect(on_snooze)
+            self._snooze_button.show()
+        else:
+            self._snooze_button.hide()
+
+    def dismiss_update(self) -> None:
+        """Hide both update buttons + clear the info slot. Called after
+        the user clicks Later or after a successful Install handoff."""
+        self._update_button.hide()
+        self._snooze_button.hide()
+        self.clear_info()
 
     def set_update_progress(self, message: str) -> None:
         """Surface live progress while the update is being installed."""
         self.set_info(message, color=styles.INFO)
         self._update_button.setEnabled(False)
         self._update_button.setText("Lädt…")
+        self._snooze_button.hide()  # snoozing mid-download makes no sense
 
     def update_failed(self, message: str) -> None:
         self.set_info(message, color=styles.WARNING)

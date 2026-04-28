@@ -8,6 +8,7 @@ from __future__ import annotations
 from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtGui import QGuiApplication
 from PyQt6.QtWidgets import (
+    QCheckBox,
     QComboBox,
     QDialog,
     QDialogButtonBox,
@@ -19,7 +20,7 @@ from PyQt6.QtWidgets import (
     QVBoxLayout,
 )
 
-from .. import hotkey_config, secrets
+from .. import hotkey_config, overlay_config, secrets
 from ..profiling.riot_api import PLATFORM_HOSTS
 from . import styles
 
@@ -133,6 +134,72 @@ class SettingsDialog(QDialog):
         outer.addWidget(self._llm_help)
         self._llm_provider.currentIndexChanged.connect(self._refresh_llm_help)
         self._refresh_llm_help()
+
+        # -- Display ------------------------------------------------------
+        # Consolidates the floating-widget visibility flags + the layout
+        # reset action (previously only reachable via Ctrl+Alt+R) + the
+        # diagnostics toggle. One section, one source of truth.
+        display_section = QLabel("Display")
+        display_section.setStyleSheet(
+            f"color: {styles.TEXT_MUTED}; font-size: {styles.FS_LABEL}px;"
+            " font-weight: 700; text-transform: uppercase; letter-spacing: 1.2px;"
+            " padding-top: 8px;"
+        )
+        outer.addWidget(display_section)
+
+        ovc_state = overlay_config.load()
+        self._display_state = ovc_state  # held for save
+
+        self._cb_scoreboard = _styled_checkbox(
+            "Scoreboard-Widget anzeigen", ovc_state.show_scoreboard,
+        )
+        self._cb_minimap = _styled_checkbox(
+            "Minimap-Timer-Widget anzeigen", ovc_state.show_minimap_timers,
+        )
+        self._cb_lobby = _styled_checkbox(
+            "Lobby-Stats-Widget anzeigen", ovc_state.show_lobby_stats,
+        )
+        self._cb_diagnostics = _styled_checkbox(
+            "Diagnose-Logging (CPU / Speicher / FPS alle 10s)",
+            ovc_state.diagnostics_enabled,
+        )
+        for cb in (self._cb_scoreboard, self._cb_minimap, self._cb_lobby, self._cb_diagnostics):
+            outer.addWidget(cb)
+
+        reset_row = QHBoxLayout()
+        reset_row.setSpacing(10)
+        reset_label = QLabel("Widget-Layout")
+        reset_label.setStyleSheet(
+            f"color: {styles.TEXT_PRIMARY}; font-size: {styles.FS_BODY}px;"
+        )
+        reset_row.addWidget(reset_label, 1)
+
+        reset_btn = QPushButton("Auf Standard zurücksetzen")
+        reset_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        reset_btn.setStyleSheet(
+            f"QPushButton {{ background-color: {styles.BG_TERTIARY};"
+            f" color: {styles.TEXT_SECONDARY};"
+            f" border: 1px solid {styles.BORDER};"
+            f" border-radius: {styles.RADIUS_SMALL}px;"
+            f" padding: 5px 14px; font-size: {styles.FS_LABEL}px; font-weight: 600; }}"
+            f" QPushButton:hover {{ border-color: {styles.WARNING};"
+            f" color: {styles.TEXT_PRIMARY}; }}"
+        )
+        reset_btn.clicked.connect(self._on_reset_layout)
+        reset_row.addWidget(reset_btn)
+        outer.addLayout(reset_row)
+
+        # Note + restart hint — visibility/diagnostics changes need a
+        # restart since both are read at startup. Honest is better than
+        # silently doing nothing or pretending we hot-reload.
+        display_hint = QLabel(
+            "Änderungen an Widgets / Diagnose werden beim nächsten Start aktiv."
+        )
+        display_hint.setStyleSheet(
+            f"color: {styles.TEXT_MUTED}; font-size: 11px;"
+        )
+        display_hint.setWordWrap(True)
+        outer.addWidget(display_hint)
 
         # -- Hotkeys ------------------------------------------------------
         hk_section = QLabel("Global Hotkeys")
@@ -276,6 +343,21 @@ class SettingsDialog(QDialog):
             " mitgelieferten Counter-Daten."
         )
 
+    def _on_reset_layout(self) -> None:
+        """Wipe persisted layout + snap any live floating widget back to
+        its default geometry. Same effect as the Ctrl+Alt+R hotkey, just
+        also reachable from this dialog so users who never learned the
+        hotkey can recover from a misplaced drag."""
+        from .. import layout as _layout
+        from .floating_widget import FloatingWidget
+
+        _layout.store().reset()
+        for widget in FloatingWidget._instances:
+            x, y = widget.DEFAULT_POS
+            w, h = widget.DEFAULT_SIZE
+            widget.setGeometry(x, y, w, h)
+            widget.show()
+
     def _on_save(self) -> None:
         secrets.set_riot_api_key(self._riot_key.text().strip())
         secrets.set_riot_region(self._riot_region.currentText())
@@ -285,8 +367,36 @@ class SettingsDialog(QDialog):
         # env-var users don't get surprised.
         if self._llm_provider.currentData() == "groq":
             secrets.set_groq_api_key(self._llm_key.text().strip())
+
+        # Persist the Display checkboxes — read at startup by __main__,
+        # so changes apply on next launch (we surface that fact in the
+        # dialog's hint text rather than fake hot-reload).
+        self._display_state.show_scoreboard = self._cb_scoreboard.isChecked()
+        self._display_state.show_minimap_timers = self._cb_minimap.isChecked()
+        self._display_state.show_lobby_stats = self._cb_lobby.isChecked()
+        self._display_state.diagnostics_enabled = self._cb_diagnostics.isChecked()
+        overlay_config.save(self._display_state)
+
         self.settings_changed.emit()
         self.accept()
+
+
+def _styled_checkbox(label: str, checked: bool) -> QCheckBox:
+    cb = QCheckBox(label)
+    cb.setChecked(checked)
+    cb.setCursor(Qt.CursorShape.PointingHandCursor)
+    cb.setStyleSheet(
+        f"QCheckBox {{ color: {styles.TEXT_PRIMARY};"
+        f" font-size: {styles.FS_BODY}px;"
+        f" spacing: 8px; padding: 2px 0; }}"
+        f" QCheckBox::indicator {{ width: 16px; height: 16px;"
+        f" border: 1px solid {styles.BORDER};"
+        f" border-radius: 3px; background-color: {styles.BG_TERTIARY}; }}"
+        f" QCheckBox::indicator:hover {{ border-color: {styles.ACCENT}; }}"
+        f" QCheckBox::indicator:checked {{ background-color: {styles.ACCENT};"
+        f" border-color: {styles.ACCENT}; }}"
+    )
+    return cb
 
 
 def open_settings(parent=None, hotkey_service=None) -> bool:  # type: ignore[no-untyped-def]

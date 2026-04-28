@@ -382,6 +382,10 @@ def _run_with_ui(args: argparse.Namespace) -> int:
     overlay.settings_changed.connect(_on_settings_changed)
 
     overlay.show()
+    # Surface the first-launch welcome banner once the window is up so
+    # the fade-in lands on a settled layout. No-op on every subsequent
+    # launch (state lives in overlay_config.onboarding_seen).
+    overlay.show_onboarding_if_needed()
 
     crash = CrashHandler()
     # Surface any swallowed exception in the info slot so silent failures
@@ -459,7 +463,10 @@ def _run_with_ui(args: argparse.Namespace) -> int:
     # Each start is isolated — a misbehaving subsystem must not block the
     # rest of init (subsystem isolation, P2).
     _safe_start("scheduler", scheduler.start)
-    _safe_start("diagnostics", diagnostics.start)
+    if persisted.diagnostics_enabled:
+        _safe_start("diagnostics", diagnostics.start)
+    else:
+        logging.getLogger(__name__).info("diagnostics disabled via settings")
 
     # ------------------------------------------------------------------
     # Global hotkeys (Win32 RegisterHotKey via dedicated thread).
@@ -744,7 +751,7 @@ async def _check_and_notify_update(
     quits the app during the 5s startup window before the network probe
     has even returned.
     """
-    from champ_assistant import __version__
+    from champ_assistant import __version__, update_snooze
     from champ_assistant.update_check import (
         check_for_update,
         install_dir,
@@ -768,6 +775,13 @@ async def _check_and_notify_update(
     if info is None or lifecycle.is_shutting_down:
         return
     log = logging.getLogger(__name__)
+
+    # Honor the user's "Later" choice: same tag stays suppressed until
+    # the snooze expires; a strictly-newer tag always surfaces.
+    snooze = update_snooze.load()
+    if snooze.is_active_for(info["tag"]):
+        log.info("update_available tag=%s — snoozed until %.0f", info["tag"], snooze.until_ts)
+        return
     log.info("update_available tag=%s url=%s", info["tag"], info["url"])
 
     target = install_dir()
@@ -794,12 +808,20 @@ async def _check_and_notify_update(
         if lifecycle.is_shutting_down:
             log.info("update click ignored — app is shutting down")
             return
+        # Clear any previous snooze — the user explicitly chose to install,
+        # so a stale snooze for the same tag must not block a retry path.
+        update_snooze.clear()
         overlay._update_in_progress = True  # type: ignore[attr-defined]
         overlay._update_task = asyncio.ensure_future(  # type: ignore[attr-defined]
             _run_update(overlay, info["tag"], target, lifecycle)
         )
 
-    overlay.status_bar.show_update_available(info["tag"], on_click)
+    def on_snooze() -> None:
+        update_snooze.snooze_tag(info["tag"])
+        overlay.status_bar.dismiss_update()
+        log.info("update_snoozed tag=%s", info["tag"])
+
+    overlay.status_bar.show_update_available(info["tag"], on_click, on_snooze)
 
 
 async def _run_update(

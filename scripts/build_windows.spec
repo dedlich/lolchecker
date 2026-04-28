@@ -66,6 +66,8 @@ a = Analysis(
         "champ_assistant.ui.ban_panel",
         "champ_assistant.data.runtime_counters",
         "champ_assistant.update_check",
+        "champ_assistant.update_snooze",
+        "champ_assistant.ui.onboarding",
         "champ_assistant.state_store",
         "champ_assistant.render_scheduler",
         "champ_assistant.window_flags",
