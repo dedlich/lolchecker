@@ -65,6 +65,7 @@ a = Analysis(
         "champ_assistant.advisor.ban_suggestions",
         "champ_assistant.ui.ban_panel",
         "champ_assistant.data.runtime_counters",
+        "champ_assistant.telemetry",
         "champ_assistant.update_check",
         "champ_assistant.update_snooze",
         "champ_assistant.ui.onboarding",

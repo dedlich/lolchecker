@@ -265,6 +265,18 @@ def _run_with_ui(args: argparse.Namespace) -> int:
     # than user clicks. Subscribes to lcda_snapshot updates below.
     from champ_assistant.jungle_timeline import JungleTimelineEngine
     jungle_engine = JungleTimelineEngine()
+
+    # Lightweight telemetry recorder — captures discrete UI/state
+    # transitions to a JSONL file for offline UX analysis. Singleton,
+    # non-blocking on record(), batches disk writes every 5s.
+    from champ_assistant import telemetry as _telemetry
+    telemetry_recorder = _telemetry.recorder()
+    lifecycle.register("telemetry", telemetry_recorder.stop)
+    # Subscribe a band-tracker to the engine so confidence-band flips
+    # surface as discrete events.
+    jungle_engine.subscribe(_telemetry.make_band_tracker())
+    # Build the fight-window detector — fed by the LCDA watcher below.
+    fight_detector = _telemetry.make_fight_window_detector()
     overlay._store = store              # type: ignore[attr-defined]
     overlay._scheduler = scheduler      # type: ignore[attr-defined]
     overlay._diagnostics = diagnostics  # type: ignore[attr-defined]
@@ -387,6 +399,17 @@ def _run_with_ui(args: argparse.Namespace) -> int:
     # launch (state lives in overlay_config.onboarding_seen).
     overlay.show_onboarding_if_needed()
 
+    # Application-level focus tracking — captures gain/loss as the user
+    # alt-tabs between the game and the overlay. Telemetry-only,
+    # no rendering side-effect.
+    def _on_app_state(state) -> None:  # type: ignore[no-untyped-def]
+        gained = state == Qt.ApplicationState.ApplicationActive
+        _telemetry.recorder().record(
+            _telemetry.EV_FOCUS,
+            {"direction": "gain" if gained else "loss"},
+        )
+    qt_app.applicationStateChanged.connect(_on_app_state)
+
     crash = CrashHandler()
     # Surface any swallowed exception in the info slot so silent failures
     # (orchestrator dying, source raising during init, etc.) stay visible
@@ -452,7 +475,25 @@ def _run_with_ui(args: argparse.Namespace) -> int:
             return
         events = list(getattr(snap, "raw_events", []) or [])
         jungle_engine.tick(snap.game_time, events)
+        # Same hook drives the fight-window detector — uses the
+        # cumulative event list, edge-triggered emit on transition.
+        fight_detector(events)
     store.subscribe(_drive_jungle_engine)
+
+    # Phase change telemetry — emit on every phase transition so the
+    # offline summary can derive early/mid/late timing.
+    def _track_phase_changes(old, new) -> None:  # type: ignore[no-untyped-def]
+        if old.phase != new.phase:
+            _telemetry.recorder().record(
+                _telemetry.EV_GAME_PHASE_CHANGE,
+                {"from": old.phase, "to": new.phase, "game_time": new.game_time},
+            )
+        if old.main_visible != new.main_visible:
+            _telemetry.recorder().record(
+                _telemetry.EV_OVERLAY_TOGGLE,
+                {"visible": new.main_visible},
+            )
+    store.subscribe(_track_phase_changes)
 
     lcda_task = loop.create_task(
         _run_lcda_watcher(overlay, floating), name="lcda-watcher"
@@ -467,6 +508,7 @@ def _run_with_ui(args: argparse.Namespace) -> int:
         _safe_start("diagnostics", diagnostics.start)
     else:
         logging.getLogger(__name__).info("diagnostics disabled via settings")
+    _safe_start("telemetry", telemetry_recorder.start)
 
     # ------------------------------------------------------------------
     # Global hotkeys (Win32 RegisterHotKey via dedicated thread).

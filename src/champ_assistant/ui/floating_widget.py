@@ -17,10 +17,11 @@ build their internal layout in ``__init__``.
 from __future__ import annotations
 
 from PyQt6.QtCore import QPoint, Qt
-from PyQt6.QtGui import QColor, QGuiApplication, QMouseEvent
+from PyQt6.QtGui import QColor, QGuiApplication, QHideEvent, QMouseEvent, QShowEvent
 from PyQt6.QtWidgets import QFrame, QGraphicsDropShadowEffect
 
 from .. import layout as layout_module
+from .. import telemetry
 
 
 class FloatingWidget(QFrame):
@@ -66,6 +67,40 @@ class FloatingWidget(QFrame):
             FloatingWidget._instances.remove(self)
         except ValueError:
             pass
+
+    # -- telemetry hooks (override Qt show/hide events) -------------------
+
+    def showEvent(self, event: QShowEvent) -> None:  # type: ignore[override]
+        # Emitted EVERY time the widget transitions to visible — first
+        # time AND subsequent re-shows (e.g. game ends → in-lobby →
+        # next game). ``_has_emitted_first_render`` tracks the
+        # session-wide first-show separately from the existing
+        # ``_has_appeared`` flag (which gates the fade-in animation
+        # and may be set before showEvent ever fires).
+        try:
+            if not getattr(self, "_has_emitted_first_render", False):
+                self._has_emitted_first_render = True
+                telemetry.recorder().record(
+                    telemetry.EV_WIDGET_FIRST_RENDER,
+                    {"widget_id": self.KEY},
+                )
+            telemetry.recorder().record(
+                telemetry.EV_WIDGET_SHOWN,
+                {"widget_id": self.KEY},
+            )
+        except Exception:  # noqa: BLE001 — telemetry must never break UI
+            pass
+        super().showEvent(event)
+
+    def hideEvent(self, event: QHideEvent) -> None:  # type: ignore[override]
+        try:
+            telemetry.recorder().record(
+                telemetry.EV_WIDGET_HIDDEN,
+                {"widget_id": self.KEY},
+            )
+        except Exception:  # noqa: BLE001
+            pass
+        super().hideEvent(event)
 
     # -- show/hide with fade ---------------------------------------------
 
