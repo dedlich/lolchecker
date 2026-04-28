@@ -71,6 +71,8 @@ a = Analysis(
         "champ_assistant.window_flags",
         "champ_assistant.diagnostics",
         "champ_assistant.hotkey_service",
+        "champ_assistant.hotkey_config",
+        "champ_assistant.ui.hotkey_capture",
         "dotenv",
         "champ_assistant.ui",
         "champ_assistant.ui.overlay",

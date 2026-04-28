@@ -401,9 +401,31 @@ def _run_with_ui(args: argparse.Namespace) -> int:
     # ------------------------------------------------------------------
     # Global hotkeys (Win32 RegisterHotKey via dedicated thread).
     # Hotkey -> StateStore.update -> subscriber -> UI side-effect.
+    # User-configurable bindings are loaded from disk; defaults apply if
+    # the config is missing or corrupt.
     # ------------------------------------------------------------------
-    from champ_assistant.hotkey_service import HotkeyService
-    hotkeys = HotkeyService()
+    from champ_assistant import hotkey_config as _hk_cfg
+    from champ_assistant.hotkey_service import (
+        DEFAULT_BINDINGS,
+        HotkeyBinding,
+        HotkeyService,
+    )
+    cfg = _hk_cfg.load()
+    bindings: list[HotkeyBinding] = []
+    for default in DEFAULT_BINDINGS:
+        label = cfg.hotkeys.get(default.name, default.label)
+        parsed = _hk_cfg.parse_combo(label)
+        if parsed is None:
+            # Configured combo is invalid → fall back to default.
+            bindings.append(default)
+            continue
+        mods, vk = parsed
+        bindings.append(HotkeyBinding(
+            name=default.name, modifiers=mods, vk=vk, label=label,
+        ))
+        logger = logging.getLogger(__name__)
+        logger.info("hotkey loaded from config: %s -> %s", default.name, label)
+    hotkeys = HotkeyService(bindings=tuple(bindings))
 
     def _on_hotkey(name: str) -> None:
         cur = store.get()

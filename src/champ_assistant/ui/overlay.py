@@ -532,7 +532,10 @@ class MainOverlay(QMainWindow):
 
     def _open_settings(self) -> None:
         from .settings_dialog import open_settings
-        if open_settings(self):
+        # Pass the hotkey service through if __main__ wired one — lets
+        # the dialog do live re-registration via update_binding.
+        hotkeys = getattr(self, "_hotkeys", None)
+        if open_settings(self, hotkey_service=hotkeys):
             self.settings_changed.emit()
 
     def _on_passthrough_toggled(self, on: bool) -> None:

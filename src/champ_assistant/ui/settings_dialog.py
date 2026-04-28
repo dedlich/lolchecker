@@ -12,12 +12,14 @@ from PyQt6.QtWidgets import (
     QDialog,
     QDialogButtonBox,
     QFormLayout,
+    QHBoxLayout,
     QLabel,
     QLineEdit,
+    QPushButton,
     QVBoxLayout,
 )
 
-from .. import secrets
+from .. import hotkey_config, secrets
 from ..profiling.riot_api import PLATFORM_HOSTS
 from . import styles
 
@@ -27,8 +29,13 @@ class SettingsDialog(QDialog):
 
     settings_changed = pyqtSignal()
 
-    def __init__(self, parent=None) -> None:  # type: ignore[no-untyped-def]
+    def __init__(
+        self,
+        parent=None,  # type: ignore[no-untyped-def]
+        hotkey_service=None,  # type: ignore[no-untyped-def]
+    ) -> None:
         super().__init__(parent)
+        self._hotkey_service = hotkey_service
         self.setWindowTitle("Settings")
         self.setMinimumWidth(460)
         # Inherits styling from the global stylesheet (QLineEdit/QComboBox/
@@ -127,6 +134,52 @@ class SettingsDialog(QDialog):
         self._llm_provider.currentIndexChanged.connect(self._refresh_llm_help)
         self._refresh_llm_help()
 
+        # -- Hotkeys ------------------------------------------------------
+        hk_section = QLabel("Global Hotkeys")
+        hk_section.setStyleSheet(
+            f"color: {styles.TEXT_MUTED}; font-size: {styles.FS_LABEL}px;"
+            " font-weight: 700; text-transform: uppercase; letter-spacing: 1.2px;"
+            " padding-top: 8px;"
+        )
+        outer.addWidget(hk_section)
+
+        # Map of action -> (label, button) so we can update the displayed
+        # combo after a successful re-registration.
+        self._hotkey_buttons: dict[str, QPushButton] = {}
+        for action, display_name in (
+            ("toggle_overlay",  "Toggle overlay"),
+            ("toggle_lock",     "Toggle click-through"),
+            ("reset_positions", "Reset widget positions"),
+        ):
+            row = QHBoxLayout()
+            row.setSpacing(10)
+            label = QLabel(display_name)
+            label.setStyleSheet(
+                f"color: {styles.TEXT_PRIMARY}; font-size: {styles.FS_BODY}px;"
+            )
+            row.addWidget(label, 1)
+
+            current = self._current_hotkey_label(action)
+            btn = QPushButton(current)
+            btn.setCursor(Qt.CursorShape.PointingHandCursor)
+            btn.setMinimumWidth(140)
+            btn.setStyleSheet(
+                f"QPushButton {{ background-color: {styles.BG_TERTIARY};"
+                f" color: {styles.ACCENT};"
+                f" border: 1px solid {styles.BORDER};"
+                f" border-radius: {styles.RADIUS_SMALL}px;"
+                f" padding: 5px 12px; font-family: {styles.FONT_MONO};"
+                f" font-weight: 700; font-size: {styles.FS_LABEL}px; }}"
+                f" QPushButton:hover {{ border-color: {styles.ACCENT};"
+                f" background-color: {styles.BG_ELEVATED}; }}"
+            )
+            btn.clicked.connect(
+                lambda _checked=False, a=action: self._capture_hotkey(a)
+            )
+            self._hotkey_buttons[action] = btn
+            row.addWidget(btn)
+            outer.addLayout(row)
+
         outer.addStretch(1)
 
         # -- Buttons (Save accent, Cancel flat) -------------------------
@@ -161,6 +214,53 @@ class SettingsDialog(QDialog):
             )
         outer.addWidget(buttons)
 
+    def _current_hotkey_label(self, action: str) -> str:
+        """Get the displayed combo for ``action`` from the live service
+        if available, else from the persisted config, else default."""
+        if self._hotkey_service is not None:
+            binding = self._hotkey_service.get_binding(action)
+            if binding is not None:
+                return binding.label
+        cfg = hotkey_config.load()
+        return cfg.hotkeys.get(action, hotkey_config.DEFAULT_HOTKEYS.get(action, ""))
+
+    def _capture_hotkey(self, action: str) -> None:
+        """Open the modal capture dialog, then attempt live re-registration."""
+        from .hotkey_capture import KeyCaptureDialog
+
+        current = self._current_hotkey_label(action)
+        dlg = KeyCaptureDialog(parent=self, current_label=current)
+        if dlg.exec() != QDialog.DialogCode.Accepted:
+            return
+        new_label = dlg.captured_combo()
+        if not new_label or new_label == current:
+            return
+
+        # Persist + live re-register. If registration fails (collision),
+        # surface the message and leave the previous binding alive.
+        if self._hotkey_service is not None:
+            ok, msg = self._hotkey_service.update_binding(action, new_label)
+            if not ok:
+                self._hotkey_buttons[action].setText(current)
+                self._show_hotkey_error(action, msg)
+                return
+        # Mirror to disk so the new combo survives a restart.
+        cfg = hotkey_config.load()
+        cfg.hotkeys[action] = new_label
+        hotkey_config.save(cfg)
+        self._hotkey_buttons[action].setText(new_label)
+
+    def _show_hotkey_error(self, action: str, msg: str) -> None:
+        from PyQt6.QtWidgets import QMessageBox
+        box = QMessageBox(self)
+        box.setIcon(QMessageBox.Icon.Warning)
+        box.setWindowTitle("Hotkey conflict")
+        box.setText(
+            f"Couldn't bind that combo: {msg}.\n\n"
+            "The previous hotkey is still active."
+        )
+        box.exec()
+
     def _refresh_llm_help(self) -> None:
         provider = self._llm_provider.currentData() or "openrouter"
         urls = {
@@ -189,10 +289,10 @@ class SettingsDialog(QDialog):
         self.accept()
 
 
-def open_settings(parent=None) -> bool:  # type: ignore[no-untyped-def]
+def open_settings(parent=None, hotkey_service=None) -> bool:  # type: ignore[no-untyped-def]
     """Helper used by the title bar gear button. Returns True on save."""
     # Center the dialog on the cursor's screen.
-    dlg = SettingsDialog(parent)
+    dlg = SettingsDialog(parent, hotkey_service=hotkey_service)
     screen = QGuiApplication.primaryScreen()
     if screen is not None:
         geo = screen.availableGeometry()
