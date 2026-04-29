@@ -283,6 +283,15 @@ def _run_with_ui(args: argparse.Namespace) -> int:
     diagnostics.attach_scheduler(scheduler)
     diagnostics.attach_store(store)
 
+    # State invariant validator (charter step C4 — Most Reliable).
+    # Pure observer over the state store; logs timer / game-state
+    # invariant violations at warning level. Detection-only — never
+    # mutates state. The cost is one validation pass per snapshot,
+    # negligible vs the rest of the LCDA tick budget.
+    from champ_assistant.state_validator import StateValidator
+    state_validator = StateValidator(store)
+    lifecycle.register("state_validator", state_validator.stop)
+
     # Deterministic jungle camp predictor — pure Python, no Qt. Drives
     # the minimap widget's camp row off a fixed-cycle timeline rather
     # than user clicks. Subscribes to lcda_snapshot updates below.
