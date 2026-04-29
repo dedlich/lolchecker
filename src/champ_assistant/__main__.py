@@ -946,6 +946,13 @@ async def _run_lcda_watcher(
     diagnostics = getattr(overlay, "_diagnostics", None)
     scheduler = getattr(overlay, "_scheduler", None)
 
+    # Health monitor — track LCDA pipeline reliability (charter C2).
+    # Failures + recoveries flow into the per-service registry; the
+    # restart hook lives at the source level (LcdaSource owns its own
+    # reconnect logic, so the monitor only triggers a logged signal).
+    from champ_assistant import health_monitor as _health
+    _health.monitor().register_service("lcda_pipeline")
+
     async def on_snapshot(snap: object) -> None:
         arrived = _time.monotonic()
         try:
@@ -958,8 +965,13 @@ async def _run_lcda_watcher(
                 )
             # Existing widget surfaces stay live too — the store-listener
             # below routes the same snapshot to them via the scheduler.
-        except Exception:
+        except Exception as exc:
             log.exception("lcda_state_commit_failed")
+            _health.monitor().report_failure("lcda_pipeline", exc)
+        else:
+            # A snapshot landed cleanly (snap may be None when not in
+            # game — that's still a successful poll, not a failure).
+            _health.monitor().report_recovery("lcda_pipeline")
         if diagnostics is not None:
             diagnostics.record_event_latency_ms(
                 (_time.monotonic() - arrived) * 1000.0
