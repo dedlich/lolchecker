@@ -34,7 +34,6 @@ from ..lcda.source import LcdaSnapshot
 from . import styles
 from .enemy_row import EnemyRow
 from .ban_panel import BanPanel
-from .objective_panel import ObjectivePanel
 from .pick_card import PickCard
 from .power_spike_panel import PowerSpikePanel
 from .summoner_tracker import SummonerTrackerPanel
@@ -218,9 +217,6 @@ class MainOverlay(QMainWindow):
         self._power_spike_panel = PowerSpikePanel()
         body_layout.addWidget(self._power_spike_panel)
 
-        self._objective_panel = ObjectivePanel()
-        body_layout.addWidget(self._objective_panel)
-
         self._summoner_tracker = SummonerTrackerPanel()
         body_layout.addWidget(self._summoner_tracker)
 
@@ -245,9 +241,6 @@ class MainOverlay(QMainWindow):
         if load_persisted_state:
             self._title_bar.set_opacity(self._persisted.opacity)
             self._title_bar.set_panel_visible(
-                "objectives", self._persisted.show_objectives
-            )
-            self._title_bar.set_panel_visible(
                 "summoners", self._persisted.show_summoners
             )
             self._title_bar.set_panel_visible(
@@ -270,10 +263,6 @@ class MainOverlay(QMainWindow):
     @property
     def status_bar(self) -> ConnectionStatusBar:
         return self._status_bar
-
-    @property
-    def objective_panel(self) -> ObjectivePanel:
-        return self._objective_panel
 
     @property
     def summoner_tracker(self) -> SummonerTrackerPanel:
@@ -385,8 +374,6 @@ class MainOverlay(QMainWindow):
         champselect <-> overlay mode switch so the window only goes
         always-on-top + transparent when there's a real game running.
         """
-        if self._panel_allowed("objectives"):
-            self._objective_panel.update_snapshot(snapshot)
         if self._panel_allowed("summoners"):
             self._summoner_tracker.update_snapshot(snapshot)
         if self._panel_allowed("spikes"):
@@ -478,7 +465,6 @@ class MainOverlay(QMainWindow):
         if not self._save_state:
             return True
         return {
-            "objectives": self._persisted.show_objectives,
             "summoners":  self._persisted.show_summoners,
             "spikes":     self._persisted.show_spikes,
         }.get(key, True)
@@ -675,11 +661,7 @@ class MainOverlay(QMainWindow):
             overlay_config.save(self._persisted)
 
     def _on_panel_toggled(self, key: str, visible: bool) -> None:
-        if key == "objectives":
-            self._objective_panel.setVisible(visible)
-            if self._save_state:
-                self._persisted.show_objectives = visible
-        elif key == "summoners":
+        if key == "summoners":
             self._summoner_tracker.setVisible(visible)
             if self._save_state:
                 self._persisted.show_summoners = visible

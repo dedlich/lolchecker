@@ -241,10 +241,27 @@ class JungleTimelineEngine:
     # -- internals --------------------------------------------------------
 
     def _compute_states(self) -> dict[str, CampState]:
+        """Camps without an observed clear render nothing — the user
+        explicitly rejected predictive 'pseudo' timers because they
+        don't reflect reality. We synthesize an ``alive`` sentinel
+        for un-anchored camps so the UI's existing 'skip if alive'
+        paint path naturally hides them.
+
+        Camps with a registered clear go through the real countdown
+        math (anchor + respawn cycle) — that's the trustworthy half
+        of the engine and is preserved unchanged.
+        """
         confidence = self._current_confidence()
         out: dict[str, CampState] = {}
         for spec in self._specs:
             anchor = self._observed_clears.get(spec.id)
+            if anchor is None:
+                out[spec.id] = CampState(
+                    id=spec.id, name=spec.name, state="alive",
+                    next_spawn_at=0.0, time_remaining=0.0,
+                    confidence=0.0,
+                )
+                continue
             out[spec.id] = _camp_state_at(
                 spec, self._game_time, confidence,
                 clear_anchor=anchor,

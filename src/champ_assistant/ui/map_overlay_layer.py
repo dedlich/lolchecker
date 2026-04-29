@@ -35,7 +35,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from PyQt6.QtCore import QPoint, QRect, Qt
-from PyQt6.QtGui import QColor, QFont, QPainter, QPaintEvent
+from PyQt6.QtGui import QColor, QFont, QMouseEvent, QPainter, QPaintEvent
 from PyQt6.QtWidgets import QWidget
 
 from . import styles
@@ -103,8 +103,16 @@ class MapOverlayLayer(QWidget):
         self._engine = engine
         self._blink_phase: int = 0   # toggled by scheduler tick
 
-        # Pure visual layer — no mouse interaction, events fall through.
-        self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
+        # Click-to-arm: clicking near a camp position registers an
+        # observed clear with the engine, starting the real respawn
+        # countdown. The user explicitly wants kill-driven timers,
+        # not predictive ones; this is the input path. Cursor changes
+        # to a pointer to signal interactivity.
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.setToolTip(
+            "Klick auf ein Camp markiert es als beobachtet gekillt — "
+            "Timer startet erst dann."
+        )
 
         # Cache the font + colors so paintEvent does zero allocations
         # for static style state (the only per-frame allocation is the
@@ -129,6 +137,46 @@ class MapOverlayLayer(QWidget):
     def _on_tick(self) -> None:
         self._blink_phase = 1 - self._blink_phase
         self.update()
+
+    # -- click handling --------------------------------------------------
+
+    # Clicks within this many normalized units of a camp anchor count.
+    # 0.10 in a 0..1 coord system ≈ 10% of the minimap edge — generous
+    # enough on a 110×110 px panel that fingers don't have to be
+    # surgically precise.
+    CLICK_HIT_RADIUS = 0.10
+
+    def mousePressEvent(self, event: QMouseEvent | None) -> None:  # type: ignore[override]
+        if event is None or event.button() != Qt.MouseButton.LeftButton:
+            return
+        camp_id = self._camp_at(event.position().x(), event.position().y())
+        if camp_id is None:
+            return
+        try:
+            self._engine.register_clear(camp_id)
+        except Exception:  # noqa: BLE001 — input handler must never crash UI
+            return
+        self.update()
+
+    def _camp_at(self, px: float, py: float) -> str | None:
+        """Find the camp whose anchor is closest to the click point,
+        within ``CLICK_HIT_RADIUS`` (normalized). Returns the camp_id
+        or None if no camp is in range."""
+        rect = self.rect()
+        if rect.width() <= 0 or rect.height() <= 0:
+            return None
+        nx = (px - rect.left()) / rect.width()
+        ny = (py - rect.top()) / rect.height()
+        best_id: str | None = None
+        best_dist = self.CLICK_HIT_RADIUS
+        for camp_id, (anchor_nx, anchor_ny) in CAMP_POSITIONS.items():
+            dx = nx - anchor_nx
+            dy = ny - anchor_ny
+            dist = (dx * dx + dy * dy) ** 0.5
+            if dist < best_dist:
+                best_dist = dist
+                best_id = camp_id
+        return best_id
 
     def paintEvent(self, event: QPaintEvent) -> None:  # type: ignore[override]
         try:

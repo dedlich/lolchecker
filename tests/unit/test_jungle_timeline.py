@@ -160,6 +160,50 @@ def test_tick_notifies_subscribers() -> None:
     assert "red_buff" in received[0]
 
 
+# --------------------------------------------------------------------------
+# Observed-clear gating — engine no longer emits predictive timers
+# --------------------------------------------------------------------------
+def test_unanchored_camps_return_alive_sentinel() -> None:
+    """User rejected predictive 'pseudo' timers — without an observed
+    clear, the engine should NOT emit a respawn countdown. Camps stay
+    in the 'alive' sentinel so the UI's skip-if-alive paint path
+    naturally hides them."""
+    engine = JungleTimelineEngine()
+    engine.tick(180.0)  # 3 minutes in, nothing observed yet
+    states = engine.states()
+    for state in states.values():
+        assert state.state == "alive"
+        assert state.time_remaining == 0.0
+        assert state.next_spawn_at == 0.0
+
+
+def test_anchored_camp_emits_real_countdown() -> None:
+    """Once register_clear is called, the camp's real respawn cycle
+    drives the timer — that's the trustworthy half of the engine."""
+    engine = JungleTimelineEngine()
+    engine.tick(120.0)
+    engine.register_clear("red_buff", game_time=120.0)
+    state = engine.states()["red_buff"]
+    # Red Buff respawns 5:00 (300s) after kill → spawn at 420s.
+    # At game_time=120, 300s remaining (some grace tolerance).
+    assert state.next_spawn_at == 420.0
+    assert 0.0 < state.time_remaining <= 300.0
+
+
+def test_unrelated_camps_stay_hidden_after_one_anchor() -> None:
+    """Registering a clear on red_buff must NOT also surface predictive
+    timers for blue_buff/gromp/etc. Each camp gates independently."""
+    engine = JungleTimelineEngine()
+    engine.tick(60.0)
+    engine.register_clear("red_buff", game_time=60.0)
+    states = engine.states()
+    for camp_id, state in states.items():
+        if camp_id == "red_buff":
+            assert state.state == "respawning"
+        else:
+            assert state.state == "alive"
+
+
 def test_unsubscribe_stops_notifications() -> None:
     engine = JungleTimelineEngine()
     received: list[dict] = []

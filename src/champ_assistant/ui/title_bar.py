@@ -66,11 +66,9 @@ class TitleBar(QFrame):
         layout.addWidget(self._version, 1)
 
         # Per-section toggles. Each toggle is a small lettered button that
-        # the user can click to hide that panel — useful in-game when you
-        # only want to see objectives or only summoner cooldowns.
+        # the user can click to hide that panel.
         self._toggles: dict[str, QToolButton] = {}
         for label, key, tip in (
-            ("O", "objectives", "Objectives ein/aus"),
             ("S", "summoners",  "Summoner-Cooldowns ein/aus"),
             ("!", "spikes",     "Power Spikes ein/aus"),
         ):

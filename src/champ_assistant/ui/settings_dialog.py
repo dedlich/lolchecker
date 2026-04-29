@@ -105,10 +105,6 @@ class SettingsDialog(QDialog):
         body = _vertical(page)
 
         body.addWidget(_section_header("Main Overlay Sections"))
-        self._cb_objectives = _checkbox(
-            "Show Objectives panel (Dragon / Baron / Herald timers)",
-            self._display_state.show_objectives,
-        )
         self._cb_summoners = _checkbox(
             "Show Summoner Tracker (enemy spell cooldowns)",
             self._display_state.show_summoners,
@@ -117,7 +113,7 @@ class SettingsDialog(QDialog):
             "Show Power-Spike panel",
             self._display_state.show_spikes,
         )
-        for cb in (self._cb_objectives, self._cb_summoners, self._cb_spikes):
+        for cb in (self._cb_summoners, self._cb_spikes):
             body.addWidget(cb)
 
         body.addWidget(_section_header("Floating Mini-Widgets"))
@@ -404,7 +400,6 @@ class SettingsDialog(QDialog):
 
         # Overlay state (single dataclass, single save call) -------------
         s = self._display_state
-        s.show_objectives           = self._cb_objectives.isChecked()
         s.show_summoners            = self._cb_summoners.isChecked()
         s.show_spikes               = self._cb_spikes.isChecked()
         s.show_scoreboard           = self._cb_scoreboard.isChecked()

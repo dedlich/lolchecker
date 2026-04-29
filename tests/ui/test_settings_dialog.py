@@ -59,7 +59,9 @@ def test_tab_titles_match_documented_order(qt_app, isolated_overlay_config) -> N
 # Coverage — every togglable OverlayState field has a checkbox
 # ----------------------------------------------------------------------
 TOGGLABLE_FIELDS_TO_CHECKBOXES = {
-    "show_objectives":              "_cb_objectives",
+    # show_objectives intentionally omitted — ObjectivePanel was retired
+    # in favor of the minimap-overlay timers; the field stays in
+    # OverlayState as a no-op for back-compat with persisted configs.
     "show_summoners":               "_cb_summoners",
     "show_spikes":                  "_cb_spikes",
     "show_scoreboard":              "_cb_scoreboard",
@@ -111,7 +113,6 @@ def test_save_persists_all_toggles(qt_app, isolated_overlay_config) -> None:  # 
     field should reflect the change."""
     dlg = SettingsDialog()
     # Flip everything to NOT-default values.
-    dlg._cb_objectives.setChecked(False)
     dlg._cb_summoners.setChecked(False)
     dlg._cb_spikes.setChecked(False)
     dlg._cb_scoreboard.setChecked(False)
@@ -125,7 +126,6 @@ def test_save_persists_all_toggles(qt_app, isolated_overlay_config) -> None:  # 
     dlg._on_save()
 
     reloaded = overlay_config.load()
-    assert reloaded.show_objectives is False
     assert reloaded.show_summoners is False
     assert reloaded.show_spikes is False
     assert reloaded.show_scoreboard is False
@@ -144,7 +144,6 @@ def test_default_toggles_are_sane(qt_app, isolated_overlay_config) -> None:  # t
     opt-in vs opt-out."""
     state = overlay_config.OverlayState()
     # Standard widgets default ON
-    assert state.show_objectives is True
     assert state.show_scoreboard is True
     assert state.show_minimap_timers is True
     # Background services default ON (operational stability)

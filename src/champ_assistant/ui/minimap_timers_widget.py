@@ -240,24 +240,19 @@ class MinimapTimersWidget(FloatingWidget):
             top.addWidget(cell, 1)
         outer.addLayout(top)
 
-        # Row 2: deterministic jungle camp predictor.
-        # Cells render purely from the engine's CampState — they own no
-        # state of their own, no internal QTimers, no click handlers.
-        bottom = QHBoxLayout()
-        bottom.setSpacing(2)
+        # The previous "Row 2" of predicted-cycle camp cells (one
+        # numeric countdown per jungle camp) was retired together with
+        # the predictive jungle math — they showed numbers based on
+        # worst-case clear cycles, not observed reality. _camp_cells
+        # stays as an empty dict so legacy code paths that iterate
+        # over it (e.g. _on_camp_states) keep working.
         self._camp_cells: dict[str, _CampCell] = {}
-        for spec in JUNGLE_CAMPS:
-            glyph = CAMP_GLYPHS.get(spec.id, "•")
-            cell = _CampCell(glyph, parent=self)
-            cell.setToolTip(f"{spec.name} — predicted spawn cycle")
-            self._camp_cells[spec.id] = cell
-            bottom.addWidget(cell)
-        outer.addLayout(bottom)
 
         # Row 3: minimap visualization panel — a square area showing
         # camps at their canonical SR positions with countdown text
         # painted on top via MapOverlayLayer. Renders nothing until an
-        # engine is attached via attach_engine().
+        # engine is attached via attach_engine() AND a camp is observed
+        # cleared (engine.register_clear); un-cleared camps stay invisible.
         map_row = QHBoxLayout()
         map_row.addStretch(1)
         self._minimap_panel = QFrame()
@@ -337,6 +332,11 @@ class MinimapTimersWidget(FloatingWidget):
         if snapshot is None:
             self.hide()
             return
+        # First-time positioning per game: park the widget over the
+        # actual in-game minimap so the on-map markers match the
+        # player's visual reference. Subsequent ticks leave the
+        # position alone — manual drags must stick.
+        self._maybe_pin_to_game_minimap()
         self.fade_appear()
         self._latest_game_time = snapshot.game_time
         by_name = {o.name: o for o in snapshot.objectives}
@@ -344,6 +344,31 @@ class MinimapTimersWidget(FloatingWidget):
             obj = by_name.get(name)
             cell.setText(self._cell_text(name, obj, snapshot.game_time))
             cell.setStyleSheet(self._cell_style(obj, snapshot.game_time))
+
+    def _maybe_pin_to_game_minimap(self) -> None:
+        """Move the widget over the in-game minimap on first appearance.
+        No-op on non-Windows / when League isn't found / after the first
+        successful pin (set-once sentinel). The minimap is, by default,
+        the bottom-right square covering ~25% of the game window's
+        height — the exact size depends on the user's HUD scale slider,
+        so they can drag-tune from there."""
+        if getattr(self, "_pinned_for_session", False):
+            return
+        try:
+            from ..lcu.window import find_league_window
+            info = find_league_window()
+        except Exception:  # noqa: BLE001 — auto-position must never crash
+            return
+        if info is None:
+            return
+        # Default LoL minimap edge ≈ 25% of game height. Place the
+        # widget aligned to the bottom-right corner of the game window.
+        edge = max(self.MAP_PANEL_SIZE, int(info.height * 0.25))
+        margin = 8
+        target_x = info.right - edge - margin
+        target_y = info.bottom - edge - margin
+        self.move(target_x, target_y)
+        self._pinned_for_session = True
 
     # -- internals -------------------------------------------------------
 
