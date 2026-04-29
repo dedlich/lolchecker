@@ -168,7 +168,14 @@ class SettingsDialog(QDialog):
             "Diagnose-Logging (CPU / Speicher / FPS alle 10s)",
             ovc_state.diagnostics_enabled,
         )
-        for cb in (self._cb_scoreboard, self._cb_minimap, self._cb_lobby, self._cb_diagnostics):
+        self._cb_auto_camp = _styled_checkbox(
+            "Auto Camp Detection — experimentell, nur Windows",
+            ovc_state.enable_auto_camp_detection,
+        )
+        for cb in (
+            self._cb_scoreboard, self._cb_minimap, self._cb_lobby,
+            self._cb_diagnostics, self._cb_auto_camp,
+        ):
             outer.addWidget(cb)
 
         reset_row = QHBoxLayout()
@@ -380,6 +387,7 @@ class SettingsDialog(QDialog):
         self._display_state.show_minimap_timers = self._cb_minimap.isChecked()
         self._display_state.show_lobby_stats = self._cb_lobby.isChecked()
         self._display_state.diagnostics_enabled = self._cb_diagnostics.isChecked()
+        self._display_state.enable_auto_camp_detection = self._cb_auto_camp.isChecked()
         overlay_config.save(self._display_state)
 
         self.settings_changed.emit()

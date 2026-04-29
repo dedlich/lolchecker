@@ -56,6 +56,9 @@ EV_GAME_PHASE_CHANGE     = "game_phase_change"
 EV_FIGHT_WINDOW          = "fight_window_detected"
 EV_FOCUS                 = "window_focus"           # gain | loss
 EV_OVERLAY_TOGGLE        = "overlay_visibility_toggle"
+# Vision subsystem (Stage A — color heuristic camp detection)
+EV_CAMP_VISIBILITY       = "camp_visibility_detected"
+EV_CAMP_CLEAR_INFERRED   = "camp_clear_inferred"
 
 
 def _state_dir() -> Path:

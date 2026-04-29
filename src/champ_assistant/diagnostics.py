@@ -35,6 +35,7 @@ class Diagnostics(QObject):
         self._timer.setInterval(int(interval_s * 1000))
         self._timer.timeout.connect(self._log)
         self._scheduler = None  # type: ignore[var-annotated]
+        self._vision = None  # type: ignore[var-annotated]
         self._event_latencies_ms: list[float] = []
         self._state_update_ms: list[float] = []
         self._last_log = time.monotonic()
@@ -52,6 +53,11 @@ class Diagnostics(QObject):
 
     def attach_store(self, store) -> None:  # type: ignore[no-untyped-def]
         store._on_update_metric = self.record_state_update_ms  # internal hook
+
+    def attach_vision(self, vision_service) -> None:  # type: ignore[no-untyped-def]
+        """Optional: hook the vision-observation service so its counters
+        appear in the periodic [DIAG] line. No-op if vision is disabled."""
+        self._vision = vision_service
 
     def record_event_latency_ms(self, latency_ms: float) -> None:
         """Caller invokes this when an LCU/LCDA event finishes processing,
@@ -91,9 +97,21 @@ class Diagnostics(QObject):
             self._scheduler.reset_frame_count()
         avg_evt = _safe_mean(self._event_latencies_ms)
         avg_upd = _safe_mean(self._state_update_ms)
+        # Optional vision counters — only included when the vision
+        # service is attached (i.e. enable_auto_camp_detection=True).
+        vision_part = ""
+        if self._vision is not None:
+            try:
+                vision_part = (
+                    f" vision_frames={self._vision.frames_processed}"
+                    f" vision_events={self._vision.events_emitted}"
+                    f" vision_failures={self._vision.failures}"
+                )
+            except Exception:  # noqa: BLE001 — diagnostics must never raise
+                vision_part = ""
         logger.info(
-            "diagnostics cpu=%.1f%% mem=%.0fMB fps=%.2f evt_lat=%.1fms upd_dt=%.2fms",
-            cpu, mem_mb, fps, avg_evt, avg_upd,
+            "diagnostics cpu=%.1f%% mem=%.0fMB fps=%.2f evt_lat=%.1fms upd_dt=%.2fms%s",
+            cpu, mem_mb, fps, avg_evt, avg_upd, vision_part,
         )
         self._event_latencies_ms.clear()
         self._state_update_ms.clear()

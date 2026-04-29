@@ -586,6 +586,40 @@ def _run_with_ui(args: argparse.Namespace) -> int:
         _safe_start("telemetry", telemetry_recorder.start)
 
     # ------------------------------------------------------------------
+    # Vision subsystem (Stage A — color heuristic camp detection).
+    # Triple-gated: settings flag + Safe Mode off + Windows-only check
+    # inside MinimapCapture. Construction is cheap (no thread spawn);
+    # start() is the actual side-effect.
+    # ------------------------------------------------------------------
+    vision_service = None
+    if persisted.enable_auto_camp_detection and not startup_mode.safe:
+        from champ_assistant.vision.observation_service import VisionObservationService
+
+        def _vision_game_time() -> float | None:
+            cur = store.get()
+            return cur.game_time if cur.lcda_snapshot is not None else None
+
+        vision_service = VisionObservationService(game_time_provider=_vision_game_time)
+
+        # Engine sync via Qt signal — main-thread call into engine.
+        from PyQt6.QtCore import Qt as _VQt
+        def _on_vision_clear(camp_id: str, gt: float, _conf: float) -> None:
+            jungle_engine.register_clear(camp_id, gt)
+        vision_service.camp_cleared.connect(
+            _on_vision_clear, _VQt.ConnectionType.QueuedConnection,
+        )
+
+        # Diagnostics integration — counters appear in the [DIAG] line.
+        diagnostics.attach_vision(vision_service)
+        _safe_start("vision", vision_service.start)
+        lifecycle.register("vision", vision_service.stop)
+    else:
+        if not persisted.enable_auto_camp_detection:
+            logging.getLogger(__name__).info(
+                "vision disabled (enable_auto_camp_detection=False in settings)"
+            )
+
+    # ------------------------------------------------------------------
     # Global hotkeys (Win32 RegisterHotKey via dedicated thread).
     # Hotkey -> StateStore.update -> subscriber -> UI side-effect.
     # User-configurable bindings are loaded from disk; defaults apply if

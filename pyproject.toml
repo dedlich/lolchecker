@@ -25,6 +25,12 @@ dependencies = [
     # introspection is the only reliable way to handle non-default
     # installation directories.
     "psutil>=5.9",
+    # Vision subsystem (Stage A — color heuristic camp detection).
+    # numpy + mss are required at install time so the feature works
+    # when the user enables it via settings; the feature itself is
+    # disabled by default. mss only does anything useful on Windows.
+    "numpy>=1.26",
+    "mss>=9.0",
 ]
 
 [project.optional-dependencies]

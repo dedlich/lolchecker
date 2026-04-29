@@ -118,6 +118,11 @@ class JungleTimelineEngine:
         self._anchor_count = 0
         self._seen_event_ids: set[int] = set()
         self._listeners: list[StateListener] = []
+        # Per-camp observed-clear anchors. Set by ``register_clear`` from
+        # the vision subsystem. Maps camp_id -> game_time at clear.
+        # When set, _camp_state_at uses this anchor instead of the
+        # worst-case-clear cycle math.
+        self._observed_clears: dict[str, float] = {}
 
     # -- lifecycle --------------------------------------------------------
 
@@ -161,6 +166,31 @@ class JungleTimelineEngine:
         states = self._compute_states()
         self._notify(states)
         return states
+
+    def register_clear(self, camp_id: str, game_time: float | None = None) -> None:
+        """Anchor a camp's respawn cycle to an observed clear time.
+
+        Called from the vision subsystem when it detects camp icon
+        disappearing. Stores the anchor; subsequent ``states()`` calls
+        compute next_spawn from anchor + respawn_s instead of the
+        worst-case-clear cycle math.
+
+        Confidence model is intentionally NOT touched — vision is a
+        soft anchor, the deterministic confidence trajectory stays
+        the source of truth for UI weighting. Spec compliance: "Do
+        not modify confidence model. Do not override deterministic
+        math."
+        """
+        gt = game_time if game_time is not None else self._game_time
+        if not isinstance(gt, (int, float)) or not math.isfinite(gt) or gt < 0:
+            return
+        # Reject unknown camp ids — silent rather than raise so a
+        # bad event from the vision pipeline can't crash the engine.
+        if not any(spec.id == camp_id for spec in self._specs):
+            return
+        self._observed_clears[camp_id] = float(gt)
+        # Notify listeners so the UI re-renders with the new anchor.
+        self._notify(self._compute_states())
 
     def _absorb_events(self, events: list[dict]) -> None:
         """Bump confidence on every newly-seen objective kill.
@@ -212,10 +242,14 @@ class JungleTimelineEngine:
 
     def _compute_states(self) -> dict[str, CampState]:
         confidence = self._current_confidence()
-        return {
-            spec.id: _camp_state_at(spec, self._game_time, confidence)
-            for spec in self._specs
-        }
+        out: dict[str, CampState] = {}
+        for spec in self._specs:
+            anchor = self._observed_clears.get(spec.id)
+            out[spec.id] = _camp_state_at(
+                spec, self._game_time, confidence,
+                clear_anchor=anchor,
+            )
+        return out
 
     def _current_confidence(self) -> float:
         if not self._initialized:
@@ -245,14 +279,27 @@ def _coerce_finite(value: float) -> float:
     return float(value)
 
 
-def _camp_state_at(spec: CampSpec, game_time: float, confidence: float) -> CampState:
+def _camp_state_at(
+    spec: CampSpec,
+    game_time: float,
+    confidence: float,
+    *,
+    clear_anchor: float | None = None,
+) -> CampState:
     """Compute a single camp's state at ``game_time`` from its spec.
 
-    The cycle: pre-first-spawn → respawning. After first_spawn the camp
-    cycles every ``respawn_s`` seconds — we assume worst-case immediate
-    kill so the next_spawn time is the next cycle boundary. A short
-    ``ALIVE_GRACE_S`` window after each spawn is reported as "alive" so
-    UI can briefly highlight the camp as available.
+    Two cycle sources:
+      * Worst-case (default): assume immediate clear at every spawn,
+        next_spawn = first_spawn + (cycles+1) × respawn_s.
+      * Observed-anchor: when ``clear_anchor`` is provided (vision
+        subsystem set it via ``JungleTimelineEngine.register_clear``),
+        next_spawn = clear_anchor + respawn_s. The anchor naturally
+        re-cycles after one respawn — once game_time exceeds the
+        anchor's first re-spawn, we fall back to the worst-case
+        cycle from there.
+
+    A short ``ALIVE_GRACE_S`` window after each spawn is reported as
+    "alive" so UI can briefly highlight the camp as available.
     """
     if game_time < spec.first_spawn_s:
         next_spawn = spec.first_spawn_s
@@ -265,6 +312,26 @@ def _camp_state_at(spec: CampSpec, game_time: float, confidence: float) -> CampS
             confidence=confidence,
         )
 
+    # Anchor path: if we have an observed clear AND it's still "fresh"
+    # (within one full cycle of game_time), use it.
+    if clear_anchor is not None and clear_anchor <= game_time < clear_anchor + spec.respawn_s + ALIVE_GRACE_S:
+        next_spawn = clear_anchor + spec.respawn_s
+        since_spawn = game_time - next_spawn
+        if 0 <= since_spawn < ALIVE_GRACE_S:
+            return CampState(
+                id=spec.id, name=spec.name, state="alive",
+                next_spawn_at=next_spawn + spec.respawn_s,
+                time_remaining=max(0.0, next_spawn + spec.respawn_s - game_time),
+                confidence=confidence,
+            )
+        return CampState(
+            id=spec.id, name=spec.name, state="respawning",
+            next_spawn_at=next_spawn,
+            time_remaining=max(0.0, next_spawn - game_time),
+            confidence=confidence,
+        )
+
+    # Worst-case cycle path.
     elapsed = game_time - spec.first_spawn_s
     cycle_index = int(elapsed // spec.respawn_s)
     last_spawn = spec.first_spawn_s + cycle_index * spec.respawn_s

@@ -43,6 +43,9 @@ class OverlayState:
     # Diagnostics logging (CPU/mem/FPS every 10s). Default on so existing
     # users keep their behavior; toggleable via Settings → Diagnostics.
     diagnostics_enabled: bool = True
+    # Experimental: vision-based automatic camp detection. Stage A —
+    # color heuristic, Windows-only. Disabled by default.
+    enable_auto_camp_detection: bool = False
 
 
 def _config_dir() -> Path:
@@ -74,7 +77,8 @@ def load() -> OverlayState:
                   "opacity", "show_objectives", "show_summoners",
                   "show_spikes", "show_scoreboard", "show_minimap_timers",
                   "show_lobby_stats", "floating_positions",
-                  "onboarding_seen", "diagnostics_enabled"):
+                  "onboarding_seen", "diagnostics_enabled",
+                  "enable_auto_camp_detection"):
         if field in data:
             setattr(state, field, data[field])
     return state
