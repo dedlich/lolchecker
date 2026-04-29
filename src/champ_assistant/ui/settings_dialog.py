@@ -1,7 +1,19 @@
-"""Settings dialog for API keys + region.
+"""Settings dialog — tabbed layout for clarity.
 
-Persists via ``champ_assistant.secrets`` (keyring-backed) so the same
-keys carry over between launches without leaving plaintext on disk.
+Tabs (in order shown to the user):
+
+  * Widgets       — main panel sections + floating widget visibility
+                    + reset-layout action
+  * API Keys      — Riot Web API + optional LLM provider
+  * Hotkeys       — five global hotkey bindings, click-to-rebind
+  * Vision (Exp)  — experimental Windows-only color-heuristic
+                    detectors (camp clearing + scoreboard visibility)
+  * Diagnostics   — diagnostics logging, telemetry, update checks
+
+Persistence:
+  API keys + LLM key go through ``secrets`` (OS keyring).
+  Everything else lives in ``overlay_config.OverlayState``.
+  Hotkeys mirror to ``hotkey_config.HotkeyConfig``.
 """
 from __future__ import annotations
 
@@ -17,7 +29,9 @@ from PyQt6.QtWidgets import (
     QLabel,
     QLineEdit,
     QPushButton,
+    QTabWidget,
     QVBoxLayout,
+    QWidget,
 )
 
 from .. import hotkey_config, overlay_config, secrets
@@ -30,6 +44,14 @@ class SettingsDialog(QDialog):
 
     settings_changed = pyqtSignal()
 
+    HOTKEY_ACTIONS = (
+        ("toggle_overlay",    "Toggle overlay"),
+        ("toggle_lock",       "Toggle click-through"),
+        ("reset_positions",   "Reset widget positions"),
+        ("reset_layout",      "Reset widget layout"),
+        ("toggle_scoreboard", "Toggle scoreboard"),
+    )
+
     def __init__(
         self,
         parent=None,  # type: ignore[no-untyped-def]
@@ -38,12 +60,17 @@ class SettingsDialog(QDialog):
         super().__init__(parent)
         self._hotkey_service = hotkey_service
         self.setWindowTitle("Settings")
-        self.setMinimumWidth(460)
+        self.setMinimumWidth(540)
+        self.setMinimumHeight(560)
         # Inherits styling from the global stylesheet (QLineEdit/QComboBox/
         # QPushButton tokens) so we only need a backdrop hint here.
         self.setStyleSheet(
             f"QDialog {{ background-color: {styles.BG_PRIMARY}; }}"
         )
+
+        # Persisted overlay state — all checkbox/toggle widgets bind
+        # against this single object, _on_save writes it back once.
+        self._display_state = overlay_config.load()
 
         outer = QVBoxLayout(self)
         outer.setContentsMargins(20, 18, 20, 18)
@@ -56,16 +83,85 @@ class SettingsDialog(QDialog):
         )
         outer.addWidget(title)
 
-        # -- Riot API -----------------------------------------------------
-        riot_section = QLabel("Riot Web API")
-        riot_section.setObjectName("sectionTitle")
-        riot_section.setStyleSheet(
-            f"color: {styles.TEXT_MUTED}; font-size: {styles.FS_LABEL}px;"
-            " font-weight: 700; text-transform: uppercase; letter-spacing: 1.2px;"
-            " padding-top: 4px;"
-        )
-        outer.addWidget(riot_section)
+        tabs = QTabWidget()
+        tabs.setStyleSheet(_tab_widget_stylesheet())
+        tabs.addTab(self._build_widgets_tab(), "Widgets")
+        tabs.addTab(self._build_api_tab(), "API Keys")
+        tabs.addTab(self._build_hotkeys_tab(), "Hotkeys")
+        tabs.addTab(self._build_vision_tab(), "Vision (experimental)")
+        tabs.addTab(self._build_diagnostics_tab(), "Diagnostics")
+        outer.addWidget(tabs, 1)
 
+        outer.addWidget(self._build_button_row())
+
+    # ------------------------------------------------------------------
+    # Tab builders — each returns a ready-to-add QWidget
+    # ------------------------------------------------------------------
+
+    def _build_widgets_tab(self) -> QWidget:
+        """Visibility toggles for both main-overlay sections AND the
+        three floating widgets, plus a layout-reset action."""
+        page = _scrolling_page()
+        body = _vertical(page)
+
+        body.addWidget(_section_header("Main Overlay Sections"))
+        self._cb_objectives = _checkbox(
+            "Show Objectives panel (Dragon / Baron / Herald timers)",
+            self._display_state.show_objectives,
+        )
+        self._cb_summoners = _checkbox(
+            "Show Summoner Tracker (enemy spell cooldowns)",
+            self._display_state.show_summoners,
+        )
+        self._cb_spikes = _checkbox(
+            "Show Power-Spike panel",
+            self._display_state.show_spikes,
+        )
+        for cb in (self._cb_objectives, self._cb_summoners, self._cb_spikes):
+            body.addWidget(cb)
+
+        body.addWidget(_section_header("Floating Mini-Widgets"))
+        self._cb_scoreboard = _checkbox(
+            "Scoreboard widget (kills + gold delta + objectives)",
+            self._display_state.show_scoreboard,
+        )
+        self._cb_minimap = _checkbox(
+            "Minimap-Timers widget (Dragon / Baron / camp predictions)",
+            self._display_state.show_minimap_timers,
+        )
+        self._cb_lobby = _checkbox(
+            "Lobby-Stats widget (champ-select stats summary)",
+            self._display_state.show_lobby_stats,
+        )
+        for cb in (self._cb_scoreboard, self._cb_minimap, self._cb_lobby):
+            body.addWidget(cb)
+
+        body.addWidget(_section_header("Layout"))
+        reset_row = QHBoxLayout()
+        reset_label = QLabel("Reset widget positions to defaults")
+        reset_label.setStyleSheet(
+            f"color: {styles.TEXT_PRIMARY}; font-size: {styles.FS_BODY}px;"
+        )
+        reset_row.addWidget(reset_label, 1)
+        reset_btn = _flat_button("Reset Layout")
+        reset_btn.clicked.connect(self._on_reset_layout)
+        reset_row.addWidget(reset_btn)
+        body.addLayout(reset_row)
+
+        body.addWidget(_hint_label(
+            "Widget visibility changes apply on the next launch. "
+            "Reset Layout takes effect immediately."
+        ))
+        body.addStretch(1)
+        return page
+
+    def _build_api_tab(self) -> QWidget:
+        """Riot Web API + optional LLM provider for live counter
+        lookup. All keys go through ``secrets`` (OS keyring)."""
+        page = _scrolling_page()
+        body = _vertical(page)
+
+        body.addWidget(_section_header("Riot Web API"))
         riot_form = QFormLayout()
         riot_form.setHorizontalSpacing(12)
         riot_form.setVerticalSpacing(8)
@@ -79,13 +175,11 @@ class SettingsDialog(QDialog):
         self._riot_region = QComboBox()
         for region in PLATFORM_HOSTS:
             self._riot_region.addItem(region)
-        current_region = secrets.riot_region()
-        idx = self._riot_region.findText(current_region)
+        idx = self._riot_region.findText(secrets.riot_region())
         if idx >= 0:
             self._riot_region.setCurrentIndex(idx)
         riot_form.addRow("Region", self._riot_region)
-
-        outer.addLayout(riot_form)
+        body.addLayout(riot_form)
 
         riot_help = QLabel(
             f'Hol einen Dev-Key auf <a style="color:{styles.ACCENT};"'
@@ -97,17 +191,9 @@ class SettingsDialog(QDialog):
             f"color: {styles.TEXT_MUTED}; font-size: {styles.FS_LABEL}px;"
         )
         riot_help.setWordWrap(True)
-        outer.addWidget(riot_help)
+        body.addWidget(riot_help)
 
-        # -- LLM provider (live counters) --------------------------------
-        llm_section = QLabel("Live Counter Lookup (optional)")
-        llm_section.setStyleSheet(
-            f"color: {styles.TEXT_MUTED}; font-size: {styles.FS_LABEL}px;"
-            " font-weight: 700;"
-            " text-transform: uppercase; letter-spacing: 0.8px; padding-top: 8px;"
-        )
-        outer.addWidget(llm_section)
-
+        body.addWidget(_section_header("Live Counter Lookup (optional)"))
         llm_form = QFormLayout()
         llm_form.setHorizontalSpacing(12)
         llm_form.setVerticalSpacing(8)
@@ -128,7 +214,7 @@ class SettingsDialog(QDialog):
         self._llm_key.setPlaceholderText("API-Key")
         self._llm_key.setText(secrets.llm_api_key())
         llm_form.addRow("API Key", self._llm_key)
-        outer.addLayout(llm_form)
+        body.addLayout(llm_form)
 
         self._llm_help = QLabel("")
         self._llm_help.setOpenExternalLinks(True)
@@ -136,105 +222,21 @@ class SettingsDialog(QDialog):
             f"color: {styles.TEXT_MUTED}; font-size: {styles.FS_LABEL}px;"
         )
         self._llm_help.setWordWrap(True)
-        outer.addWidget(self._llm_help)
+        body.addWidget(self._llm_help)
         self._llm_provider.currentIndexChanged.connect(self._refresh_llm_help)
         self._refresh_llm_help()
 
-        # -- Display ------------------------------------------------------
-        # Consolidates the floating-widget visibility flags + the layout
-        # reset action (previously only reachable via Ctrl+Alt+R) + the
-        # diagnostics toggle. One section, one source of truth.
-        display_section = QLabel("Display")
-        display_section.setStyleSheet(
-            f"color: {styles.TEXT_MUTED}; font-size: {styles.FS_LABEL}px;"
-            " font-weight: 700; text-transform: uppercase; letter-spacing: 1.2px;"
-            " padding-top: 8px;"
-        )
-        outer.addWidget(display_section)
+        body.addStretch(1)
+        return page
 
-        ovc_state = overlay_config.load()
-        self._display_state = ovc_state  # held for save
+    def _build_hotkeys_tab(self) -> QWidget:
+        page = _scrolling_page()
+        body = _vertical(page)
 
-        self._cb_scoreboard = _styled_checkbox(
-            "Scoreboard-Widget anzeigen", ovc_state.show_scoreboard,
-        )
-        self._cb_minimap = _styled_checkbox(
-            "Minimap-Timer-Widget anzeigen", ovc_state.show_minimap_timers,
-        )
-        self._cb_lobby = _styled_checkbox(
-            "Lobby-Stats-Widget anzeigen", ovc_state.show_lobby_stats,
-        )
-        self._cb_diagnostics = _styled_checkbox(
-            "Diagnose-Logging (CPU / Speicher / FPS alle 10s)",
-            ovc_state.diagnostics_enabled,
-        )
-        self._cb_auto_camp = _styled_checkbox(
-            "Auto Camp Detection — experimentell, nur Windows",
-            ovc_state.enable_auto_camp_detection,
-        )
-        self._cb_scoreboard_detect = _styled_checkbox(
-            "Scoreboard-Visibility Detection — experimentell, nur Windows",
-            ovc_state.enable_scoreboard_detection,
-        )
-        for cb in (
-            self._cb_scoreboard, self._cb_minimap, self._cb_lobby,
-            self._cb_diagnostics, self._cb_auto_camp,
-            self._cb_scoreboard_detect,
-        ):
-            outer.addWidget(cb)
+        body.addWidget(_section_header("Global Hotkeys"))
 
-        reset_row = QHBoxLayout()
-        reset_row.setSpacing(10)
-        reset_label = QLabel("Widget-Layout")
-        reset_label.setStyleSheet(
-            f"color: {styles.TEXT_PRIMARY}; font-size: {styles.FS_BODY}px;"
-        )
-        reset_row.addWidget(reset_label, 1)
-
-        reset_btn = QPushButton("Auf Standard zurücksetzen")
-        reset_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        reset_btn.setStyleSheet(
-            f"QPushButton {{ background-color: {styles.BG_TERTIARY};"
-            f" color: {styles.TEXT_SECONDARY};"
-            f" border: 1px solid {styles.BORDER};"
-            f" border-radius: {styles.RADIUS_SMALL}px;"
-            f" padding: 5px 14px; font-size: {styles.FS_LABEL}px; font-weight: 600; }}"
-            f" QPushButton:hover {{ border-color: {styles.WARNING};"
-            f" color: {styles.TEXT_PRIMARY}; }}"
-        )
-        reset_btn.clicked.connect(self._on_reset_layout)
-        reset_row.addWidget(reset_btn)
-        outer.addLayout(reset_row)
-
-        # Note + restart hint — visibility/diagnostics changes need a
-        # restart since both are read at startup. Honest is better than
-        # silently doing nothing or pretending we hot-reload.
-        display_hint = QLabel(
-            "Änderungen an Widgets / Diagnose werden beim nächsten Start aktiv."
-        )
-        display_hint.setStyleSheet(
-            f"color: {styles.TEXT_MUTED}; font-size: {styles.FS_LABEL}px;"
-        )
-        display_hint.setWordWrap(True)
-        outer.addWidget(display_hint)
-
-        # -- Hotkeys ------------------------------------------------------
-        hk_section = QLabel("Global Hotkeys")
-        hk_section.setStyleSheet(
-            f"color: {styles.TEXT_MUTED}; font-size: {styles.FS_LABEL}px;"
-            " font-weight: 700; text-transform: uppercase; letter-spacing: 1.2px;"
-            " padding-top: 8px;"
-        )
-        outer.addWidget(hk_section)
-
-        # Map of action -> (label, button) so we can update the displayed
-        # combo after a successful re-registration.
         self._hotkey_buttons: dict[str, QPushButton] = {}
-        for action, display_name in (
-            ("toggle_overlay",  "Toggle overlay"),
-            ("toggle_lock",     "Toggle click-through"),
-            ("reset_positions", "Reset widget positions"),
-        ):
+        for action, display_name in self.HOTKEY_ACTIONS:
             row = QHBoxLayout()
             row.setSpacing(10)
             label = QLabel(display_name)
@@ -247,26 +249,119 @@ class SettingsDialog(QDialog):
             btn = QPushButton(current)
             btn.setCursor(Qt.CursorShape.PointingHandCursor)
             btn.setMinimumWidth(140)
-            btn.setStyleSheet(
-                f"QPushButton {{ background-color: {styles.BG_TERTIARY};"
-                f" color: {styles.ACCENT};"
-                f" border: 1px solid {styles.BORDER};"
-                f" border-radius: {styles.RADIUS_SMALL}px;"
-                f" padding: 5px 12px; font-family: {styles.FONT_MONO};"
-                f" font-weight: 700; font-size: {styles.FS_LABEL}px; }}"
-                f" QPushButton:hover {{ border-color: {styles.ACCENT};"
-                f" background-color: {styles.BG_ELEVATED}; }}"
-            )
+            btn.setStyleSheet(_hotkey_button_stylesheet())
             btn.clicked.connect(
                 lambda _checked=False, a=action: self._capture_hotkey(a)
             )
             self._hotkey_buttons[action] = btn
             row.addWidget(btn)
-            outer.addLayout(row)
+            body.addLayout(row)
 
-        outer.addStretch(1)
+        body.addWidget(_hint_label(
+            "Klick auf einen Hotkey öffnet den Aufnahme-Dialog. "
+            "Auf macOS / Linux laufen die globalen Hotkeys nicht "
+            "(Win32 RegisterHotKey-only)."
+        ))
+        body.addStretch(1)
+        return page
 
-        # -- Buttons (Save accent, Cancel flat) -------------------------
+    def _build_vision_tab(self) -> QWidget:
+        """Experimental color-heuristic vision features. Both are
+        Windows-only and require capture-region calibration; honest
+        warning at the top of the tab."""
+        page = _scrolling_page()
+        body = _vertical(page)
+
+        warning = QLabel(
+            "⚠ Experimentell — funktioniert nur unter Windows und "
+            "benötigt Kalibrierung der Capture-Region für deine "
+            "Auflösung. Defaults zielen auf 1080p mit Standard-Minimap."
+        )
+        warning.setStyleSheet(
+            f"color: {styles.WARNING}; font-size: {styles.FS_LABEL}px;"
+            f" background: {styles.BG_TERTIARY};"
+            f" border: 1px solid {styles.BORDER};"
+            f" border-radius: {styles.RADIUS_SMALL}px;"
+            " padding: 8px 10px;"
+        )
+        warning.setWordWrap(True)
+        body.addWidget(warning)
+
+        body.addWidget(_section_header("Camp Detection"))
+        self._cb_auto_camp = _checkbox(
+            "Auto-Detect Jungle Camps (color heuristic)",
+            self._display_state.enable_auto_camp_detection,
+        )
+        body.addWidget(self._cb_auto_camp)
+        body.addWidget(_hint_label(
+            "Setzt den Engine-Anchor wenn ein Camp-Icon aus der "
+            "Minimap verschwindet. Stage A: einfache Farb-Heuristik. "
+            "Bias zu false-negative — verpasste Clears lassen den "
+            "deterministischen Zyklus unverändert."
+        ))
+
+        body.addWidget(_section_header("Scoreboard Detection"))
+        self._cb_scoreboard_detect = _checkbox(
+            "Auto-Detect Scoreboard (TAB-Anzeige)",
+            self._display_state.enable_scoreboard_detection,
+        )
+        body.addWidget(self._cb_scoreboard_detect)
+        body.addWidget(_hint_label(
+            "Erkennt das in-game Scoreboard via "
+            "low-variance + dark-pixel Heuristik im Top-Center-Bereich. "
+            "Triggert die Gold-Diff-Anzeige während TAB gehalten wird. "
+            "Manuelle Alternative: Ctrl+Alt+B."
+        ))
+        body.addStretch(1)
+        return page
+
+    def _build_diagnostics_tab(self) -> QWidget:
+        page = _scrolling_page()
+        body = _vertical(page)
+
+        body.addWidget(_section_header("Logging"))
+        self._cb_diagnostics = _checkbox(
+            "Diagnose-Logging (CPU / Speicher / FPS alle 10s)",
+            self._display_state.diagnostics_enabled,
+        )
+        body.addWidget(self._cb_diagnostics)
+        body.addWidget(_hint_label(
+            "Schreibt in app.log neben dem Hauptlog. "
+            "Hilft bei Performance-Auditing."
+        ))
+
+        body.addWidget(_section_header("Telemetry"))
+        self._cb_telemetry = _checkbox(
+            "Telemetrie-Aufzeichnung (lokal, append-only JSONL)",
+            self._display_state.enable_telemetry,
+        )
+        body.addWidget(self._cb_telemetry)
+        body.addWidget(_hint_label(
+            "Lokale Event-Logs für UX-Auswertung. "
+            "Keine Netzwerk-Übertragung, keine User-Inputs / Chat / "
+            "Account-Daten. Speicherort: telemetry.jsonl im "
+            "Config-Verzeichnis."
+        ))
+
+        body.addWidget(_section_header("Updates"))
+        self._cb_update_check = _checkbox(
+            "Update-Check beim Start (GitHub Releases)",
+            self._display_state.enable_update_check,
+        )
+        body.addWidget(self._cb_update_check)
+        body.addWidget(_hint_label(
+            "Einmaliger HTTPS-Call gegen api.github.com beim "
+            "App-Start. Aus für Metered Connections / "
+            "Privacy-Setups."
+        ))
+        body.addStretch(1)
+        return page
+
+    # ------------------------------------------------------------------
+    # Action wiring
+    # ------------------------------------------------------------------
+
+    def _build_button_row(self) -> QDialogButtonBox:
         buttons = QDialogButtonBox(
             QDialogButtonBox.StandardButton.Save
             | QDialogButtonBox.StandardButton.Cancel
@@ -296,11 +391,51 @@ class SettingsDialog(QDialog):
                 f" QPushButton:hover {{ background-color: {styles.BG_TERTIARY};"
                 f" color: {styles.TEXT_PRIMARY}; }}"
             )
-        outer.addWidget(buttons)
+        return buttons
+
+    def _on_save(self) -> None:
+        # Secrets (keyring) ----------------------------------------------
+        secrets.set_riot_api_key(self._riot_key.text().strip())
+        secrets.set_riot_region(self._riot_region.currentText())
+        secrets.set_llm_provider(self._llm_provider.currentData() or "openrouter")
+        secrets.set_llm_api_key(self._llm_key.text().strip())
+        if self._llm_provider.currentData() == "groq":
+            secrets.set_groq_api_key(self._llm_key.text().strip())
+
+        # Overlay state (single dataclass, single save call) -------------
+        s = self._display_state
+        s.show_objectives           = self._cb_objectives.isChecked()
+        s.show_summoners            = self._cb_summoners.isChecked()
+        s.show_spikes               = self._cb_spikes.isChecked()
+        s.show_scoreboard           = self._cb_scoreboard.isChecked()
+        s.show_minimap_timers       = self._cb_minimap.isChecked()
+        s.show_lobby_stats          = self._cb_lobby.isChecked()
+        s.diagnostics_enabled       = self._cb_diagnostics.isChecked()
+        s.enable_auto_camp_detection = self._cb_auto_camp.isChecked()
+        s.enable_scoreboard_detection = self._cb_scoreboard_detect.isChecked()
+        s.enable_update_check       = self._cb_update_check.isChecked()
+        s.enable_telemetry          = self._cb_telemetry.isChecked()
+        overlay_config.save(s)
+
+        self.settings_changed.emit()
+        self.accept()
+
+    def _on_reset_layout(self) -> None:
+        from .. import layout as _layout
+        from .floating_widget import FloatingWidget
+
+        _layout.store().reset()
+        for widget in FloatingWidget._instances:
+            x, y = widget.DEFAULT_POS
+            w, h = widget.DEFAULT_SIZE
+            widget.setGeometry(x, y, w, h)
+            widget.show()
+
+    # ------------------------------------------------------------------
+    # Hotkey capture flow (unchanged from the prior implementation)
+    # ------------------------------------------------------------------
 
     def _current_hotkey_label(self, action: str) -> str:
-        """Get the displayed combo for ``action`` from the live service
-        if available, else from the persisted config, else default."""
         if self._hotkey_service is not None:
             binding = self._hotkey_service.get_binding(action)
             if binding is not None:
@@ -309,7 +444,6 @@ class SettingsDialog(QDialog):
         return cfg.hotkeys.get(action, hotkey_config.DEFAULT_HOTKEYS.get(action, ""))
 
     def _capture_hotkey(self, action: str) -> None:
-        """Open the modal capture dialog, then attempt live re-registration."""
         from .hotkey_capture import KeyCaptureDialog
 
         current = self._current_hotkey_label(action)
@@ -320,15 +454,12 @@ class SettingsDialog(QDialog):
         if not new_label or new_label == current:
             return
 
-        # Persist + live re-register. If registration fails (collision),
-        # surface the message and leave the previous binding alive.
         if self._hotkey_service is not None:
             ok, msg = self._hotkey_service.update_binding(action, new_label)
             if not ok:
                 self._hotkey_buttons[action].setText(current)
                 self._show_hotkey_error(action, msg)
                 return
-        # Mirror to disk so the new combo survives a restart.
         cfg = hotkey_config.load()
         cfg.hotkeys[action] = new_label
         hotkey_config.save(cfg)
@@ -360,44 +491,115 @@ class SettingsDialog(QDialog):
             " mitgelieferten Counter-Daten."
         )
 
-    def _on_reset_layout(self) -> None:
-        """Wipe persisted layout + snap any live floating widget back to
-        its default geometry. Same effect as the Ctrl+Alt+R hotkey, just
-        also reachable from this dialog so users who never learned the
-        hotkey can recover from a misplaced drag."""
-        from .. import layout as _layout
-        from .floating_widget import FloatingWidget
 
-        _layout.store().reset()
-        for widget in FloatingWidget._instances:
-            x, y = widget.DEFAULT_POS
-            w, h = widget.DEFAULT_SIZE
-            widget.setGeometry(x, y, w, h)
-            widget.show()
+# ----------------------------------------------------------------------
+# Tab-internal helpers
+# ----------------------------------------------------------------------
 
-    def _on_save(self) -> None:
-        secrets.set_riot_api_key(self._riot_key.text().strip())
-        secrets.set_riot_region(self._riot_region.currentText())
-        secrets.set_llm_provider(self._llm_provider.currentData() or "openrouter")
-        secrets.set_llm_api_key(self._llm_key.text().strip())
-        # Keep legacy GROQ_API_KEY in sync if user is on groq, so existing
-        # env-var users don't get surprised.
-        if self._llm_provider.currentData() == "groq":
-            secrets.set_groq_api_key(self._llm_key.text().strip())
+def _scrolling_page() -> QWidget:
+    """Container widget used as a tab page. Tabs share their parent
+    QTabWidget's height; long content scrolls naturally inside its
+    tab if needed."""
+    page = QWidget()
+    page.setStyleSheet(f"background: {styles.BG_PRIMARY};")
+    return page
 
-        # Persist the Display checkboxes — read at startup by __main__,
-        # so changes apply on next launch (we surface that fact in the
-        # dialog's hint text rather than fake hot-reload).
-        self._display_state.show_scoreboard = self._cb_scoreboard.isChecked()
-        self._display_state.show_minimap_timers = self._cb_minimap.isChecked()
-        self._display_state.show_lobby_stats = self._cb_lobby.isChecked()
-        self._display_state.diagnostics_enabled = self._cb_diagnostics.isChecked()
-        self._display_state.enable_auto_camp_detection = self._cb_auto_camp.isChecked()
-        self._display_state.enable_scoreboard_detection = self._cb_scoreboard_detect.isChecked()
-        overlay_config.save(self._display_state)
 
-        self.settings_changed.emit()
-        self.accept()
+def _vertical(parent: QWidget) -> QVBoxLayout:
+    layout = QVBoxLayout(parent)
+    layout.setContentsMargins(
+        styles.SPACING_GRID, styles.SPACING_GRID,
+        styles.SPACING_GRID, styles.SPACING_GRID,
+    )
+    layout.setSpacing(styles.SPACING_GRID)
+    return layout
+
+
+def _section_header(text: str) -> QLabel:
+    label = QLabel(text.upper())
+    label.setStyleSheet(
+        f"color: {styles.TEXT_MUTED};"
+        f" font-size: {styles.FS_LABEL}px;"
+        " font-weight: 700; text-transform: uppercase;"
+        " letter-spacing: 1.2px; padding-top: 4px;"
+    )
+    return label
+
+
+def _hint_label(text: str) -> QLabel:
+    label = QLabel(text)
+    label.setStyleSheet(
+        f"color: {styles.TEXT_MUTED}; font-size: {styles.FS_LABEL}px;"
+        " padding-left: 24px;"
+    )
+    label.setWordWrap(True)
+    return label
+
+
+def _checkbox(label: str, checked: bool) -> QCheckBox:
+    return _styled_checkbox(label, checked)
+
+
+def _flat_button(text: str) -> QPushButton:
+    btn = QPushButton(text)
+    btn.setCursor(Qt.CursorShape.PointingHandCursor)
+    btn.setStyleSheet(
+        f"QPushButton {{ background-color: {styles.BG_TERTIARY};"
+        f" color: {styles.TEXT_SECONDARY};"
+        f" border: 1px solid {styles.BORDER};"
+        f" border-radius: {styles.RADIUS_SMALL}px;"
+        f" padding: 5px 14px; font-size: {styles.FS_LABEL}px; font-weight: 600; }}"
+        f" QPushButton:hover {{ border-color: {styles.WARNING};"
+        f" color: {styles.TEXT_PRIMARY}; }}"
+    )
+    return btn
+
+
+def _hotkey_button_stylesheet() -> str:
+    return (
+        f"QPushButton {{ background-color: {styles.BG_TERTIARY};"
+        f" color: {styles.ACCENT};"
+        f" border: 1px solid {styles.BORDER};"
+        f" border-radius: {styles.RADIUS_SMALL}px;"
+        f" padding: 5px 12px; font-family: {styles.FONT_MONO};"
+        f" font-weight: 700; font-size: {styles.FS_LABEL}px; }}"
+        f" QPushButton:hover {{ border-color: {styles.ACCENT};"
+        f" background-color: {styles.BG_ELEVATED}; }}"
+    )
+
+
+def _tab_widget_stylesheet() -> str:
+    """Tabs inherit the panel-token visual language: dark background,
+    accent-bordered active tab, muted inactive tabs."""
+    return (
+        # Tab area frame
+        f"QTabWidget::pane {{"
+        f"  background-color: {styles.BG_SECONDARY};"
+        f"  border: 1px solid {styles.BORDER};"
+        f"  border-radius: {styles.RADIUS_SMALL}px;"
+        f"  top: -1px;"
+        " }"
+        # Tab bar (the strip itself)
+        f"QTabBar::tab {{"
+        f"  background-color: {styles.BG_TERTIARY};"
+        f"  color: {styles.TEXT_MUTED};"
+        f"  border: 1px solid {styles.BORDER};"
+        f"  border-bottom: none;"
+        f"  border-top-left-radius: {styles.RADIUS_SMALL}px;"
+        f"  border-top-right-radius: {styles.RADIUS_SMALL}px;"
+        f"  padding: 8px 16px;"
+        f"  font-size: {styles.FS_BODY}px;"
+        f"  font-weight: 600;"
+        f"  margin-right: 2px;"
+        " }"
+        f"QTabBar::tab:selected {{"
+        f"  background-color: {styles.BG_SECONDARY};"
+        f"  color: {styles.ACCENT};"
+        " }"
+        f"QTabBar::tab:hover:!selected {{"
+        f"  color: {styles.TEXT_PRIMARY};"
+        " }"
+    )
 
 
 def _styled_checkbox(label: str, checked: bool) -> QCheckBox:
@@ -420,7 +622,6 @@ def _styled_checkbox(label: str, checked: bool) -> QCheckBox:
 
 def open_settings(parent=None, hotkey_service=None) -> bool:  # type: ignore[no-untyped-def]
     """Helper used by the title bar gear button. Returns True on save."""
-    # Center the dialog on the cursor's screen.
     dlg = SettingsDialog(parent, hotkey_service=hotkey_service)
     screen = QGuiApplication.primaryScreen()
     if screen is not None:
@@ -429,5 +630,4 @@ def open_settings(parent=None, hotkey_service=None) -> bool:  # type: ignore[no-
             geo.center().x() - dlg.sizeHint().width() // 2,
             geo.center().y() - dlg.sizeHint().height() // 2,
         )
-    result = dlg.exec()
-    return result == QDialog.DialogCode.Accepted
+    return dlg.exec() == QDialog.DialogCode.Accepted

@@ -500,6 +500,9 @@ def _run_with_ui(args: argparse.Namespace) -> int:
         # nagging about a new version while the user is trying to
         # diagnose is poor signal-to-noise.
         update_task = loop.create_task(asyncio.sleep(0), name="update-check-skipped")
+    elif not persisted.enable_update_check:
+        logging.getLogger(__name__).info("update-check disabled (settings)")
+        update_task = loop.create_task(asyncio.sleep(0), name="update-check-skipped")
     else:
         update_task = loop.create_task(
             _check_and_notify_update(overlay, lifecycle), name="update-check"
@@ -582,6 +585,8 @@ def _run_with_ui(args: argparse.Namespace) -> int:
         # recorder's batch flush touches disk and could interact with
         # whatever caused the prior crash.
         logging.getLogger(__name__).info("telemetry disabled (safe mode)")
+    elif not persisted.enable_telemetry:
+        logging.getLogger(__name__).info("telemetry disabled (settings)")
     else:
         _safe_start("telemetry", telemetry_recorder.start)
 

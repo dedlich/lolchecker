@@ -50,6 +50,14 @@ class OverlayState:
     # Drives the scoreboard-scoped gold-diff overlay. Same Windows-
     # only / safe-mode-off triple-gate as camp detection. Off default.
     enable_scoreboard_detection: bool = False
+    # Update notifications via GitHub Releases. On by default.
+    # Toggleable so users on metered connections / privacy-sensitive
+    # setups can opt out.
+    enable_update_check: bool = True
+    # Telemetry recording — local-only, append-only JSONL. On by default.
+    # Toggleable so users who don't want disk writes can opt out without
+    # entering Safe Mode.
+    enable_telemetry: bool = True
 
 
 def _config_dir() -> Path:
@@ -83,7 +91,9 @@ def load() -> OverlayState:
                   "show_lobby_stats", "floating_positions",
                   "onboarding_seen", "diagnostics_enabled",
                   "enable_auto_camp_detection",
-                  "enable_scoreboard_detection"):
+                  "enable_scoreboard_detection",
+                  "enable_update_check",
+                  "enable_telemetry"):
         if field in data:
             setattr(state, field, data[field])
     return state
