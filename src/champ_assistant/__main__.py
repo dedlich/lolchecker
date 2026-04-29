@@ -236,11 +236,17 @@ def _run_with_ui(args: argparse.Namespace) -> int:
     # consume the prior clean_shutdown.marker — its job is to cover
     # ONE shutdown only; carrying it forward would mask future crashes.
     # ------------------------------------------------------------------
+    from champ_assistant import overlay_config as _ovc
     from champ_assistant import safe_mode as _safe_mode
     from champ_assistant.session_summary import UptimeClock
     startup_mode = _safe_mode.decide_startup_mode()
     _safe_mode.consume_clean_shutdown_marker()
     uptime_clock = UptimeClock()
+    # Persisted overlay-config drives every feature toggle below
+    # (telemetry, update-check, vision services, widget visibility).
+    # Load once at the top so all the gating blocks read consistent
+    # state instead of re-loading multiple times.
+    persisted = _ovc.load()
     if startup_mode.safe:
         logging.getLogger(__name__).warning(
             "safe_mode active: %s — hotkeys/telemetry/update_check disabled",
@@ -518,11 +524,11 @@ def _run_with_ui(args: argparse.Namespace) -> int:
     # Floating mini-widgets (Blitz-style independent overlays). Each one is
     # its own top-level transparent always-on-top window with persisted
     # position. Toggled via overlay_config flags in Settings.
-    from champ_assistant import overlay_config as _ovc
+    # ``persisted`` was loaded near the top of this function — same
+    # state object drives every visibility / feature flag below.
     from champ_assistant.ui.lobby_stats_widget import LobbyStatsWidget
     from champ_assistant.ui.minimap_timers_widget import MinimapTimersWidget
     from champ_assistant.ui.scoreboard_widget import ScoreboardWidget
-    persisted = _ovc.load()
     floating: list[object] = []
     if persisted.show_scoreboard:
         scoreboard = ScoreboardWidget()

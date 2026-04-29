@@ -1,8 +1,17 @@
 """Champ-select panel showing the top ban suggestions.
 
-Renders one row per suggestion: champion icon + name + score + a short
-reasons line. Hides itself when there are no suggestions (e.g. no Riot
-API key configured AND no tier-list data — should be rare).
+Visual hierarchy (revised):
+
+  * Red left-border on the row carries the ban semantic — that's
+    the visual signal the user reads first.
+  * Rank prefix (#1 / #2 / #3) replaces the heavy red score-pill
+    as the position indicator.
+  * Score becomes a plain right-aligned mono label in danger color
+    — no background/border pill. The earlier red-pill-on-red-border
+    treatment was visual overload.
+
+Hides itself when there are no suggestions (e.g. no Riot API key
+configured AND no tier-list data — should be rare).
 """
 from __future__ import annotations
 
@@ -17,10 +26,16 @@ ICON_SIZE = 28
 
 
 class _BanRow(QFrame):
-    def __init__(self, suggestion: BanSuggestion, icon: QPixmap | None) -> None:
+    def __init__(
+        self,
+        suggestion: BanSuggestion,
+        icon: QPixmap | None,
+        *,
+        rank: int | None = None,
+    ) -> None:
         super().__init__()
         self.setProperty("role", "row")
-        # Subtle red left-border to make it visually read as an alert/ban row
+        # Subtle red left-border carries the ban semantic.
         self.setStyleSheet(
             f"QFrame[role='row'] {{ background-color: {styles.BG_TERTIARY};"
             f" border-radius: {styles.RADIUS_SMALL}px;"
@@ -28,8 +43,23 @@ class _BanRow(QFrame):
             f" QFrame[role='row']:hover {{ background-color: {styles.BG_INTERACT}; }}"
         )
         layout = QHBoxLayout(self)
-        layout.setContentsMargins(8, 6, 10, 6)
-        layout.setSpacing(10)
+        layout.setContentsMargins(
+            styles.SPACING_GRID, styles.SPACING_TIGHT + 2,
+            styles.SPACING_WIDE, styles.SPACING_TIGHT + 2,
+        )
+        layout.setSpacing(styles.SPACING_GRID + 2)
+
+        if rank is not None:
+            rank_label = QLabel(f"#{rank}")
+            rank_label.setFixedWidth(24)
+            rank_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            rank_label.setStyleSheet(
+                f"color: {styles.DANGER};"
+                f" font-family: {styles.FONT_MONO};"
+                f" font-size: {styles.FS_LABEL}px; font-weight: 700;"
+                " letter-spacing: 0.5px;"
+            )
+            layout.addWidget(rank_label)
 
         portrait = QLabel()
         portrait.setFixedSize(ICON_SIZE, ICON_SIZE)
@@ -61,15 +91,18 @@ class _BanRow(QFrame):
             text.addWidget(reasons)
         layout.addLayout(text, 1)
 
+        # Plain score, no pill — left-border + rank prefix already
+        # carry "this is a high-priority ban" without piling on
+        # background+border chrome.
         score = QLabel(f"{suggestion.score:.0f}")
         score.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
         score.setStyleSheet(
             f"color: {styles.DANGER};"
-            f" background-color: rgba(255, 107, 107, 18);"
-            f" border: 1px solid rgba(255, 107, 107, 60);"
-            f" padding: 2px 10px; border-radius: 8px;"
-            f" font-weight: 700; font-size: {styles.FS_HEADING}px;"
+            f" font-family: {styles.FONT_MONO};"
+            f" font-size: {styles.FS_BODY}px; font-weight: 700;"
+            " letter-spacing: 0.4px;"
         )
+        score.setFixedWidth(36)
         layout.addWidget(score)
 
 
@@ -124,6 +157,6 @@ class BanPanel(QFrame):
 
         self.show()
         self._empty.hide()
-        for s in suggestions:
-            row = _BanRow(s, icon_lookup(s.champion_key))
+        for idx, s in enumerate(suggestions, start=1):
+            row = _BanRow(s, icon_lookup(s.champion_key), rank=idx)
             self._rows.addWidget(row)

@@ -1,4 +1,16 @@
-"""Pick suggestion card."""
+"""Pick suggestion card.
+
+Visual hierarchy (revised for clarity):
+
+  PRIMARY     champion name + portrait + tier badge — what to read first
+  SECONDARY   rank prefix (#1 / #2 / #3) — order signal
+  TERTIARY    score number + reason line — supporting context
+
+The previous layout rendered the score at FS_HEADING accent which
+visually competed with the champion name. Now the score sits in
+TEXT_SECONDARY at FS_BODY, the rank prefix replaces it as the lead
+"position" signal.
+"""
 from __future__ import annotations
 
 from PyQt6.QtCore import Qt, pyqtSignal
@@ -20,7 +32,17 @@ ICON_SIZE = 28
 
 
 class PickCard(QFrame):
-    """Card showing one suggested pick: icon + champion + tier + score + reasons + build."""
+    """One suggested pick. Layout:
+
+        ┌────────────────────────────────────────┐
+        │ #1 [icon]  Name [Tier]    score=84    │  head
+        │ reason1 · reason2 · reason3            │  reasons
+        │ 🛡 KeystoneA • RuneB • RuneC           │  optional build
+        │ ⚔  Item1 ›  Item2 ›  Item3              │
+        │ ✨ Flash • Ignite                       │
+        │                          [Apply Build] │  optional action
+        └────────────────────────────────────────┘
+    """
 
     apply_build_requested = pyqtSignal(str, "PyQt_PyObject", "PyQt_PyObject")
     # (champion_key, rune_names, item_names)
@@ -30,6 +52,8 @@ class PickCard(QFrame):
         suggestion: PickSuggestion,
         icon: QPixmap | None = None,
         build: ChampionBuild | None = None,
+        *,
+        rank: int | None = None,
     ) -> None:
         super().__init__()
         self.setProperty("card", True)
@@ -37,52 +61,66 @@ class PickCard(QFrame):
         self._build = build
 
         outer = QVBoxLayout(self)
-        outer.setContentsMargins(10, 8, 10, 8)
-        outer.setSpacing(6)
+        outer.setContentsMargins(
+            styles.SPACING_WIDE, styles.SPACING_GRID,
+            styles.SPACING_WIDE, styles.SPACING_GRID,
+        )
+        outer.setSpacing(styles.SPACING_TIGHT + 2)
 
+        # -- Head row -----------------------------------------------------
         head = QHBoxLayout()
-        head.setSpacing(8)
+        head.setSpacing(styles.SPACING_GRID)
+
+        if rank is not None:
+            head.addWidget(_rank_badge(rank))
 
         if icon is not None and not icon.isNull():
             icon_label = QLabel()
             icon_label.setFixedSize(ICON_SIZE, ICON_SIZE)
             icon_label.setPixmap(icon)
             icon_label.setStyleSheet(
-                f"background-color: {styles.BG_PRIMARY}; "
-                f"border-radius: {styles.RADIUS}px; "
-                f"border: 1px solid {styles.BORDER};"
+                f"background-color: {styles.BG_PRIMARY};"
+                f" border-radius: {styles.RADIUS}px;"
+                f" border: 1px solid {styles.BORDER};"
             )
             head.addWidget(icon_label)
 
         name = QLabel(suggestion.champion_key)
         name.setStyleSheet(
             f"color: {styles.TEXT_PRIMARY};"
-            f" font-size: {styles.FS_HEADING}px; font-weight: 600;"
+            f" font-size: {styles.FS_HEADING}px; font-weight: 700;"
         )
         head.addWidget(name)
         head.addWidget(TierBadge(suggestion.tier))
         head.addStretch()
 
-        score_label = QLabel(f"{suggestion.score:.0f}")
+        # Score is now a small muted-secondary label, not a primary
+        # accent number. Visual hierarchy: name + tier dominate; score
+        # supports without competing.
+        score_label = QLabel(f"score {suggestion.score:.0f}")
         score_label.setStyleSheet(
-            f"color: {styles.ACCENT}; font-weight: 700;"
-            f" font-size: {styles.FS_HEADING}px;"
+            f"color: {styles.TEXT_MUTED};"
+            f" font-size: {styles.FS_LABEL}px;"
+            f" font-family: {styles.FONT_MONO};"
+            " letter-spacing: 0.4px;"
         )
         score_label.setAlignment(
             Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
         )
         head.addWidget(score_label)
+        outer.addLayout(head)
 
+        # -- Reasons line -------------------------------------------------
         reasons_text = " · ".join(suggestion.reasons[:3]) if suggestion.reasons else ""
         reasons = QLabel(reasons_text)
         reasons.setStyleSheet(
             f"color: {styles.TEXT_MUTED}; font-size: {styles.FS_LABEL}px;"
+            " padding-left: 4px;"
         )
         reasons.setWordWrap(True)
-
-        outer.addLayout(head)
         outer.addWidget(reasons)
 
+        # -- Build section (runes / items / summoners + apply button) ----
         if build is not None:
             self._add_build_lines(outer, build)
             self._add_apply_button(outer, build)
@@ -148,6 +186,22 @@ class PickCard(QFrame):
         )
         row.addWidget(apply)
         outer.addLayout(row)
+
+
+def _rank_badge(rank: int) -> QLabel:
+    """Small badge showing the suggestion's rank (1-indexed). Token-
+    driven: accent text on a transparent background, mono font for
+    a stable digit width across #1..#9."""
+    label = QLabel(f"#{rank}")
+    label.setFixedWidth(28)
+    label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+    label.setStyleSheet(
+        f"color: {styles.ACCENT};"
+        f" font-family: {styles.FONT_MONO};"
+        f" font-size: {styles.FS_LABEL}px; font-weight: 700;"
+        " letter-spacing: 0.5px;"
+    )
+    return label
 
 
 def _build_line(sigil: str, items: list[str], color: str, *, sep: str) -> QLabel:

@@ -352,10 +352,10 @@ class MainOverlay(QMainWindow):
             return
 
         self._no_picks_label.hide()
-        for s in view.suggestions:
+        for idx, s in enumerate(view.suggestions, start=1):
             icon = self._icon_for_key(s.champion_key)
             build = view.suggestion_builds.get(s.champion_key)
-            card = PickCard(s, icon=icon, build=build)
+            card = PickCard(s, icon=icon, build=build, rank=idx)
             card.apply_build_requested.connect(self.apply_build_requested.emit)
             self._picks_container.addWidget(card)
 
