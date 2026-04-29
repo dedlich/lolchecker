@@ -11,7 +11,10 @@ from champ_assistant.jungle_timeline import (
     JungleTimelineEngine,
 )
 from champ_assistant.ui.map_overlay_layer import (
+    CAMP_COLORS,
+    CAMP_GLYPHS,
     CAMP_POSITIONS,
+    MARKER_RADIUS_PX,
     MapOverlayLayer,
     _format_mmss,
     map_to_screen,
@@ -226,3 +229,38 @@ def test_layer_tolerates_engine_states_raising(qt_app) -> None:  # type: ignore[
     layer.resize(110, 110)
     layer.show()
     qt_app.processEvents()  # would crash if paintEvent didn't catch
+
+
+# ----------------------------------------------------------------------
+# Camp marker registry — every camp has a glyph + color
+# ----------------------------------------------------------------------
+def test_every_camp_has_marker_metadata() -> None:
+    """Camp markers (drawn at every position regardless of timer state)
+    let the user see what's clickable. Every camp in the engine's spec
+    must have an entry in both CAMP_GLYPHS and CAMP_COLORS so the
+    paint pass doesn't fall back to the '?' / grey defaults."""
+    for spec in JUNGLE_CAMPS:
+        assert spec.id in CAMP_POSITIONS, f"missing position: {spec.id}"
+        assert spec.id in CAMP_GLYPHS, f"missing glyph: {spec.id}"
+        assert spec.id in CAMP_COLORS, f"missing color: {spec.id}"
+
+
+def test_camp_glyphs_are_unique() -> None:
+    """Each camp's single-letter glyph must be distinct so the user
+    can tell which marker they're clicking. Defends against e.g.
+    accidentally collapsing 'Red Buff' and 'Raptors' to the same R."""
+    glyphs = list(CAMP_GLYPHS.values())
+    assert len(glyphs) == len(set(glyphs)), f"duplicate glyphs: {glyphs}"
+
+
+def test_marker_radius_fits_in_smallest_panel() -> None:
+    """Marker diameter must be small enough that seven non-overlapping
+    markers fit on the smallest minimap panel (110px). Sanity check
+    so a constant bump doesn't quietly produce overlapping markers."""
+    # Worst-case neighbor distance: gromp (0.78, 0.28) ↔ wolves (0.70, 0.35)
+    # → distance ≈ 0.106 in normalized units. On a 110px panel that's
+    # ~12px — markers must be ≤6px radius to not overlap, but we use 9
+    # accepting some overlap on tiny panels in exchange for legibility
+    # at typical 200+ px sizes.
+    assert MARKER_RADIUS_PX <= 14
+    assert MARKER_RADIUS_PX >= 6

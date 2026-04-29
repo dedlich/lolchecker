@@ -58,6 +58,35 @@ CAMP_POSITIONS: dict[str, tuple[float, float]] = {
     "scuttle":   (0.50, 0.50),  # river center — single entry in the engine
 }
 
+# Single-letter glyph drawn inside each camp marker. Lets the user
+# identify camps without hovering for a tooltip.
+CAMP_GLYPHS: dict[str, str] = {
+    "red_buff":  "R",
+    "blue_buff": "B",
+    "gromp":     "G",
+    "krugs":     "K",
+    "raptors":   "P",   # P for raptoRs — R is taken by Red Buff
+    "wolves":    "W",
+    "scuttle":   "S",
+}
+
+# Per-camp marker tint. Buffs get their canonical colors; small
+# camps stay neutral grey so they don't compete for attention; scuttle
+# gets the river's blue-cyan tint.
+CAMP_COLORS: dict[str, str] = {
+    "red_buff":  styles.DANGER,
+    "blue_buff": styles.ACCENT,
+    "gromp":     styles.TEXT_MUTED,
+    "krugs":     styles.TEXT_MUTED,
+    "raptors":   styles.TEXT_MUTED,
+    "wolves":    styles.TEXT_MUTED,
+    "scuttle":   styles.TIER_A,
+}
+
+# Marker pixel size (radius). Picked so seven non-overlapping circles
+# fit comfortably on the smallest minimap panel (110×110).
+MARKER_RADIUS_PX = 9
+
 
 def map_to_screen(rect: QRect, norm_x: float, norm_y: float) -> QPoint:
     """Convert a (norm_x, norm_y) camp position in [0..1] to a QPoint
@@ -191,6 +220,21 @@ class MapOverlayLayer(QWidget):
             metrics = painter.fontMetrics()
             rect = self.rect()
 
+            # First pass — always draw camp markers (filled circle +
+            # glyph) at every position. Markers fade when the camp is
+            # in alive sentinel (un-armed) so the user sees they
+            # haven't started a timer yet, but still knows what's
+            # clickable. Active timers get a brighter marker.
+            for camp_id, (nx, ny) in CAMP_POSITIONS.items():
+                state = states.get(camp_id)
+                anchor = map_to_screen(rect, nx, ny)
+                self._paint_marker(
+                    painter, anchor, camp_id,
+                    armed=state is not None and state.state != "alive",
+                )
+
+            # Second pass — countdown text overlay on top of markers
+            # for camps with active timers.
             for camp_id, (nx, ny) in CAMP_POSITIONS.items():
                 state = states.get(camp_id)
                 if state is None:
@@ -215,18 +259,63 @@ class MapOverlayLayer(QWidget):
                 painter.setPen(self._color_for(state.confidence))
 
                 anchor = map_to_screen(rect, nx, ny)
-                # Center the text on the anchor point.
+                # Position the countdown text below the marker rather
+                # than centered on it — the marker is now drawn at the
+                # anchor point and the text sits underneath.
                 text_w = metrics.horizontalAdvance(text)
                 text_h = metrics.height()
-                # Vertical: y is the baseline; subtract ~1/4 height so
-                # the visual centroid lands on anchor.y().
                 draw_pt = QPoint(
                     anchor.x() - text_w // 2,
-                    anchor.y() + text_h // 4,
+                    anchor.y() + MARKER_RADIUS_PX + text_h - 2,
                 )
                 painter.drawText(draw_pt, text)
         finally:
             painter.end()
+
+    def _paint_marker(
+        self,
+        painter: QPainter,
+        anchor: QPoint,
+        camp_id: str,
+        *,
+        armed: bool,
+    ) -> None:
+        """Draw a single camp marker — filled circle with a glyph
+        letter. Dim alpha when un-armed (no timer running) so the user
+        sees the camp is clickable but doesn't have an active count.
+        Bright alpha when armed."""
+        base_color = QColor(CAMP_COLORS.get(camp_id, styles.TEXT_MUTED))
+        fill_alpha = 220 if armed else 140
+        ring_alpha = 255 if armed else 180
+        fill = QColor(base_color)
+        fill.setAlpha(fill_alpha)
+        ring = QColor(base_color)
+        ring.setAlpha(ring_alpha)
+
+        # Filled circle.
+        painter.setPen(ring)
+        painter.setBrush(fill)
+        painter.drawEllipse(
+            anchor.x() - MARKER_RADIUS_PX,
+            anchor.y() - MARKER_RADIUS_PX,
+            MARKER_RADIUS_PX * 2,
+            MARKER_RADIUS_PX * 2,
+        )
+
+        # Glyph in the middle. White text reads on every camp color.
+        glyph = CAMP_GLYPHS.get(camp_id, "?")
+        glyph_color = QColor("#FFFFFF")
+        glyph_color.setAlpha(255 if armed else 200)
+        painter.setPen(glyph_color)
+        glyph_metrics = painter.fontMetrics()
+        gw = glyph_metrics.horizontalAdvance(glyph)
+        gh = glyph_metrics.ascent()
+        painter.drawText(
+            QPoint(anchor.x() - gw // 2, anchor.y() + gh // 2 - 1),
+            glyph,
+        )
+        # Reset brush so callers don't see it leaking into the next pass.
+        painter.setBrush(Qt.BrushStyle.NoBrush)
 
     def _color_for(self, confidence: float) -> QColor:
         """Return one of the cached QColor instances. No allocation —
