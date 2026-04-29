@@ -265,6 +265,19 @@ def _run_with_ui(args: argparse.Namespace) -> int:
     # Load once at the top so all the gating blocks read consistent
     # state instead of re-loading multiple times.
     persisted = _ovc.load()
+    # Low Resource Mode (charter A5): single master switch that forces
+    # every optional subsystem off + reduces render rate for low-end
+    # hardware / streaming scenarios. Applied as a runtime override
+    # so the user's per-feature flags stay as they set them — toggling
+    # LRM off restores the original preferences on next launch.
+    if persisted.low_resource_mode:
+        logging.getLogger(__name__).info(
+            "low_resource_mode active — telemetry/update-check/vision disabled",
+        )
+        persisted.enable_telemetry = False
+        persisted.enable_update_check = False
+        persisted.enable_auto_camp_detection = False
+        persisted.enable_scoreboard_detection = False
     if startup_mode.safe:
         logging.getLogger(__name__).warning(
             "safe_mode active: %s — hotkeys/telemetry/update_check disabled",
@@ -294,7 +307,11 @@ def _run_with_ui(args: argparse.Namespace) -> int:
     from champ_assistant.render_scheduler import RenderScheduler
     from champ_assistant.state_store import StateStore
     store = StateStore()
-    scheduler = RenderScheduler()
+    # Low Resource Mode caps the repaint cadence to ~10 FPS — well below
+    # human perception of stutter at the cost of saving ~3× the CPU on
+    # idle frames. Default 30 FPS otherwise.
+    _scheduler_fps = 10 if persisted.low_resource_mode else RenderScheduler.DEFAULT_MAX_FPS
+    scheduler = RenderScheduler(max_fps=_scheduler_fps)
     diagnostics = Diagnostics()
     lifecycle.register("scheduler", scheduler.stop)
     lifecycle.register("diagnostics", diagnostics.stop)

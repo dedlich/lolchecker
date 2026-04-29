@@ -72,6 +72,7 @@ TOGGLABLE_FIELDS_TO_CHECKBOXES = {
     "enable_scoreboard_detection":  "_cb_scoreboard_detect",
     "enable_update_check":          "_cb_update_check",
     "enable_telemetry":             "_cb_telemetry",
+    "low_resource_mode":            "_cb_low_resource",
 }
 
 
@@ -123,6 +124,7 @@ def test_save_persists_all_toggles(qt_app, isolated_overlay_config) -> None:  # 
     dlg._cb_scoreboard_detect.setChecked(True)
     dlg._cb_update_check.setChecked(False)
     dlg._cb_telemetry.setChecked(False)
+    dlg._cb_low_resource.setChecked(True)
     dlg._on_save()
 
     reloaded = overlay_config.load()
@@ -136,6 +138,7 @@ def test_save_persists_all_toggles(qt_app, isolated_overlay_config) -> None:  # 
     assert reloaded.enable_scoreboard_detection is True
     assert reloaded.enable_update_check is False
     assert reloaded.enable_telemetry is False
+    assert reloaded.low_resource_mode is True
 
 
 def test_default_toggles_are_sane(qt_app, isolated_overlay_config) -> None:  # type: ignore[no-untyped-def]
@@ -150,6 +153,8 @@ def test_default_toggles_are_sane(qt_app, isolated_overlay_config) -> None:  # t
     assert state.diagnostics_enabled is True
     assert state.enable_telemetry is True
     assert state.enable_update_check is True
+    # Low Resource Mode opt-in only — never default
+    assert state.low_resource_mode is False
     # Experimental vision: scoreboard detection ON (drives the
     # gold-diff overlay's tab-scoreboard gating, default-on so users
     # see the feature without opt-in); camp detection still OFF

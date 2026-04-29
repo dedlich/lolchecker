@@ -315,6 +315,19 @@ class SettingsDialog(QDialog):
         page = _scrolling_page()
         body = _vertical(page)
 
+        body.addWidget(_section_header("Low Resource Mode"))
+        self._cb_low_resource = _checkbox(
+            "Low Resource Mode (für schwächere Rechner / Streaming)",
+            self._display_state.low_resource_mode,
+        )
+        body.addWidget(self._cb_low_resource)
+        body.addWidget(_hint_label(
+            "Master-Switch: deaktiviert Vision-Detection, Telemetry, "
+            "Update-Check und cap't Render-Rate auf 10 FPS. Andere "
+            "Toggle-Settings bleiben gespeichert; LRM überschreibt "
+            "sie nur zur Laufzeit."
+        ))
+
         body.addWidget(_section_header("Logging"))
         self._cb_diagnostics = _checkbox(
             "Diagnose-Logging (CPU / Speicher / FPS alle 10s)",
@@ -410,6 +423,7 @@ class SettingsDialog(QDialog):
         s.enable_scoreboard_detection = self._cb_scoreboard_detect.isChecked()
         s.enable_update_check       = self._cb_update_check.isChecked()
         s.enable_telemetry          = self._cb_telemetry.isChecked()
+        s.low_resource_mode         = self._cb_low_resource.isChecked()
         overlay_config.save(s)
 
         self.settings_changed.emit()

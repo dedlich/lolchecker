@@ -60,6 +60,13 @@ class OverlayState:
     # Toggleable so users who don't want disk writes can opt out without
     # entering Safe Mode.
     enable_telemetry: bool = True
+    # Low Resource Mode (Strategy A5) — single master switch that
+    # forces every optional subsystem off + reduces render rate. Used
+    # for low-end laptops or when the user is running a stream encoder
+    # that needs every spare CPU cycle. The other per-feature flags
+    # stay as the user set them; LRM overrides at startup, so toggling
+    # LRM off again restores the prior preferences.
+    low_resource_mode: bool = False
 
 
 def _config_dir() -> Path:
@@ -95,7 +102,8 @@ def load() -> OverlayState:
                   "enable_auto_camp_detection",
                   "enable_scoreboard_detection",
                   "enable_update_check",
-                  "enable_telemetry"):
+                  "enable_telemetry",
+                  "low_resource_mode"):
         if field in data:
             setattr(state, field, data[field])
     return state
