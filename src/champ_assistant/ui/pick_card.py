@@ -151,11 +151,27 @@ class PickCard(QFrame):
             self._add_apply_button(outer, build)
 
     def mousePressEvent(self, event: QMouseEvent | None) -> None:
-        """Click on the card body → hover this champion in the picker.
-        Clicks on the Apply Build button never reach here (the button
-        accepts and consumes its own events)."""
-        if event is not None and event.button() == Qt.MouseButton.LeftButton:
-            self.pick_hover_requested.emit(self.suggestion.champion_key)
+        """Click on the card body → lock this champion in the picker
+        AND apply its rune page + item set in one shot. The click is a
+        commitment; auto-applying the build saves a second click on
+        the Apply Build button. Clicks on the Apply Build button
+        itself never reach here (the button accepts and consumes its
+        own events).
+        """
+        if event is None or event.button() != Qt.MouseButton.LeftButton:
+            super().mousePressEvent(event)
+            return
+        key = self.suggestion.champion_key
+        self.pick_hover_requested.emit(key)
+        # Auto-apply the build only when one is available — picks
+        # without a curated/adapted build (rare, e.g. a champion not
+        # yet seeded in builds.json) just lock with no rune/item push.
+        if self._build is not None and (self._build.runes or self._build.items):
+            self.apply_build_requested.emit(
+                key,
+                list(self._build.runes),
+                list(self._build.items),
+            )
         super().mousePressEvent(event)
 
     @staticmethod

@@ -115,3 +115,46 @@ def test_pick_card_cursor_is_pointing_hand(qt_app) -> None:
 def test_ban_row_cursor_is_pointing_hand(qt_app) -> None:
     row = _BanRow(_ban("Yone"), icon=None, rank=1)
     assert row.cursor().shape() == Qt.CursorShape.PointingHandCursor
+
+
+def test_pick_card_body_click_emits_lock_and_apply_build(qt_app) -> None:
+    """Card-body click is a single commit gesture: lock the champ AND
+    push the build. User explicitly asked for one click instead of
+    two (lock + Apply Build)."""
+    from champ_assistant.data.models import ChampionBuild
+    build = ChampionBuild(
+        runes=["Conqueror", "Triumph"],
+        items=["Stridebreaker", "Plated Steelcaps"],
+        summoners=["Flash", "Teleport"],
+    )
+    card = PickCard(_pick("Garen"), build=build, rank=1)
+    received_hover: list[str] = []
+    received_apply: list[tuple[str, list, list]] = []
+    card.pick_hover_requested.connect(received_hover.append)
+    card.apply_build_requested.connect(
+        lambda key, runes, items: received_apply.append((key, runes, items)),
+    )
+    _press(card)
+    # Both signals fire on a single body click.
+    assert received_hover == ["Garen"]
+    assert len(received_apply) == 1
+    assert received_apply[0][0] == "Garen"
+    assert received_apply[0][1] == ["Conqueror", "Triumph"]
+    assert received_apply[0][2] == ["Stridebreaker", "Plated Steelcaps"]
+
+
+def test_pick_card_body_click_without_build_only_emits_lock(qt_app) -> None:
+    """When the suggestion has no curated build attached (rare —
+    champion not yet in builds.json), the lock still fires but no
+    apply-build LCU write is triggered. Avoids pushing an empty rune
+    page or item set."""
+    card = PickCard(_pick("Ahri"), build=None, rank=1)
+    received_hover: list[str] = []
+    received_apply: list = []
+    card.pick_hover_requested.connect(received_hover.append)
+    card.apply_build_requested.connect(
+        lambda *args: received_apply.append(args),
+    )
+    _press(card)
+    assert received_hover == ["Ahri"]
+    assert received_apply == []
