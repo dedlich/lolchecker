@@ -328,6 +328,7 @@ class MainOverlay(QMainWindow):
                     icon=self._icon_for_key(key),
                     resolved_role=resolved_role,
                     role_overridden=role_overridden,
+                    damage_profile=view.enemy_damage_profile.get(member.cell_id, ""),
                 )
                 profile = view.enemy_profiles.get(member.cell_id)
                 row.set_profile(

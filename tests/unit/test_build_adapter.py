@@ -5,6 +5,7 @@ from champ_assistant.advisor.build_adapter import (
     HARD_CC_KEYS,
     SUSTAIN_KEYS,
     adapt_build,
+    damage_profile_for_tags,
 )
 from champ_assistant.data.models import ChampionBuild, TagsData
 
@@ -247,3 +248,33 @@ def test_sustain_keys_includes_canonical_examples() -> None:
 def test_hard_cc_keys_includes_canonical_engagers() -> None:
     for key in ("Leona", "Nautilus", "Blitzcrank", "Thresh"):
         assert key in HARD_CC_KEYS
+
+
+# ----------------------------------------------------------------------
+# damage_profile_for_tags — drives the per-enemy AP/AD badge
+# ----------------------------------------------------------------------
+def test_damage_profile_pure_ap() -> None:
+    assert damage_profile_for_tags(["Mage", "Burst"]) == "AP"
+
+
+def test_damage_profile_pure_ad() -> None:
+    assert damage_profile_for_tags(["Marksman"]) == "AD"
+    assert damage_profile_for_tags(["Fighter", "Tank"]) == "AD"
+
+
+def test_damage_profile_hybrid() -> None:
+    """Akali / Kayle: tagged as both Mage AND Assassin, so the player
+    needs to know the enemy can deal both damage types."""
+    assert damage_profile_for_tags(["Mage", "Assassin"]) == "AP/AD"
+
+
+def test_damage_profile_pure_tank_returns_empty() -> None:
+    """Pure-Tank champions (e.g. Sion, Malphite without Mage tag) deal
+    minor damage and don't push MR vs Armor decisions one way or
+    another — the badge should be hidden, not misleading."""
+    assert damage_profile_for_tags(["Tank"]) == ""
+
+
+def test_damage_profile_enchanter_returns_empty() -> None:
+    """Enchanters (Soraka, Lulu, Janna): no AP/AD tag → badge hidden."""
+    assert damage_profile_for_tags([]) == ""

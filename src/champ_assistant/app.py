@@ -242,6 +242,7 @@ class ChampAssistant:
         enemy_names = self._compute_enemy_names(session)
         enemy_keys = self._compute_enemy_keys(session)
         enemy_roles = self._compute_enemy_roles(session)
+        enemy_damage_profile = self._compute_enemy_damage_profile(session)
         suggestions, gaps = self._compute_picks(session)
 
         # Look up the recommended build for each suggestion in the local
@@ -303,6 +304,7 @@ class ChampAssistant:
             },
             enemy_roles=enemy_roles,
             enemy_role_overridden=set(self._enemy_role_overrides.keys()),
+            enemy_damage_profile=enemy_damage_profile,
             suggestion_builds=suggestion_builds,
             suggestion_build_reasons=suggestion_build_reasons,
             enemy_profiles=dict(self._enemy_profiles_by_cell),  # type: ignore[arg-type]
@@ -524,6 +526,23 @@ class ChampAssistant:
             if champ is not None:
                 keys[enemy.champion_id] = champ.key
         return keys
+
+    def _compute_enemy_damage_profile(
+        self, session: ChampSelectSession,
+    ) -> dict[int, str]:
+        """Per-enemy damage classification (AP / AD / AP/AD / "")
+        keyed by cell_id. Drives the EnemyRow damage badge."""
+        from .advisor.build_adapter import damage_profile_for_tags
+        out: dict[int, str] = {}
+        for enemy in session.their_team:
+            if enemy.champion_id == 0:
+                continue
+            champ = self.champions.get(enemy.champion_id)
+            if champ is None:
+                continue
+            tags = self.tags.tags_for(champ.key) or champ.tags
+            out[enemy.cell_id] = damage_profile_for_tags(tags)
+        return out
 
     def _compute_picks(
         self, session: ChampSelectSession

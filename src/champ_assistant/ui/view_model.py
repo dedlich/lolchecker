@@ -47,6 +47,11 @@ class SessionView(BaseModel):
     """Map enemy cell_id → resolved role (override / tag-inference / cell-order).
     Used by the UI to render the role label and detect manual overrides."""
 
+    enemy_damage_profile: dict[int, str] = Field(default_factory=dict)
+    """Map enemy cell_id → ``"AP"`` / ``"AD"`` / ``"AP/AD"`` / ``""``.
+    Surfaced by EnemyRow as a small badge so the player sees the team's
+    damage mix at a glance and can prioritize MR vs Armor accordingly."""
+
     enemy_role_overridden: set[int] = Field(default_factory=set)
     """cell_ids whose role comes from a manual user override (not auto)."""
 

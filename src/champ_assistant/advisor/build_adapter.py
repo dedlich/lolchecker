@@ -36,6 +36,31 @@ if TYPE_CHECKING:
 AP_TAGS = frozenset({"Mage", "Burst", "Battlemage", "Catcher", "Specialist"})
 # Tags that mark a champion as primarily AD damage.
 AD_TAGS = frozenset({"Marksman", "Fighter", "Assassin", "Bruiser", "Skirmisher", "Diver", "Hyper-Carry"})
+
+
+def damage_profile_for_tags(tags: list[str] | tuple[str, ...] | set[str]) -> str:
+    """Classify a single champion's primary damage type from their
+    DataDragon tags. Returns one of:
+
+      ``"AP"``     — has any AP-leaning tag, no AD-leaning tag
+      ``"AD"``     — has any AD-leaning tag, no AP-leaning tag
+      ``"AP/AD"``  — both (hybrid: Akali, Kayle, etc.)
+      ``""``       — no recognized damage tag (Tank-only, Enchanter)
+
+    Used by the EnemyRow badge so the player can decide MR vs Armor
+    item priority at a glance, and by the team-comp build adapter
+    via ``_team_damage_profile``.
+    """
+    s = set(tags)
+    has_ap = bool(s & AP_TAGS)
+    has_ad = bool(s & AD_TAGS)
+    if has_ap and has_ad:
+        return "AP/AD"
+    if has_ap:
+        return "AP"
+    if has_ad:
+        return "AD"
+    return ""
 # Champions known for heavy in-combat sustain — anti-heal items
 # (Morellonomicon / Executioner's Calling) are matchup wins against
 # them. Curated list — DataDragon doesn't tag "self-sustain".

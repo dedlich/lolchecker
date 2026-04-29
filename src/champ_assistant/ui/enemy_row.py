@@ -61,6 +61,15 @@ class EnemyRow(QFrame):
             f"color: {styles.TEXT_PRIMARY}; font-weight: 600;"
         )
 
+        # Tiny AP/AD badge — surfaces the enemy's damage type so the
+        # player can prioritize MR vs Armor at a glance. Hidden when
+        # the enemy hasn't picked yet or the champion has no clear
+        # damage classification (Tank-only, Enchanter).
+        self._damage_badge = QLabel("")
+        self._damage_badge.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._damage_badge.setMinimumWidth(34)
+        self._damage_badge.hide()
+
         self._role_button = QPushButton("")
         self._role_button.setFlat(True)
         self._role_button.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -72,6 +81,7 @@ class EnemyRow(QFrame):
 
         head.addWidget(self._icon_label)
         head.addWidget(self._champion_label)
+        head.addWidget(self._damage_badge)
         head.addStretch()
 
         self._rank_pill = RankPill()
@@ -129,6 +139,7 @@ class EnemyRow(QFrame):
         self._cell_id = -1
         self._champion_label.setText(self.PLACEHOLDER)
         self._update_role_button_style(role="", overridden=False)
+        self._update_damage_badge("")
         self._counters_label.setText("")
         self._icon_label.clear()
         self._profile_label.setText(" ")  # keep reserved space
@@ -230,6 +241,7 @@ class EnemyRow(QFrame):
         icon: QPixmap | None = None,
         resolved_role: str = "",
         role_overridden: bool = False,
+        damage_profile: str = "",
     ) -> None:
         self._cell_id = member.cell_id
         if member.champion_id == 0:
@@ -243,6 +255,7 @@ class EnemyRow(QFrame):
                 self._icon_label.clear()
 
         self._update_role_button_style(role=resolved_role, overridden=role_overridden)
+        self._update_damage_badge(damage_profile)
 
         if counters:
             top = counters[:3]
@@ -254,6 +267,30 @@ class EnemyRow(QFrame):
             self._counters_label.setText("")
 
     # -- Role button -----------------------------------------------------
+
+    def _update_damage_badge(self, profile: str) -> None:
+        """Render the AP/AD pill. Color-coded so the user can read it
+        without parsing the letters: AP = magic-purple, AD = warm-red,
+        AP/AD hybrid = neutral. Hidden when the profile is empty
+        (un-picked or untaggable champion)."""
+        if not profile:
+            self._damage_badge.setText("")
+            self._damage_badge.hide()
+            return
+        color = {
+            "AP":    styles.AP_COLOR if hasattr(styles, "AP_COLOR") else styles.ACCENT,
+            "AD":    styles.DANGER,
+            "AP/AD": styles.WARNING,
+        }.get(profile, styles.TEXT_MUTED)
+        self._damage_badge.setText(profile)
+        self._damage_badge.setStyleSheet(
+            f"color: white;"
+            f" background-color: {color};"
+            f" font-size: {styles.FS_CAPTION}px; font-weight: 700;"
+            f" padding: 1px 6px; border-radius: {styles.RADIUS_SMALL}px;"
+            " letter-spacing: 0.4px;"
+        )
+        self._damage_badge.show()
 
     def _on_role_clicked(self) -> None:
         if self._cell_id >= 0:
