@@ -279,6 +279,14 @@ class ChampAssistant:
             gaps=gaps,
             enemy_names=enemy_names,
             enemy_keys=enemy_keys,
+            # Global champion maps for EnemyRow's mains-icon row —
+            # need to look up arbitrary champions outside the lobby.
+            all_champion_keys={
+                c.id: c.key for c in self.champions.values()
+            },
+            all_champion_names={
+                c.id: c.name for c in self.champions.values()
+            },
             enemy_roles=enemy_roles,
             enemy_role_overridden=set(self._enemy_role_overrides.keys()),
             suggestion_builds=suggestion_builds,

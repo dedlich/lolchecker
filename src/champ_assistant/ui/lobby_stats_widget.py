@@ -276,5 +276,8 @@ class LobbyStatsWidget(FloatingWidget):
             champion_name=champ_name,
             summoner_name=summoner_name,
             profile=profile,
-            champion_names=view.enemy_names,
+            # Global champion-name map so the "Mains:" line can
+            # resolve any champion the player has mastery on, not
+            # just members of the current lobby.
+            champion_names=view.all_champion_names or view.enemy_names,
         )

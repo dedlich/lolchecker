@@ -17,6 +17,10 @@ from . import styles
 from .badges import RankPill
 
 ICON_SIZE = 32
+# Smaller icon for "main champions" row in the profile section. Sized
+# to fit the previous reserved profile-line height (FS_CAPTION + 4 ≈
+# 14px) plus a bit of breathing room.
+MAIN_ICON_SIZE = 18
 
 
 class EnemyRow(QFrame):
@@ -82,21 +86,42 @@ class EnemyRow(QFrame):
         )
         self._counters_label.setWordWrap(True)
 
-        # Optional profiling line — kept always-visible with empty text
-        # so async profile data arriving doesn't cause a layout shift
-        # (P5: no sudden size changes). When no data, the label still
-        # reserves a single line of vertical space.
+        # Optional profiling row — three small main-champion icons +
+        # stats text. Kept always-visible with empty placeholders so
+        # async profile data arriving doesn't cause a layout shift
+        # (P5: no sudden size changes).
+        self._mains_row = QHBoxLayout()
+        self._mains_row.setSpacing(4)
+        self._mains_row.setContentsMargins(0, 0, 0, 0)
+        self._main_icons: list[QLabel] = []
+        for _ in range(3):
+            icon = QLabel()
+            icon.setFixedSize(MAIN_ICON_SIZE, MAIN_ICON_SIZE)
+            icon.setScaledContents(True)
+            icon.setStyleSheet(
+                f"background-color: {styles.BG_PRIMARY};"
+                f" border-radius: {styles.RADIUS_SMALL}px;"
+                f" border: 1px solid {styles.BORDER_FAINT};"
+            )
+            icon.hide()
+            self._main_icons.append(icon)
+            self._mains_row.addWidget(icon)
+
+        # Text part of the profile line (stats only — no longer the
+        # "Mains: A, B, C" prefix since those are visualized as icons
+        # to the left).
         self._profile_label = QLabel(" ")  # nbsp keeps height = 1 line
         self._profile_label.setStyleSheet(
             f"color: {styles.TEXT_SECONDARY}; font-size: {styles.FS_CAPTION}px;"
-            f" min-height: {styles.FS_CAPTION + 4}px;"
+            f" min-height: {MAIN_ICON_SIZE}px;"
         )
         self._profile_label.setWordWrap(False)
-        self._profile_label.setMinimumHeight(styles.FS_CAPTION + 4)
+        self._profile_label.setMinimumHeight(MAIN_ICON_SIZE)
+        self._mains_row.addWidget(self._profile_label, 1)
 
         outer.addLayout(head)
         outer.addWidget(self._counters_label)
-        outer.addWidget(self._profile_label)
+        outer.addLayout(self._mains_row)
 
         self.clear()
 
@@ -107,21 +132,39 @@ class EnemyRow(QFrame):
         self._counters_label.setText("")
         self._icon_label.clear()
         self._profile_label.setText(" ")  # keep reserved space
+        for icon in self._main_icons:
+            icon.clear()
+            icon.hide()
         self._rank_pill.hide()
 
-    def set_profile(self, profile: EnemyProfile | None, *,
-                    champion_names: dict[int, str] | None = None) -> None:
+    def set_profile(
+        self,
+        profile: EnemyProfile | None,
+        *,
+        champion_names: dict[int, str] | None = None,
+        champion_keys: dict[int, str] | None = None,
+        icon_lookup=None,  # type: ignore[no-untyped-def]
+    ) -> None:
         """Render an optional pre-game profile.
 
         Layout:
           rank pill (in the header, top-right corner)
-          stats line below counters: Mains · WR · streak
+          mains row: 3 small champion icons + stats text (WR · streak)
 
-        The profile label always reserves one line of vertical space so
-        async data arrival doesn't trigger a layout shift (P5).
+        ``icon_lookup`` is a callable ``key → QPixmap | None`` used to
+        resolve main-champion icons. ``champion_keys`` maps the
+        numeric champion_id from mastery entries → the string key the
+        icon_lookup expects. Both are optional — when missing, the
+        mains icons stay hidden and only the stats text renders.
+
+        The mains row always reserves its vertical space (one
+        MAIN_ICON_SIZE) so async data doesn't trigger layout shifts.
         """
         if profile is None or not profile.has_data:
             self._profile_label.setText(" ")  # keep reserved space
+            for icon in self._main_icons:
+                icon.clear()
+                icon.hide()
             self._rank_pill.hide()
             return
 
@@ -135,14 +178,28 @@ class EnemyRow(QFrame):
         else:
             self._rank_pill.hide()
 
+        # Mains as icons (max 3). Hide unused slots so empty positions
+        # don't reserve visual space.
         names = champion_names or {}
+        keys = champion_keys or {}
+        for i, icon_label in enumerate(self._main_icons):
+            if i < len(profile.top_champions) and icon_lookup is not None:
+                champ = profile.top_champions[i]
+                key = keys.get(champ.champion_id)
+                pixmap = icon_lookup(key) if key else None
+                if pixmap is not None and not pixmap.isNull():
+                    icon_label.setPixmap(pixmap)
+                    icon_label.setToolTip(
+                        names.get(champ.champion_id, f"#{champ.champion_id}")
+                    )
+                    icon_label.show()
+                    continue
+            icon_label.clear()
+            icon_label.hide()
+
+        # Fallback for stats text + when no icons available, fall back
+        # to the old "Mains: A, B, C" format so the data isn't lost.
         bits: list[str] = []
-        if profile.top_champions:
-            tops = ", ".join(
-                names.get(c.champion_id, f"#{c.champion_id}")
-                for c in profile.top_champions[:3]
-            )
-            bits.append(f"Mains: {tops}")
         wr = profile.win_rate
         total = profile.wins + profile.losses
         if total > 0 and wr is not None:
@@ -151,6 +208,15 @@ class EnemyRow(QFrame):
             bits.append(f"W{profile.streak} streak")
         elif profile.streak <= -3:
             bits.append(f"L{abs(profile.streak)} streak (tilt?)")
+        # If we couldn't render any icons (no icon_lookup), surface
+        # the mains as text so the data isn't lost.
+        any_icon_visible = any(icon.isVisible() for icon in self._main_icons)
+        if profile.top_champions and not any_icon_visible:
+            tops = ", ".join(
+                names.get(c.champion_id, f"#{c.champion_id}")
+                for c in profile.top_champions[:3]
+            )
+            bits.insert(0, f"Mains: {tops}")
         if not bits:
             self._profile_label.setText(" ")
             return

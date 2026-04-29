@@ -335,7 +335,14 @@ class MainOverlay(QMainWindow):
                     role_overridden=role_overridden,
                 )
                 profile = view.enemy_profiles.get(member.cell_id)
-                row.set_profile(profile, champion_names=view.enemy_names)
+                row.set_profile(
+                    profile,
+                    # Global maps so mains-icons can resolve any
+                    # champion, not just the 5 enemy picks.
+                    champion_names=view.all_champion_names or view.enemy_names,
+                    champion_keys=view.all_champion_keys,
+                    icon_lookup=self._icon_for_key,
+                )
             else:
                 row.clear()
 

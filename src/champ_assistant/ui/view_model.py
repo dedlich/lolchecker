@@ -34,6 +34,15 @@ class SessionView(BaseModel):
     enemy_keys: dict[int, str] = Field(default_factory=dict)
     """Map champion id → string key (e.g. 86 → "Garen") for icon lookup."""
 
+    all_champion_keys: dict[int, str] = Field(default_factory=dict)
+    """Map champion id → string key for EVERY champion in the registry,
+    not just the 5 enemy picks. Used by EnemyRow's mains-icon row —
+    a player's main champions can be anything, not necessarily a
+    member of the current lobby."""
+
+    all_champion_names: dict[int, str] = Field(default_factory=dict)
+    """Companion to ``all_champion_keys`` — id → display name."""
+
     enemy_roles: dict[int, str] = Field(default_factory=dict)
     """Map enemy cell_id → resolved role (override / tag-inference / cell-order).
     Used by the UI to render the role label and detect manual overrides."""
