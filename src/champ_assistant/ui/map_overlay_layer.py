@@ -42,6 +42,7 @@ from . import styles
 
 if TYPE_CHECKING:
     from ..jungle_timeline import JungleTimelineEngine
+    from ..lcda.objectives import ObjectiveTimer
 
 
 # Canonical camp positions on Summoner's Rift, normalized 0..1
@@ -88,6 +89,31 @@ CAMP_COLORS: dict[str, str] = {
 MARKER_RADIUS_PX = 9
 
 
+# Major-objective pit positions on the SR minimap, normalized 0..1.
+# Drake spawns bot-river; Baron + Herald share the top-river pit (Herald
+# until ~14:00, Baron after — same position).
+OBJECTIVE_POSITIONS: dict[str, tuple[float, float]] = {
+    "Dragon": (0.42, 0.62),
+    "Baron":  (0.58, 0.38),
+    "Herald": (0.58, 0.38),
+}
+
+# Glyph + tint for the major-objective markers. Same paint pipeline
+# as the camp markers, just a separate registry so the visual styling
+# can drift independently if needed.
+OBJECTIVE_GLYPHS: dict[str, str] = {
+    "Dragon": "D",
+    "Baron":  "B",
+    "Herald": "H",
+}
+
+OBJECTIVE_COLORS: dict[str, str] = {
+    "Dragon": styles.DANGER,    # red — Riot's elemental-drake palette varies, danger is a safe default
+    "Baron":  styles.WARNING,   # gold/amber for Baron Nashor
+    "Herald": styles.TIER_A,    # purple-ish for Herald
+}
+
+
 def map_to_screen(rect: QRect, norm_x: float, norm_y: float) -> QPoint:
     """Convert a (norm_x, norm_y) camp position in [0..1] to a QPoint
     inside the given QRect. Pure function — testable without Qt
@@ -131,6 +157,11 @@ class MapOverlayLayer(QWidget):
         super().__init__(parent)
         self._engine = engine
         self._blink_phase: int = 0   # toggled by scheduler tick
+        # Latest LCDA-driven major-objective state. Set by parent via
+        # ``set_objectives`` on every snapshot; rendered alongside the
+        # camp markers in paintEvent.
+        self._objectives: dict[str, "ObjectiveTimer"] = {}
+        self._objective_game_time: float = 0.0
 
         # Click-to-arm: clicking near a camp position registers an
         # observed clear with the engine, starting the real respawn
@@ -160,6 +191,18 @@ class MapOverlayLayer(QWidget):
         blink phase + triggers a repaint — this is the only refresh
         path. No QTimer inside this widget."""
         scheduler.tick.connect(self._on_tick)
+
+    def set_objectives(
+        self,
+        objectives: dict[str, "ObjectiveTimer"],
+        game_time: float,
+    ) -> None:
+        """Forward LCDA-derived major-objective state. Drake/Baron/
+        Herald markers paint at their pit positions and show the
+        respawn countdown when the engine reports them killed."""
+        self._objectives = dict(objectives)
+        self._objective_game_time = float(game_time)
+        self.update()
 
     # -- internals --------------------------------------------------------
 
@@ -269,8 +312,77 @@ class MapOverlayLayer(QWidget):
                     anchor.y() + MARKER_RADIUS_PX + text_h - 2,
                 )
                 painter.drawText(draw_pt, text)
+
+            # Third pass — major-objective markers (Drake/Baron/Herald)
+            # at their pit positions. Same marker pipeline as camps;
+            # countdown only renders when LCDA reports the objective
+            # has been killed (next_spawn_seconds > 0).
+            for obj_name, (nx, ny) in OBJECTIVE_POSITIONS.items():
+                anchor = map_to_screen(rect, nx, ny)
+                obj = self._objectives.get(obj_name)
+                armed = (
+                    obj is not None
+                    and obj.next_spawn_seconds is not None
+                    and obj.remaining(self._objective_game_time) is not None
+                )
+                self._paint_objective_marker(painter, anchor, obj_name, armed=bool(armed))
+                if not armed or obj is None:
+                    continue
+                remaining = obj.remaining(self._objective_game_time)
+                if remaining is None or remaining <= 0.5:
+                    continue
+                text = _format_mmss(remaining)
+                painter.setPen(self._color_high)
+                text_w = metrics.horizontalAdvance(text)
+                text_h = metrics.height()
+                draw_pt = QPoint(
+                    anchor.x() - text_w // 2,
+                    anchor.y() + MARKER_RADIUS_PX + text_h - 2,
+                )
+                painter.drawText(draw_pt, text)
         finally:
             painter.end()
+
+    def _paint_objective_marker(
+        self,
+        painter: QPainter,
+        anchor: QPoint,
+        obj_name: str,
+        *,
+        armed: bool,
+    ) -> None:
+        """Same shape as camp markers but pulls from the OBJECTIVE_*
+        registries. Rendered always so the player sees the pit even
+        before the objective is first killed."""
+        base_color = QColor(OBJECTIVE_COLORS.get(obj_name, styles.TEXT_MUTED))
+        fill_alpha = 230 if armed else 140
+        ring_alpha = 255 if armed else 180
+        fill = QColor(base_color)
+        fill.setAlpha(fill_alpha)
+        ring = QColor(base_color)
+        ring.setAlpha(ring_alpha)
+
+        painter.setPen(ring)
+        painter.setBrush(fill)
+        painter.drawEllipse(
+            anchor.x() - MARKER_RADIUS_PX,
+            anchor.y() - MARKER_RADIUS_PX,
+            MARKER_RADIUS_PX * 2,
+            MARKER_RADIUS_PX * 2,
+        )
+
+        glyph = OBJECTIVE_GLYPHS.get(obj_name, "?")
+        glyph_color = QColor("#FFFFFF")
+        glyph_color.setAlpha(255 if armed else 200)
+        painter.setPen(glyph_color)
+        gm = painter.fontMetrics()
+        gw = gm.horizontalAdvance(glyph)
+        gh = gm.ascent()
+        painter.drawText(
+            QPoint(anchor.x() - gw // 2, anchor.y() + gh // 2 - 1),
+            glyph,
+        )
+        painter.setBrush(Qt.BrushStyle.NoBrush)
 
     def _paint_marker(
         self,
