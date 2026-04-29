@@ -249,12 +249,26 @@ class ChampAssistant:
         my_role: Role | None = None
         if session.me is not None:
             my_role = session.me.assigned_position
+        # Builds are matchup-adapted: take the base role build and
+        # apply heuristic swaps based on enemy team comp (boots vs
+        # AP/AD-heavy, anti-heal vs sustain, tenacity vs heavy CC).
         suggestion_builds: dict[str, ChampionBuild] = {}
+        suggestion_build_reasons: dict[str, list[str]] = {}
         if my_role is not None:
+            from .advisor.build_adapter import adapt_build
+            enemy_keys_list = list(self._team_keys(session.their_team))
             for s in suggestions:
-                build = self.builds.build_for(s.champion_key, my_role)
-                if build is not None:
-                    suggestion_builds[s.champion_key] = build
+                base = self.builds.build_for(s.champion_key, my_role)
+                adapted = adapt_build(
+                    base, role=my_role,
+                    enemy_team_keys=enemy_keys_list,
+                    tags=self.tags,
+                )
+                if adapted is None:
+                    continue
+                suggestion_builds[s.champion_key] = adapted.build
+                if adapted.reasons:
+                    suggestion_build_reasons[s.champion_key] = adapted.reasons
 
         # Kick off async profile fetches for enemies whose puuid/summoner_id
         # is now visible. Results land in self._enemy_profiles_by_cell and
@@ -290,6 +304,7 @@ class ChampAssistant:
             enemy_roles=enemy_roles,
             enemy_role_overridden=set(self._enemy_role_overrides.keys()),
             suggestion_builds=suggestion_builds,
+            suggestion_build_reasons=suggestion_build_reasons,
             enemy_profiles=dict(self._enemy_profiles_by_cell),  # type: ignore[arg-type]
             ally_profiles=dict(self._ally_profiles_by_cell),  # type: ignore[arg-type]
             ban_suggestions=bans,

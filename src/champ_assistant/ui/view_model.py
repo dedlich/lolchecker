@@ -54,6 +54,12 @@ class SessionView(BaseModel):
     """Map champion key → recommended build (runes/items/summoners) for the
     suggestions in this view. PickCard renders this when present."""
 
+    suggestion_build_reasons: dict[str, list[str]] = Field(default_factory=dict)
+    """Map champion key → human-readable adaptation reasons when the
+    base build was modified for the matchup (e.g. "vs AP-heavy: ...
+    → Mercury's Treads"). Empty list means "no adaptation, build is
+    role-default"."""
+
     enemy_profiles: dict[int, EnemyProfile] = Field(default_factory=dict)
     """Map enemy cell_id → fetched profile (mains, win-rate, streak) when
     a Riot API key is configured. Empty dict otherwise."""

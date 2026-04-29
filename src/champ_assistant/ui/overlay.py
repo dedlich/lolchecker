@@ -362,7 +362,11 @@ class MainOverlay(QMainWindow):
         for idx, s in enumerate(view.suggestions, start=1):
             icon = self._icon_for_key(s.champion_key)
             build = view.suggestion_builds.get(s.champion_key)
-            card = PickCard(s, icon=icon, build=build, rank=idx)
+            reasons = view.suggestion_build_reasons.get(s.champion_key) or []
+            card = PickCard(
+                s, icon=icon, build=build, rank=idx,
+                build_reasons=reasons,
+            )
             card.apply_build_requested.connect(self.apply_build_requested.emit)
             self._picks_container.addWidget(card)
 

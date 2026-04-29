@@ -54,6 +54,7 @@ class PickCard(QFrame):
         build: ChampionBuild | None = None,
         *,
         rank: int | None = None,
+        build_reasons: list[str] | None = None,
     ) -> None:
         super().__init__()
         self.setProperty("card", True)
@@ -123,6 +124,20 @@ class PickCard(QFrame):
         # -- Build section (runes / items / summoners + apply button) ----
         if build is not None:
             self._add_build_lines(outer, build)
+            # Matchup-adaptation reasons (e.g. "vs AP-heavy: → Mercury's
+            # Treads") show right under the build lines, before the
+            # apply button. Subtle accent-color one-liner per reason.
+            if build_reasons:
+                for reason in build_reasons:
+                    label = QLabel(f"⚙ {reason}")
+                    label.setStyleSheet(
+                        f"color: {styles.ACCENT};"
+                        f" font-size: {styles.FS_LABEL}px;"
+                        " font-style: italic;"
+                        " padding-left: 4px;"
+                    )
+                    label.setWordWrap(True)
+                    outer.addWidget(label)
             self._add_apply_button(outer, build)
 
     @staticmethod
