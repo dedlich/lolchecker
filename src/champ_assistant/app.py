@@ -122,6 +122,11 @@ class ChampAssistant:
         self._runtime_inflight: set[tuple[str, str]] = set()
         self._profile_inflight: set[str] = set()
         self._enemy_profiles_by_cell: dict[int, object] = {}
+        # Mirror for the player's own team (used by the lobby panel
+        # during loading screen / post-finalization). The local player
+        # is skipped — fetching your own profile is just a wasted API
+        # call against the rate limit.
+        self._ally_profiles_by_cell: dict[int, object] = {}
         # Allow tests to observe view updates without going through Qt.
         self._view_callback = view_callback
 
@@ -162,6 +167,7 @@ class ChampAssistant:
             self._latest_session = None
             self._enemy_role_overrides.clear()
             self._enemy_profiles_by_cell.clear()
+            self._ally_profiles_by_cell.clear()
             if self._profile_service is not None:
                 self._profile_service.clear()
             view = SessionView(connection_state=self._connection_state)
@@ -277,35 +283,79 @@ class ChampAssistant:
             enemy_role_overridden=set(self._enemy_role_overrides.keys()),
             suggestion_builds=suggestion_builds,
             enemy_profiles=dict(self._enemy_profiles_by_cell),  # type: ignore[arg-type]
+            ally_profiles=dict(self._ally_profiles_by_cell),  # type: ignore[arg-type]
             ban_suggestions=bans,
         )
 
     def _maybe_fetch_profiles(self, session: ChampSelectSession) -> None:
         """If a Riot API key is configured, fire off async profile lookups
-        for each enemy. Empty/no-key/no-puuid → noop. Cached results show up
-        on the next view rebuild without blocking session rendering."""
+        for BOTH teams. Empty/no-key/no-puuid → noop. Local player is
+        skipped (wasted API call). Cached results show up on the next
+        view rebuild without blocking session rendering.
+
+        Rate-limit reality: 10 players × ~4 API endpoints = ~40 calls
+        per champ-select. Personal Riot dev keys allow 100 / 2 min, so
+        a single champ-select fits with margin. Repeated lobbies in
+        rapid succession may hit the limit — failures degrade
+        silently to empty profiles via the existing ProfileService
+        error path.
+        """
         if self._profile_service is None or not getattr(
             self._profile_service, "enabled", False
         ):
             return
+        local_cell = session.local_player_cell_id
+        # Schedule fetches for both teams in one pass so the dispatch
+        # logic stays in one spot — same try-except, same inflight
+        # tracking, same re-render trigger after each completion.
         for member in session.their_team:
-            if member.cell_id < 0 or member.cell_id in self._enemy_profiles_by_cell:
-                continue
-            if not member.puuid and not member.summoner_id:
-                continue
-            key = member.puuid or f"sid:{member.summoner_id}"
-            if key in self._profile_inflight:
-                continue
-            self._profile_inflight.add(key)
-            try:
-                import asyncio as _aio
-                _aio.create_task(self._fetch_one_profile(member, key))
-            except RuntimeError:
-                # No running loop (tests or sync use) — skip.
-                self._profile_inflight.discard(key)
+            self._schedule_profile_fetch(member, is_ally=False)
+        for member in session.my_team:
+            if member.cell_id == local_cell:
+                continue  # don't fetch our own profile — wasted call
+            self._schedule_profile_fetch(member, is_ally=True)
+
+    def _schedule_profile_fetch(
+        self,
+        member: TeamMember,
+        *,
+        is_ally: bool,
+    ) -> None:
+        """Schedule one profile lookup. Idempotent against the
+        inflight set + the per-team cache; safe to call repeatedly
+        as the session progresses (e.g. summoner-name shows up only
+        after lock-in)."""
+        cache = (
+            self._ally_profiles_by_cell if is_ally
+            else self._enemy_profiles_by_cell
+        )
+        if member.cell_id < 0 or member.cell_id in cache:
+            return
+        if not member.puuid and not member.summoner_id:
+            return
+        key = member.puuid or f"sid:{member.summoner_id}"
+        # Inflight key is team-prefixed so the same puuid being
+        # fetched for ally + enemy doesn't collide (rare but possible
+        # in test fixtures).
+        inflight_key = f"{'a' if is_ally else 'e'}:{key}"
+        if inflight_key in self._profile_inflight:
+            return
+        self._profile_inflight.add(inflight_key)
+        try:
+            import asyncio as _aio
+            _aio.create_task(
+                self._fetch_one_profile(member, inflight_key, is_ally=is_ally)
+            )
+        except RuntimeError:
+            # No running loop (tests or sync use) — skip.
+            self._profile_inflight.discard(inflight_key)
 
     async def _fetch_one_profile(
-        self, member: TeamMember, key: str
+        self,
+        member: TeamMember,
+        inflight_key: str,
+        *,
+        is_ally: bool = False,
     ) -> None:
         try:
             assert self._profile_service is not None
@@ -315,14 +365,21 @@ class ChampAssistant:
                 profile = await self._profile_service.fetch_by_summoner_id(
                     member.summoner_id
                 )
-            self._enemy_profiles_by_cell[member.cell_id] = profile
+            cache = (
+                self._ally_profiles_by_cell if is_ally
+                else self._enemy_profiles_by_cell
+            )
+            cache[member.cell_id] = profile
             # Re-render so the freshly fetched profile shows up in the UI.
             if self._latest_session is not None:
                 self._push_view(self._build_view(self._latest_session))
         except Exception as exc:  # noqa: BLE001
-            logger.info("profile_fetch_failed cell=%d: %s", member.cell_id, exc)
+            logger.info(
+                "profile_fetch_failed cell=%d ally=%s: %s",
+                member.cell_id, is_ally, exc,
+            )
         finally:
-            self._profile_inflight.discard(key)
+            self._profile_inflight.discard(inflight_key)
 
     def _resolve_enemy_role(
         self, enemy: TeamMember, index: int, champion: Champion | None

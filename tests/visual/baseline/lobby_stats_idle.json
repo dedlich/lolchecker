@@ -7,7 +7,377 @@
       "layout": null,
       "objectName": "sectionTitle",
       "stylesheet": "",
-      "text": "Lobby \u2014 Enemies",
+      "text": "Allies",
+      "visible": true
+    },
+    {
+      "children": [
+        {
+          "children": [],
+          "class": "QLabel",
+          "fixed_size": [
+            32,
+            32
+          ],
+          "layout": null,
+          "objectName": "",
+          "stylesheet": "background-color: #0A0E14; border-radius: 4px; border: 1px solid rgba(60, 70, 85, 180);",
+          "text": "",
+          "visible": true
+        },
+        {
+          "children": [],
+          "class": "QLabel",
+          "fixed_size": null,
+          "layout": null,
+          "objectName": "",
+          "stylesheet": "font-weight: 600; font-size: 12px;",
+          "text": "",
+          "visible": true
+        },
+        {
+          "children": [],
+          "class": "QLabel",
+          "fixed_size": null,
+          "layout": null,
+          "objectName": "",
+          "stylesheet": "color: #7A848F; font-size: 10px;",
+          "text": "",
+          "visible": true
+        },
+        {
+          "children": [],
+          "class": "RankPill",
+          "fixed_size": null,
+          "layout": null,
+          "objectName": "",
+          "stylesheet": "background-color: #1D2530; color: #7A848F; padding: 2px 8px; border-radius: 10px; font-size: 10px; font-weight: 700; letter-spacing: 0.5px;",
+          "text": "UNRANKED",
+          "visible": false
+        },
+        {
+          "children": [],
+          "class": "QLabel",
+          "fixed_size": null,
+          "layout": null,
+          "objectName": "",
+          "stylesheet": "color: #B6BCC4; font-size: 10px;",
+          "text": "",
+          "visible": true
+        }
+      ],
+      "class": "_LobbyRow",
+      "fixed_size": null,
+      "layout": {
+        "margins": [
+          8,
+          6,
+          8,
+          6
+        ],
+        "spacing": 2,
+        "type": "QVBoxLayout"
+      },
+      "objectName": "",
+      "stylesheet": "",
+      "visible": true
+    },
+    {
+      "children": [
+        {
+          "children": [],
+          "class": "QLabel",
+          "fixed_size": [
+            32,
+            32
+          ],
+          "layout": null,
+          "objectName": "",
+          "stylesheet": "background-color: #0A0E14; border-radius: 4px; border: 1px solid rgba(60, 70, 85, 180);",
+          "text": "",
+          "visible": true
+        },
+        {
+          "children": [],
+          "class": "QLabel",
+          "fixed_size": null,
+          "layout": null,
+          "objectName": "",
+          "stylesheet": "font-weight: 600; font-size: 12px;",
+          "text": "",
+          "visible": true
+        },
+        {
+          "children": [],
+          "class": "QLabel",
+          "fixed_size": null,
+          "layout": null,
+          "objectName": "",
+          "stylesheet": "color: #7A848F; font-size: 10px;",
+          "text": "",
+          "visible": true
+        },
+        {
+          "children": [],
+          "class": "RankPill",
+          "fixed_size": null,
+          "layout": null,
+          "objectName": "",
+          "stylesheet": "background-color: #1D2530; color: #7A848F; padding: 2px 8px; border-radius: 10px; font-size: 10px; font-weight: 700; letter-spacing: 0.5px;",
+          "text": "UNRANKED",
+          "visible": false
+        },
+        {
+          "children": [],
+          "class": "QLabel",
+          "fixed_size": null,
+          "layout": null,
+          "objectName": "",
+          "stylesheet": "color: #B6BCC4; font-size: 10px;",
+          "text": "",
+          "visible": true
+        }
+      ],
+      "class": "_LobbyRow",
+      "fixed_size": null,
+      "layout": {
+        "margins": [
+          8,
+          6,
+          8,
+          6
+        ],
+        "spacing": 2,
+        "type": "QVBoxLayout"
+      },
+      "objectName": "",
+      "stylesheet": "",
+      "visible": true
+    },
+    {
+      "children": [
+        {
+          "children": [],
+          "class": "QLabel",
+          "fixed_size": [
+            32,
+            32
+          ],
+          "layout": null,
+          "objectName": "",
+          "stylesheet": "background-color: #0A0E14; border-radius: 4px; border: 1px solid rgba(60, 70, 85, 180);",
+          "text": "",
+          "visible": true
+        },
+        {
+          "children": [],
+          "class": "QLabel",
+          "fixed_size": null,
+          "layout": null,
+          "objectName": "",
+          "stylesheet": "font-weight: 600; font-size: 12px;",
+          "text": "",
+          "visible": true
+        },
+        {
+          "children": [],
+          "class": "QLabel",
+          "fixed_size": null,
+          "layout": null,
+          "objectName": "",
+          "stylesheet": "color: #7A848F; font-size: 10px;",
+          "text": "",
+          "visible": true
+        },
+        {
+          "children": [],
+          "class": "RankPill",
+          "fixed_size": null,
+          "layout": null,
+          "objectName": "",
+          "stylesheet": "background-color: #1D2530; color: #7A848F; padding: 2px 8px; border-radius: 10px; font-size: 10px; font-weight: 700; letter-spacing: 0.5px;",
+          "text": "UNRANKED",
+          "visible": false
+        },
+        {
+          "children": [],
+          "class": "QLabel",
+          "fixed_size": null,
+          "layout": null,
+          "objectName": "",
+          "stylesheet": "color: #B6BCC4; font-size: 10px;",
+          "text": "",
+          "visible": true
+        }
+      ],
+      "class": "_LobbyRow",
+      "fixed_size": null,
+      "layout": {
+        "margins": [
+          8,
+          6,
+          8,
+          6
+        ],
+        "spacing": 2,
+        "type": "QVBoxLayout"
+      },
+      "objectName": "",
+      "stylesheet": "",
+      "visible": true
+    },
+    {
+      "children": [
+        {
+          "children": [],
+          "class": "QLabel",
+          "fixed_size": [
+            32,
+            32
+          ],
+          "layout": null,
+          "objectName": "",
+          "stylesheet": "background-color: #0A0E14; border-radius: 4px; border: 1px solid rgba(60, 70, 85, 180);",
+          "text": "",
+          "visible": true
+        },
+        {
+          "children": [],
+          "class": "QLabel",
+          "fixed_size": null,
+          "layout": null,
+          "objectName": "",
+          "stylesheet": "font-weight: 600; font-size: 12px;",
+          "text": "",
+          "visible": true
+        },
+        {
+          "children": [],
+          "class": "QLabel",
+          "fixed_size": null,
+          "layout": null,
+          "objectName": "",
+          "stylesheet": "color: #7A848F; font-size: 10px;",
+          "text": "",
+          "visible": true
+        },
+        {
+          "children": [],
+          "class": "RankPill",
+          "fixed_size": null,
+          "layout": null,
+          "objectName": "",
+          "stylesheet": "background-color: #1D2530; color: #7A848F; padding: 2px 8px; border-radius: 10px; font-size: 10px; font-weight: 700; letter-spacing: 0.5px;",
+          "text": "UNRANKED",
+          "visible": false
+        },
+        {
+          "children": [],
+          "class": "QLabel",
+          "fixed_size": null,
+          "layout": null,
+          "objectName": "",
+          "stylesheet": "color: #B6BCC4; font-size: 10px;",
+          "text": "",
+          "visible": true
+        }
+      ],
+      "class": "_LobbyRow",
+      "fixed_size": null,
+      "layout": {
+        "margins": [
+          8,
+          6,
+          8,
+          6
+        ],
+        "spacing": 2,
+        "type": "QVBoxLayout"
+      },
+      "objectName": "",
+      "stylesheet": "",
+      "visible": true
+    },
+    {
+      "children": [
+        {
+          "children": [],
+          "class": "QLabel",
+          "fixed_size": [
+            32,
+            32
+          ],
+          "layout": null,
+          "objectName": "",
+          "stylesheet": "background-color: #0A0E14; border-radius: 4px; border: 1px solid rgba(60, 70, 85, 180);",
+          "text": "",
+          "visible": true
+        },
+        {
+          "children": [],
+          "class": "QLabel",
+          "fixed_size": null,
+          "layout": null,
+          "objectName": "",
+          "stylesheet": "font-weight: 600; font-size: 12px;",
+          "text": "",
+          "visible": true
+        },
+        {
+          "children": [],
+          "class": "QLabel",
+          "fixed_size": null,
+          "layout": null,
+          "objectName": "",
+          "stylesheet": "color: #7A848F; font-size: 10px;",
+          "text": "",
+          "visible": true
+        },
+        {
+          "children": [],
+          "class": "RankPill",
+          "fixed_size": null,
+          "layout": null,
+          "objectName": "",
+          "stylesheet": "background-color: #1D2530; color: #7A848F; padding: 2px 8px; border-radius: 10px; font-size: 10px; font-weight: 700; letter-spacing: 0.5px;",
+          "text": "UNRANKED",
+          "visible": false
+        },
+        {
+          "children": [],
+          "class": "QLabel",
+          "fixed_size": null,
+          "layout": null,
+          "objectName": "",
+          "stylesheet": "color: #B6BCC4; font-size: 10px;",
+          "text": "",
+          "visible": true
+        }
+      ],
+      "class": "_LobbyRow",
+      "fixed_size": null,
+      "layout": {
+        "margins": [
+          8,
+          6,
+          8,
+          6
+        ],
+        "spacing": 2,
+        "type": "QVBoxLayout"
+      },
+      "objectName": "",
+      "stylesheet": "",
+      "visible": true
+    },
+    {
+      "children": [],
+      "class": "QLabel",
+      "fixed_size": null,
+      "layout": null,
+      "objectName": "sectionTitle",
+      "stylesheet": "color: #7A848F; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 1.2px; padding: 8px 0 2px 0;",
+      "text": "Enemies",
       "visible": true
     },
     {

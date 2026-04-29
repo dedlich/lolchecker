@@ -49,5 +49,11 @@ class SessionView(BaseModel):
     """Map enemy cell_id → fetched profile (mains, win-rate, streak) when
     a Riot API key is configured. Empty dict otherwise."""
 
+    ally_profiles: dict[int, EnemyProfile] = Field(default_factory=dict)
+    """Map ally cell_id → fetched profile. Same shape as enemy_profiles,
+    just for the player's own team (excluding the local player). Used
+    by the lobby panel during the post-lock-in / loading-screen window
+    when all 10 players' picks are known."""
+
     ban_suggestions: list[BanSuggestion] = Field(default_factory=list)
     """Top-N champions to ban, ranked by tier + enemy mains."""

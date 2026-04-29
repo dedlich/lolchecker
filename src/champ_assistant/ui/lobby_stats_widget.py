@@ -131,9 +131,22 @@ class _LobbyRow(QFrame):
 
 
 class LobbyStatsWidget(FloatingWidget):
+    """Loading-screen lobby panel: portrait + summoner + rank + last-10
+    record + top mains for every visible player.
+
+    Two stacked sections: ALLIES (5 rows, top) + ENEMIES (5 rows,
+    bottom). The local player's row stays empty in the ally section
+    since fetching your own profile is wasted API budget.
+
+    Visibility: shown whenever a champ-select session is connected.
+    The data fills in over the first ~10s of the session as Riot API
+    responses land — late frames don't break, they just have empty
+    rows that populate as fetches complete.
+    """
     KEY = "lobby_stats"
-    DEFAULT_POS = (40, 220)
-    DEFAULT_SIZE = (320, 380)
+    DEFAULT_POS = (40, 80)
+    # Bigger default — 10 rows + 2 section titles + spacing.
+    DEFAULT_SIZE = (340, 720)
 
     def __init__(self) -> None:
         super().__init__()
@@ -151,15 +164,36 @@ class LobbyStatsWidget(FloatingWidget):
         outer.setContentsMargins(10, 8, 10, 10)
         outer.setSpacing(4)
 
-        title = QLabel("Lobby — Enemies")
-        title.setObjectName("sectionTitle")
-        outer.addWidget(title)
+        # Ally section (top)
+        ally_title = QLabel("Allies")
+        ally_title.setObjectName("sectionTitle")
+        outer.addWidget(ally_title)
 
         self._champion_icons: dict[str, QPixmap] = {}
-        self._rows: list[_LobbyRow] = []
+        self._ally_rows: list[_LobbyRow] = []
         for _ in range(5):
             row = _LobbyRow()
-            self._rows.append(row)
+            self._ally_rows.append(row)
+            outer.addWidget(row)
+
+        # Enemy section (bottom) — re-uses the existing rows + render
+        # path so adding the second team doesn't duplicate _LobbyRow
+        # state-handling logic.
+        enemy_title = QLabel("Enemies")
+        enemy_title.setObjectName("sectionTitle")
+        # Spacing above the enemy title so the two sections read as
+        # distinct without needing a hard divider.
+        enemy_title.setStyleSheet(
+            f"color: {styles.TEXT_MUTED}; font-size: {styles.FS_LABEL}px;"
+            " font-weight: 700; text-transform: uppercase;"
+            " letter-spacing: 1.2px; padding: 8px 0 2px 0;"
+        )
+        outer.addWidget(enemy_title)
+
+        self._enemy_rows: list[_LobbyRow] = []
+        for _ in range(5):
+            row = _LobbyRow()
+            self._enemy_rows.append(row)
             outer.addWidget(row)
 
         outer.addStretch(1)
@@ -183,25 +217,64 @@ class LobbyStatsWidget(FloatingWidget):
             return
 
         self.fade_appear()
+
+        # Allies — local player's cell shows their own pick but no
+        # profile (we don't fetch our own).
+        my_team = view.session.my_team
+        local_cell = view.session.local_player_cell_id
+        for i, row in enumerate(self._ally_rows):
+            if i >= len(my_team):
+                row.hide()
+                continue
+            row.show()
+            member = my_team[i]
+            self._populate_row(
+                row, member, view,
+                profiles=view.ally_profiles,
+                is_local=(member.cell_id == local_cell),
+            )
+
+        # Enemies — same render pipeline, different profile source.
         their_team = view.session.their_team
-        for i, row in enumerate(self._rows):
+        for i, row in enumerate(self._enemy_rows):
             if i >= len(their_team):
                 row.hide()
                 continue
             row.show()
             member = their_team[i]
-            champ_id = member.champion_id
-            champ_name = view.enemy_names.get(champ_id, "—") if champ_id else "—"
-            champ_key = view.enemy_keys.get(champ_id, "") if champ_id else ""
-            portrait = self._champion_icons.get(champ_key) if champ_key else None
-            profile = view.enemy_profiles.get(member.cell_id) if view.enemy_profiles else None
-            # Summoner name isn't in TeamMember (LCU strips it for privacy
-            # depending on visibility), but the profile carries it.
-            summoner_name = profile.summoner_name if profile else ""
-            row.set_data(
-                portrait=portrait,
-                champion_name=champ_name,
-                summoner_name=summoner_name,
-                profile=profile,
-                champion_names=view.enemy_names,
+            self._populate_row(
+                row, member, view,
+                profiles=view.enemy_profiles,
+                is_local=False,
             )
+
+    def _populate_row(
+        self,
+        row: "_LobbyRow",
+        member,  # type: ignore[no-untyped-def]
+        view,    # type: ignore[no-untyped-def]
+        *,
+        profiles: dict,
+        is_local: bool,
+    ) -> None:
+        """Single shared row-render path for both teams."""
+        champ_id = member.champion_id
+        champ_name = view.enemy_names.get(champ_id, "—") if champ_id else "—"
+        champ_key = view.enemy_keys.get(champ_id, "") if champ_id else ""
+        portrait = self._champion_icons.get(champ_key) if champ_key else None
+        profile = profiles.get(member.cell_id) if profiles else None
+        # Summoner name isn't in TeamMember (LCU strips it for privacy
+        # depending on visibility), but the profile carries it.
+        # The local player has no profile fetch — show "(you)" as a
+        # placeholder so the row isn't visually empty.
+        if is_local:
+            summoner_name = "(you)"
+        else:
+            summoner_name = profile.summoner_name if profile else ""
+        row.set_data(
+            portrait=portrait,
+            champion_name=champ_name,
+            summoner_name=summoner_name,
+            profile=profile,
+            champion_names=view.enemy_names,
+        )
