@@ -228,6 +228,8 @@ def _run_with_ui(args: argparse.Namespace) -> int:
     # Canonical order: logging (already up) → state → window → layout
     # → hotkeys → update → render.
     # ------------------------------------------------------------------
+    from champ_assistant import performance_monitor as _perf
+    _perf.record_phase("run_with_ui_entry")
     lifecycle = LifecycleManager()
 
     # ------------------------------------------------------------------
@@ -282,6 +284,14 @@ def _run_with_ui(args: argparse.Namespace) -> int:
     lifecycle.register("diagnostics", diagnostics.stop)
     diagnostics.attach_scheduler(scheduler)
     diagnostics.attach_store(store)
+
+    # Performance baseline (charter step A1 — Fastest). Records named
+    # phase timestamps from process start so we can audit cold-start
+    # time and service-init time after the fact. Detection-only;
+    # optimization decisions belong elsewhere.
+    from champ_assistant import performance_monitor as _perf
+    _perf.record_phase("core_services_initialized")
+    lifecycle.register("performance_log", lambda: _perf.monitor().flush())
 
     # State invariant validator (charter step C4 — Most Reliable).
     # Pure observer over the state store; logs timer / game-state
@@ -519,6 +529,7 @@ def _run_with_ui(args: argparse.Namespace) -> int:
     overlay.settings_changed.connect(_on_settings_changed)
 
     overlay.show()
+    _perf.record_phase("ui_visible")
     # Surface the first-launch welcome banner once the window is up so
     # the fade-in lands on a settled layout. No-op on every subsequent
     # launch (state lives in overlay_config.onboarding_seen).
