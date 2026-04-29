@@ -1,15 +1,21 @@
 """Thin async client for the Riot Web API.
 
 Endpoints we use (Riot returns JSON, plain Bearer-style auth via header):
-  /lol/summoner/v4/summoners/by-name/{name}            (platform host)
-  /lol/champion-mastery/v4/champion-masteries/by-summoner/{puuid}/top
-  /lol/match/v5/matches/by-puuid/{puuid}/ids?count=10  (regional host)
-  /lol/match/v5/matches/{matchId}                       (regional host)
+  /lol/summoner/v4/summoners/by-puuid/{puuid}                 (platform host)
+  /lol/league/v4/entries/by-puuid/{puuid}                     (platform host)
+  /lol/champion-mastery/v4/champion-masteries/by-puuid/{puuid}/top
+  /lol/match/v5/matches/by-puuid/{puuid}/ids?count=10         (regional host)
+  /lol/match/v5/matches/{matchId}                              (regional host)
+
+Riot retired the by-name and by-summoner-id endpoints during the Riot ID
+migration — every lookup now goes through PUUID. The LCU session payload
+gives us puuid for every team member, so we drive the whole pipeline from
+that one identifier.
 
 Region routing: Riot splits hosts into platform routes (per-server, e.g.
 ``euw1.api.riotgames.com``) and regional routes (continent groups, e.g.
 ``europe.api.riotgames.com``). Match-V5 lives on regional, Summoner /
-Mastery on platform.
+League / Mastery on platform.
 
 Errors are mapped to ``RiotApiError`` so the UI can degrade silently
 when the user has no key, the key is rate-limited (429), or the player
@@ -151,18 +157,8 @@ class RiotApiClient:
         except ValueError as exc:
             raise RiotApiError(f"bad json: {exc}") from exc
 
-    async def summoner_by_name(self, name: str) -> SummonerInfo:
-        path = f"/lol/summoner/v4/summoners/by-name/{name}"
-        data = await self._get(self._platform, path)
-        return self._summoner_from(data)
-
     async def summoner_by_puuid(self, puuid: str) -> SummonerInfo:
         path = f"/lol/summoner/v4/summoners/by-puuid/{puuid}"
-        data = await self._get(self._platform, path)
-        return self._summoner_from(data)
-
-    async def summoner_by_id(self, summoner_id: int | str) -> SummonerInfo:
-        path = f"/lol/summoner/v4/summoners/{summoner_id}"
         data = await self._get(self._platform, path)
         return self._summoner_from(data)
 
@@ -175,10 +171,12 @@ class RiotApiClient:
             level=int(data.get("summonerLevel") or 0),
         )
 
-    async def league_entries(self, summoner_id: str) -> list[RankEntry]:
-        """Return ranked entries for the encrypted-summoner-id, one per queue.
-        Returns an empty list when the player is unranked or the call fails."""
-        path = f"/lol/league/v4/entries/by-summoner/{summoner_id}"
+    async def league_entries_by_puuid(self, puuid: str) -> list[RankEntry]:
+        """Return ranked entries for the player, one per queue. Returns
+        an empty list when the player is unranked or the call fails.
+        Endpoint replacement for the deprecated by-summoner form —
+        production keys only grant the by-puuid variant."""
+        path = f"/lol/league/v4/entries/by-puuid/{puuid}"
         try:
             data = await self._get(self._platform, path)
         except RiotApiError as exc:

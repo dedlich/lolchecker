@@ -24,11 +24,18 @@ def _client(payloads: dict[str, dict | list]) -> RiotApiClient:
 
 
 @pytest.mark.asyncio
-async def test_fetch_returns_full_profile() -> None:
+async def test_fetch_by_puuid_returns_full_profile() -> None:
     client = _client({
-        "summoner/v4": {
+        "summoner/v4/summoners/by-puuid/": {
             "puuid": "PUUID", "id": "S", "name": "Faker", "summonerLevel": 800,
         },
+        "league/v4/entries/by-puuid/": [
+            {
+                "queueType": "RANKED_SOLO_5x5",
+                "tier": "DIAMOND", "rank": "II",
+                "leaguePoints": 24, "wins": 80, "losses": 70,
+            },
+        ],
         "champion-mastery": [
             {"championId": 103, "championPoints": 500_000, "championLevel": 7},
             {"championId": 64, "championPoints": 250_000, "championLevel": 7},
@@ -40,7 +47,7 @@ async def test_fetch_returns_full_profile() -> None:
         },
     })
     service = ProfileService(client)
-    profile = await service.fetch("Faker")
+    profile = await service.fetch_by_puuid("PUUID")
     assert profile.summoner_name == "Faker"
     assert profile.level == 800
     assert [c.champion_id for c in profile.top_champions] == [103, 64, 90]
@@ -48,11 +55,15 @@ async def test_fetch_returns_full_profile() -> None:
     assert profile.losses == 0
     assert profile.streak == 2
     assert profile.win_rate == 1.0
+    # Rank surfaces too — we hit the by-puuid league endpoint, not the
+    # deprecated by-summoner-id one.
+    assert profile.rank.tier == "DIAMOND"
+    assert profile.rank.division == "II"
     await client.aclose()
 
 
 @pytest.mark.asyncio
-async def test_fetch_caches_per_session() -> None:
+async def test_fetch_by_puuid_caches_per_session() -> None:
     calls = {"n": 0}
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -62,6 +73,8 @@ async def test_fetch_caches_per_session() -> None:
             return httpx.Response(200, json={
                 "puuid": "P", "id": "S", "name": "X", "summonerLevel": 10,
             })
+        if "league/v4" in url:
+            return httpx.Response(200, json=[])
         if "champion-mastery" in url:
             return httpx.Response(200, json=[])
         if "/ids" in url:
@@ -73,9 +86,9 @@ async def test_fetch_caches_per_session() -> None:
         transport=httpx.MockTransport(handler),
     )
     service = ProfileService(client)
-    await service.fetch("X")
+    await service.fetch_by_puuid("P")
     first_calls = calls["n"]
-    await service.fetch("X")  # should hit the cache
+    await service.fetch_by_puuid("P")  # should hit the cache
     assert calls["n"] == first_calls
     await client.aclose()
 
@@ -98,6 +111,6 @@ async def test_summoner_404_returns_empty_profile() -> None:
         transport=httpx.MockTransport(handler),
     )
     service = ProfileService(client)
-    profile = await service.fetch("Ghost")
+    profile = await service.fetch_by_puuid("Ghost")
     assert profile.has_data is False
     await client.aclose()

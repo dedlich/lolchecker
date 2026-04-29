@@ -18,16 +18,16 @@ def _client(handler) -> RiotApiClient:
 
 
 @pytest.mark.asyncio
-async def test_summoner_by_name_parses_payload() -> None:
+async def test_summoner_by_puuid_parses_payload() -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         assert request.headers["X-Riot-Token"] == API_KEY
-        assert "summoner/v4" in str(request.url)
+        assert "summoner/v4/summoners/by-puuid/" in str(request.url)
         return httpx.Response(200, json={
             "puuid": "PUUID", "id": "S-ID", "name": "Faker", "summonerLevel": 712,
         })
 
     client = _client(handler)
-    info = await client.summoner_by_name("Faker")
+    info = await client.summoner_by_puuid("PUUID")
     assert info.puuid == "PUUID"
     assert info.level == 712
     await client.aclose()
@@ -40,7 +40,7 @@ async def test_summoner_404_raises() -> None:
 
     client = _client(handler)
     with pytest.raises(RiotApiError):
-        await client.summoner_by_name("Nope")
+        await client.summoner_by_puuid("MISSING")
     await client.aclose()
 
 
@@ -51,7 +51,7 @@ async def test_invalid_key_raises_recognizable_error() -> None:
 
     client = _client(handler)
     with pytest.raises(RiotApiError, match="invalid"):
-        await client.summoner_by_name("X")
+        await client.summoner_by_puuid("PUUID")
     await client.aclose()
 
 
@@ -62,7 +62,7 @@ async def test_rate_limit_raises_recognizable_error() -> None:
 
     client = _client(handler)
     with pytest.raises(RiotApiError, match="rate"):
-        await client.summoner_by_name("X")
+        await client.summoner_by_puuid("PUUID")
     await client.aclose()
 
 
@@ -113,7 +113,7 @@ async def test_streak_computes_signed_streak() -> None:
 
 
 @pytest.mark.asyncio
-async def test_league_entries_parses_solo_and_flex() -> None:
+async def test_league_entries_by_puuid_parses_solo_and_flex() -> None:
     payload = [
         {
             "queueType": "RANKED_SOLO_5x5",
@@ -128,10 +128,12 @@ async def test_league_entries_parses_solo_and_flex() -> None:
     ]
 
     def handler(request: httpx.Request) -> httpx.Response:
+        # Verify we hit the puuid form, not the deprecated by-summoner one.
+        assert "/league/v4/entries/by-puuid/" in str(request.url)
         return httpx.Response(200, json=payload)
 
     client = _client(handler)
-    entries = await client.league_entries("S-1234")
+    entries = await client.league_entries_by_puuid("PUUID")
     assert len(entries) == 2
     solo = next(e for e in entries if e.queue_type == "RANKED_SOLO_5x5")
     assert solo.tier == "DIAMOND"
@@ -143,12 +145,12 @@ async def test_league_entries_parses_solo_and_flex() -> None:
 
 
 @pytest.mark.asyncio
-async def test_league_entries_returns_empty_on_unranked() -> None:
+async def test_league_entries_by_puuid_returns_empty_on_unranked() -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(200, json=[])
 
     client = _client(handler)
-    assert await client.league_entries("S-x") == []
+    assert await client.league_entries_by_puuid("PUUID") == []
     await client.aclose()
 
 

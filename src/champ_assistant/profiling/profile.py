@@ -106,22 +106,22 @@ class ProfileService:
         return await self._compose(summoner, cache_key)
 
     async def fetch_by_summoner_id(self, summoner_id: int | str) -> EnemyProfile:
-        """Fetch + cache by encrypted-summoner-id (LCU's primary identifier)."""
+        """Legacy fallback for ancient LCU payloads without puuid.
+        Riot retired the by-summoner-id summoner lookup, so we can't
+        resolve the player here — cache an empty profile to stop the
+        UI from retrying. Modern LCU always sends puuid; this path
+        is essentially never taken."""
         cache_key = f"sid:{summoner_id}"
-        if cache_key in self._cache:
-            return self._cache[cache_key]
-        try:
-            summoner = await self._client.summoner_by_id(summoner_id)
-        except RiotApiError as exc:
-            logger.info("profile_lookup_by_id_failed: %s", exc)
-            empty = EnemyProfile(summoner_name=str(summoner_id)[:8])
-            self._cache[cache_key] = empty
-            return empty
-        return await self._compose(summoner, cache_key)
+        if cache_key not in self._cache:
+            self._cache[cache_key] = EnemyProfile(
+                summoner_name=str(summoner_id)[:8],
+            )
+        return self._cache[cache_key]
 
     async def _compose(self, summoner: object, cache_key: str) -> EnemyProfile:
         """Shared post-summoner-lookup pipeline: mastery + streak + rank
-        all fanned out concurrently."""
+        all fanned out concurrently. Every Riot endpoint we hit here
+        is puuid-keyed — Riot retired the by-summoner-id forms."""
         from .riot_api import SummonerInfo
         assert isinstance(summoner, SummonerInfo)
         mastery_task = asyncio.create_task(
@@ -130,9 +130,8 @@ class ProfileService:
         streak_task = asyncio.create_task(
             self._client.win_loss_streak(summoner.puuid)
         )
-        rank_task = (
-            asyncio.create_task(self._client.league_entries(summoner.summoner_id))
-            if summoner.summoner_id else None
+        rank_task = asyncio.create_task(
+            self._client.league_entries_by_puuid(summoner.puuid)
         )
 
         try:
@@ -147,26 +146,24 @@ class ProfileService:
             wins, losses, streak = 0, 0, 0
 
         rank = RankBadge()
-        if rank_task is not None:
-            try:
-                entries = await rank_task
-            except RiotApiError as exc:
-                logger.info("profile_rank_failed: %s", exc)
-                entries = []
-            # Prefer solo/duo, fall back to flex if that's all they have.
-            solo = next(
-                (e for e in entries if e.queue_type == "RANKED_SOLO_5x5"),
-                None,
+        try:
+            entries = await rank_task
+        except RiotApiError as exc:
+            logger.info("profile_rank_failed: %s", exc)
+            entries = []
+        solo = next(
+            (e for e in entries if e.queue_type == "RANKED_SOLO_5x5"),
+            None,
+        )
+        chosen = solo or (entries[0] if entries else None)
+        if chosen is not None:
+            rank = RankBadge(
+                tier=chosen.tier,
+                division=chosen.division,
+                league_points=chosen.league_points,
+                wins=chosen.wins,
+                losses=chosen.losses,
             )
-            chosen = solo or (entries[0] if entries else None)
-            if chosen is not None:
-                rank = RankBadge(
-                    tier=chosen.tier,
-                    division=chosen.division,
-                    league_points=chosen.league_points,
-                    wins=chosen.wins,
-                    losses=chosen.losses,
-                )
 
         profile = EnemyProfile(
             summoner_name=summoner.name or cache_key,
@@ -185,54 +182,6 @@ class ProfileService:
             rank=rank,
         )
         self._cache[cache_key] = profile
-        return profile
-
-    async def fetch(self, summoner_name: str) -> EnemyProfile:
-        """Fetch + cache a profile. Errors degrade to an empty profile."""
-        key = summoner_name.lower()
-        if key in self._cache:
-            return self._cache[key]
-        try:
-            summoner = await self._client.summoner_by_name(summoner_name)
-        except RiotApiError as exc:
-            logger.info("profile_summoner_failed name=%s: %s", summoner_name, exc)
-            empty = EnemyProfile(summoner_name=summoner_name)
-            self._cache[key] = empty
-            return empty
-
-        mastery_task = asyncio.create_task(
-            self._client.top_mastery(summoner.puuid, count=3)
-        )
-        streak_task = asyncio.create_task(
-            self._client.win_loss_streak(summoner.puuid)
-        )
-        try:
-            mastery = await mastery_task
-        except RiotApiError as exc:
-            logger.info("profile_mastery_failed: %s", exc)
-            mastery = []
-        try:
-            wins, losses, streak = await streak_task
-        except RiotApiError as exc:
-            logger.info("profile_streak_failed: %s", exc)
-            wins, losses, streak = 0, 0, 0
-
-        profile = EnemyProfile(
-            summoner_name=summoner.name or summoner_name,
-            level=summoner.level,
-            top_champions=[
-                TopChampion(
-                    champion_id=m.champion_id,
-                    points=m.points,
-                    mastery_level=m.level,
-                )
-                for m in mastery
-            ],
-            wins=wins,
-            losses=losses,
-            streak=streak,
-        )
-        self._cache[key] = profile
         return profile
 
     def clear(self) -> None:
