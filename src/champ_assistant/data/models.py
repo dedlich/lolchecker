@@ -115,13 +115,21 @@ class TagsData(BaseModel):
 
 
 class ChampionBuild(BaseModel):
-    """Recommended runes / items / summoner spells for a champion in a role."""
+    """Recommended runes / items / summoner spells for a champion in a role.
+
+    A build may carry alternative variants the user can cycle through
+    (different rune trees, item rushes, etc.) post-pick. The "main"
+    build is whatever the legacy fields hold; ``variants`` lists
+    additional named alternatives. Variants of variants are ignored —
+    the recursion is one level deep by convention."""
 
     model_config = ConfigDict(frozen=True, extra="ignore")
 
     runes: list[str] = Field(default_factory=list)
     items: list[str] = Field(default_factory=list)
     summoners: list[str] = Field(default_factory=list)
+    name: str = "Default"
+    variants: list["ChampionBuild"] = Field(default_factory=list)
 
 
 class BuildLibrary(BaseModel):

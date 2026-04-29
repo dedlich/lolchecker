@@ -20,7 +20,9 @@ from PyQt6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QPushButton,
+    QToolButton,
     QVBoxLayout,
+    QWidget,
 )
 
 from ..advisor.picks import PickSuggestion
@@ -132,45 +134,142 @@ class PickCard(QFrame):
         outer.addWidget(reasons)
 
         # -- Build section (runes / items / summoners + apply button) ----
+        # Cached for variant-cycle rebuilds: when the user clicks ◀ / ▶
+        # we need to swap _build for the next variant and redraw the
+        # rune/item lines without recreating the whole card.
+        self._build_reasons = list(build_reasons or [])
+        self._variant_index = 0
+        self._build_section: QWidget | None = None
         if build is not None:
-            self._add_build_lines(outer, build)
-            # Matchup-adaptation reasons (e.g. "vs AP-heavy: → Mercury's
-            # Treads") show right under the build lines, before the
-            # apply button. Subtle accent-color one-liner per reason.
-            if build_reasons:
-                for reason in build_reasons:
-                    label = QLabel(f"⚙ {reason}")
-                    label.setStyleSheet(
-                        f"color: {styles.ACCENT};"
-                        f" font-size: {styles.FS_LABEL}px;"
-                        " font-style: italic;"
-                        " padding-left: 4px;"
-                    )
-                    label.setWordWrap(True)
-                    outer.addWidget(label)
-            self._add_apply_button(outer, build)
+            self._render_build_section(outer)
+
+    def _all_variants(self) -> list[ChampionBuild]:
+        """Main build + alternatives, in display order. Empty list when
+        no build is attached."""
+        if self._build is None:
+            return []
+        return [self._build, *self._build.variants]
+
+    def _render_build_section(self, outer: QVBoxLayout) -> None:
+        """(Re)build the rune/item/summoner display + variant switcher
+        + apply button. Called once on init, then again every time the
+        user cycles through variants."""
+        if self._build_section is not None:
+            self._build_section.setParent(None)
+            self._build_section.deleteLater()
+            self._build_section = None
+
+        active = self._active_variant()
+        if active is None:
+            return
+
+        section = QWidget()
+        section_layout = QVBoxLayout(section)
+        section_layout.setContentsMargins(0, 0, 0, 0)
+        section_layout.setSpacing(2)
+
+        # Variant switcher row — only when alternatives exist.
+        variants = self._all_variants()
+        if len(variants) > 1:
+            section_layout.addLayout(self._build_variant_row(active, variants))
+
+        self._add_build_lines(section_layout, active)
+
+        if self._build_reasons:
+            for reason in self._build_reasons:
+                label = QLabel(f"⚙ {reason}")
+                label.setStyleSheet(
+                    f"color: {styles.ACCENT};"
+                    f" font-size: {styles.FS_LABEL}px;"
+                    " font-style: italic;"
+                    " padding-left: 4px;"
+                )
+                label.setWordWrap(True)
+                section_layout.addWidget(label)
+        self._add_apply_button(section_layout, active)
+        outer.addWidget(section)
+        self._build_section = section
+
+    def _build_variant_row(
+        self, active: ChampionBuild, variants: list[ChampionBuild],
+    ) -> QHBoxLayout:
+        """Cycle control: ◀ {variant_name} ▶. Click cycles to next."""
+        row = QHBoxLayout()
+        row.setSpacing(6)
+        row.setContentsMargins(4, 0, 4, 0)
+
+        prev_btn = QToolButton()
+        prev_btn.setText("◀")
+        prev_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        prev_btn.setStyleSheet(self._variant_btn_stylesheet())
+        prev_btn.clicked.connect(lambda: self._cycle_variant(-1))
+        row.addWidget(prev_btn)
+
+        idx = self._variant_index
+        name_label = QLabel(f"{active.name} ({idx + 1}/{len(variants)})")
+        name_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        name_label.setStyleSheet(
+            f"color: {styles.TEXT_SECONDARY};"
+            f" font-size: {styles.FS_LABEL}px; font-weight: 700;"
+            " letter-spacing: 0.4px;"
+        )
+        row.addWidget(name_label, 1)
+
+        next_btn = QToolButton()
+        next_btn.setText("▶")
+        next_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        next_btn.setStyleSheet(self._variant_btn_stylesheet())
+        next_btn.clicked.connect(lambda: self._cycle_variant(1))
+        row.addWidget(next_btn)
+
+        return row
+
+    @staticmethod
+    def _variant_btn_stylesheet() -> str:
+        return (
+            f"QToolButton {{"
+            f" color: {styles.ACCENT};"
+            f" background: transparent;"
+            f" border: 1px solid {styles.BORDER_FAINT};"
+            f" border-radius: {styles.RADIUS_SMALL}px;"
+            f" padding: 0px 6px; min-width: 18px;"
+            f" font-size: {styles.FS_LABEL}px; font-weight: 700;"
+            f" }}"
+            f" QToolButton:hover {{ background: {styles.BG_INTERACT}; }}"
+        )
+
+    def _cycle_variant(self, direction: int) -> None:
+        variants = self._all_variants()
+        if len(variants) <= 1:
+            return
+        self._variant_index = (self._variant_index + direction) % len(variants)
+        # Find the outer QVBoxLayout we were originally added to and
+        # rebuild the build section in place.
+        outer = self.layout()
+        if outer is not None:
+            self._render_build_section(outer)  # type: ignore[arg-type]
+
+    def _active_variant(self) -> ChampionBuild | None:
+        variants = self._all_variants()
+        if not variants:
+            return None
+        return variants[self._variant_index % len(variants)]
 
     def mousePressEvent(self, event: QMouseEvent | None) -> None:
         """Click on the card body → lock this champion in the picker
-        AND apply its rune page + item set in one shot. The click is a
-        commitment; auto-applying the build saves a second click on
-        the Apply Build button. Clicks on the Apply Build button
-        itself never reach here (the button accepts and consumes its
-        own events).
+        AND apply the CURRENTLY-DISPLAYED variant's runes + items.
+        Clicks on the Apply Build button or the variant cycle buttons
+        never reach here (those accept and consume their own events).
         """
         if event is None or event.button() != Qt.MouseButton.LeftButton:
             super().mousePressEvent(event)
             return
         key = self.suggestion.champion_key
         self.pick_hover_requested.emit(key)
-        # Auto-apply the build only when one is available — picks
-        # without a curated/adapted build (rare, e.g. a champion not
-        # yet seeded in builds.json) just lock with no rune/item push.
-        if self._build is not None and (self._build.runes or self._build.items):
+        active = self._active_variant()
+        if active is not None and (active.runes or active.items):
             self.apply_build_requested.emit(
-                key,
-                list(self._build.runes),
-                list(self._build.items),
+                key, list(active.runes), list(active.items),
             )
         super().mousePressEvent(event)
 
@@ -178,7 +277,11 @@ class PickCard(QFrame):
     def _add_build_lines(outer: QVBoxLayout, build: ChampionBuild) -> None:
         """Three compact lines for runes / items / summoners. Each line
         carries a colored leading sigil + bullet-separated content with
-        its own accent so the rows visually parse at a glance."""
+        its own accent so the rows visually parse at a glance.
+
+        ``outer`` may be either the main card layout (back-compat) or
+        the variant-switching ``_build_section`` sub-layout. Either way
+        we just append rows to it."""
         if build.runes:
             outer.addWidget(_build_line(
                 "🛡", build.runes, styles.TIER_A, sep=" • ",

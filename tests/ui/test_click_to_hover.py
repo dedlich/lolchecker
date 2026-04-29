@@ -158,3 +158,70 @@ def test_pick_card_body_click_without_build_only_emits_lock(qt_app) -> None:
     _press(card)
     assert received_hover == ["Ahri"]
     assert received_apply == []
+
+
+# ----------------------------------------------------------------------
+# Variant cycle — multi-build switcher
+# ----------------------------------------------------------------------
+def test_pick_card_cycle_swaps_active_variant(qt_app) -> None:
+    """Clicking the ▶ button advances to the next variant; the click-
+    to-pick gesture then applies THAT variant's runes + items, not
+    the original."""
+    from champ_assistant.data.models import ChampionBuild
+    primary = ChampionBuild(
+        name="Conqueror",
+        runes=["Conqueror"],
+        items=["Stridebreaker"],
+        variants=[
+            ChampionBuild(
+                name="Phase Rush",
+                runes=["Phase Rush"],
+                items=["Trinity Force"],
+            ),
+        ],
+    )
+    card = PickCard(_pick("Garen"), build=primary, rank=1)
+
+    # Initially variant 0 (Conqueror) is active.
+    assert card._active_variant().name == "Conqueror"
+
+    # Cycle forward → Phase Rush.
+    card._cycle_variant(1)
+    assert card._active_variant().name == "Phase Rush"
+
+    # Wrap-around with another forward cycle → back to Conqueror.
+    card._cycle_variant(1)
+    assert card._active_variant().name == "Conqueror"
+
+
+def test_pick_card_click_after_cycle_applies_new_variant(qt_app) -> None:
+    """Cycle to alt variant, then click body → emitted runes/items
+    must match the alternative, not the original."""
+    from champ_assistant.data.models import ChampionBuild
+    primary = ChampionBuild(
+        name="A", runes=["A_rune"], items=["A_item"],
+        variants=[
+            ChampionBuild(name="B", runes=["B_rune"], items=["B_item"]),
+        ],
+    )
+    card = PickCard(_pick("Garen"), build=primary, rank=1)
+
+    received_apply: list[tuple[str, list, list]] = []
+    card.apply_build_requested.connect(
+        lambda key, runes, items: received_apply.append((key, runes, items)),
+    )
+    card._cycle_variant(1)  # → variant B
+    _press(card)
+    assert received_apply == [("Garen", ["B_rune"], ["B_item"])]
+
+
+def test_pick_card_no_variants_means_no_cycle_buttons(qt_app) -> None:
+    """A single-build pick (no alternatives) shouldn't show cycle
+    controls — they'd be confusing/dead UI."""
+    from champ_assistant.data.models import ChampionBuild
+    build = ChampionBuild(name="Solo", runes=["X"], items=["Y"])
+    card = PickCard(_pick("Ahri"), build=build, rank=1)
+    # Find tool buttons (cycle uses QToolButton); should be zero in
+    # the no-variants case.
+    from PyQt6.QtWidgets import QToolButton
+    assert len(card.findChildren(QToolButton)) == 0
