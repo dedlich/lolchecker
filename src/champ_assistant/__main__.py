@@ -40,6 +40,22 @@ from champ_assistant.safety import CrashHandler
 from champ_assistant.ui.overlay import MainOverlay
 
 
+def _log_startup_summary(perf_module) -> None:  # type: ignore[no-untyped-def]
+    """Emit a single-line summary of the boot timeline so the user
+    (or grep) can quickly see where startup time went without parsing
+    performance.log. Best-effort — never raises."""
+    try:
+        records = perf_module.monitor().snapshot()
+        if not records:
+            return
+        summary = ", ".join(f"{r.name}={r.elapsed_ms:.0f}ms" for r in records)
+        total = records[-1].elapsed_ms
+        log = logging.getLogger("champ_assistant.startup")
+        log.info("startup_complete total=%.0fms phases=[%s]", total, summary)
+    except Exception:  # noqa: BLE001 — diagnostics must never crash
+        pass
+
+
 def _resource_root() -> Path:
     """Repo root in dev, bundle root in a PyInstaller frozen exe.
 
@@ -530,6 +546,7 @@ def _run_with_ui(args: argparse.Namespace) -> int:
 
     overlay.show()
     _perf.record_phase("ui_visible")
+    _log_startup_summary(_perf)
     # Surface the first-launch welcome banner once the window is up so
     # the fade-in lands on a settled layout. No-op on every subsequent
     # launch (state lives in overlay_config.onboarding_seen).
