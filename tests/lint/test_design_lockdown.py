@@ -95,7 +95,7 @@ def test_no_inline_font_size_outside_token_scale() -> None:
     for path in _ui_python_files():
         if path.name == "styles.py":
             continue
-        cleaned = _strip_comments_and_docstrings(path.read_text())
+        cleaned = _strip_comments_and_docstrings(path.read_text(encoding="utf-8"))
         for line_no, line in enumerate(cleaned.splitlines(), start=1):
             for match in FONT_SIZE_LITERAL.finditer(line):
                 violations.append((path, line_no, match.group(0)))
@@ -120,7 +120,7 @@ def test_no_raw_hex_outside_allowlist() -> None:
     for path in _ui_python_files():
         if path.name in HEX_ALLOWLIST_FILES:
             continue
-        cleaned = _strip_comments_and_docstrings(path.read_text())
+        cleaned = _strip_comments_and_docstrings(path.read_text(encoding="utf-8"))
         for line_no, line in enumerate(cleaned.splitlines(), start=1):
             for match in HEX_LITERAL.finditer(line):
                 violations.append((path, line_no, match.group(0)))
