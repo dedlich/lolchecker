@@ -1,4 +1,4 @@
-"""Ordered startup + shutdown manager.
+"""Ordered startup + shutdown manager + clean-shutdown marker.
 
 The app composes ~6 subsystems (state, scheduler, layout, hotkeys, update,
 diagnostics) each with their own resources — a Win32 hotkey table, a Qt
@@ -60,6 +60,12 @@ class LifecycleManager:
         self._lock = threading.Lock()
         self._shutting_down = False
         self._shutdown_done = False
+        # Optional finalizers — called in order AFTER every registered
+        # service has stopped. Used by ``__main__`` to plug in the
+        # session-summary emit + clean-shutdown marker write so the
+        # marker is the absolute last side effect of the shutdown
+        # path. Failures don't propagate (each finalizer is wrapped).
+        self._finalizers: list[tuple[str, StopFn]] = []
 
     # -- registration -----------------------------------------------------
 
@@ -77,6 +83,20 @@ class LifecycleManager:
                 return
             self._services.append(_Service(name=name, stop=stop))
             logger.debug("lifecycle: registered %s", name)
+
+    def register_finalizer(self, name: str, fn: StopFn) -> None:
+        """Append a finalizer to run after all services have stopped.
+        Order matches registration order (NOT reversed) — we want
+        session_summary BEFORE the clean-shutdown marker so a crash
+        emitting the summary doesn't claim a clean exit."""
+        with self._lock:
+            if self._shutting_down:
+                logger.warning(
+                    "lifecycle: register_finalizer('%s') ignored — "
+                    "shutdown in progress", name,
+                )
+                return
+            self._finalizers.append((name, fn))
 
     # -- queries ----------------------------------------------------------
 
@@ -110,6 +130,22 @@ class LifecycleManager:
                 logger.exception(
                     "lifecycle: stop(%s) raised — continuing", svc.name,
                 )
+
+        # Finalizers run in registration order, after every service has
+        # stopped. Each is isolated so a failure (e.g. session_summary
+        # logging fails) doesn't prevent the next finalizer (e.g. the
+        # clean-shutdown marker write) from running.
+        with self._lock:
+            finalizers = list(self._finalizers)
+        for name, fn in finalizers:
+            try:
+                logger.info("lifecycle: finalizer %s", name)
+                fn()
+            except Exception:  # noqa: BLE001
+                logger.exception(
+                    "lifecycle: finalizer(%s) raised — continuing", name,
+                )
+
         with self._lock:
             self._shutdown_done = True
         logger.info("lifecycle: shutdown complete")

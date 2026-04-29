@@ -55,3 +55,48 @@ def test_register_after_shutdown_is_ignored(caplog) -> None:  # type: ignore[no-
         lc.register("late", lambda: calls.append("late"))
     assert calls == []
     assert any("ignored" in r.getMessage() for r in caplog.records)
+
+
+# ----------------------------------------------------------------------
+# Finalizers — failure-recovery layer (session_summary, clean_shutdown)
+# ----------------------------------------------------------------------
+def test_finalizers_run_after_all_services_in_registration_order() -> None:
+    calls: list[str] = []
+    lc = LifecycleManager()
+    lc.register("svc-a", lambda: calls.append("stop:a"))
+    lc.register("svc-b", lambda: calls.append("stop:b"))
+    lc.register_finalizer("summary", lambda: calls.append("final:summary"))
+    lc.register_finalizer("marker",  lambda: calls.append("final:marker"))
+    lc.shutdown()
+    # Services in REVERSE registration order, then finalizers in
+    # FORWARD order. summary BEFORE marker so a dying summary doesn't
+    # mask the absence of a clean exit.
+    assert calls == [
+        "stop:b", "stop:a",
+        "final:summary", "final:marker",
+    ]
+
+
+def test_failing_finalizer_does_not_block_others() -> None:
+    calls: list[str] = []
+
+    def boom() -> None:
+        raise RuntimeError("boom")
+
+    lc = LifecycleManager()
+    lc.register_finalizer("a", lambda: calls.append("a"))
+    lc.register_finalizer("boom", boom)
+    lc.register_finalizer("c", lambda: calls.append("c"))
+    lc.shutdown()  # must not raise
+    # 'c' still runs even though 'boom' raised before it.
+    assert calls == ["a", "c"]
+
+
+def test_finalizers_only_fire_once() -> None:
+    """Idempotent shutdown protection covers finalizers too."""
+    calls: list[str] = []
+    lc = LifecycleManager()
+    lc.register_finalizer("once", lambda: calls.append("hit"))
+    lc.shutdown()
+    lc.shutdown()
+    assert calls == ["hit"]

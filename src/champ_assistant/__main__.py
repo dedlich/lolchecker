@@ -230,6 +230,23 @@ def _run_with_ui(args: argparse.Namespace) -> int:
     # ------------------------------------------------------------------
     lifecycle = LifecycleManager()
 
+    # ------------------------------------------------------------------
+    # Failure-recovery layer: detect Safe Mode from disk markers BEFORE
+    # any subsystem starts so we know which subsystems to gate. Always
+    # consume the prior clean_shutdown.marker — its job is to cover
+    # ONE shutdown only; carrying it forward would mask future crashes.
+    # ------------------------------------------------------------------
+    from champ_assistant import safe_mode as _safe_mode
+    from champ_assistant.session_summary import UptimeClock
+    startup_mode = _safe_mode.decide_startup_mode()
+    _safe_mode.consume_clean_shutdown_marker()
+    uptime_clock = UptimeClock()
+    if startup_mode.safe:
+        logging.getLogger(__name__).warning(
+            "safe_mode active: %s — hotkeys/telemetry/update_check disabled",
+            startup_mode.reason,
+        )
+
     _enable_gpu_backend()
     qt_app = QApplication(sys.argv[:1])
 
@@ -399,6 +416,15 @@ def _run_with_ui(args: argparse.Namespace) -> int:
     # launch (state lives in overlay_config.onboarding_seen).
     overlay.show_onboarding_if_needed()
 
+    # Safe-mode banner: surface in the status bar's persistent info slot
+    # with a "Resume Normal" affordance. Click → clear crash report,
+    # write marker, restart will boot normal regardless of this session.
+    if startup_mode.safe:
+        def _on_resume_normal() -> None:
+            _safe_mode.resume_normal_mode()
+            overlay.status_bar.dismiss_safe_mode_banner()
+        overlay.status_bar.show_safe_mode_banner(on_resume=_on_resume_normal)
+
     # Application-level focus tracking — captures gain/loss as the user
     # alt-tabs between the game and the overlay. Telemetry-only,
     # no rendering side-effect.
@@ -418,6 +444,42 @@ def _run_with_ui(args: argparse.Namespace) -> int:
         overlay.status_bar.set_info(f"Error: {msg[:80]}", color="#FF6B6B")
     crash.subscribe(_on_crash)
 
+    # Persist a crash report on every uncaught exception so the next
+    # launch can boot in Safe Mode if the prior shutdown wasn't clean.
+    # Collector closure pulls best-effort current state via try-blocks
+    # so a half-initialized app still produces a partial report.
+    from champ_assistant import __version__ as _app_version
+    from champ_assistant import crash_report as _crash_report
+    from champ_assistant.ui.floating_widget import FloatingWidget as _FloatingWidget
+
+    def _collect_state_snapshot() -> dict:
+        try:
+            cur = store.get()
+            return {
+                "phase": cur.phase,
+                "connection_state": cur.connection_state,
+                "active_widgets": [
+                    type(w).__name__ for w in _FloatingWidget._instances
+                    if w.isVisible()
+                ],
+                "last_state_vector": {
+                    "phase": cur.phase,
+                    "game_time": cur.game_time,
+                    "revision": cur.revision,
+                },
+            }
+        except Exception:  # noqa: BLE001 — collector must be tolerant
+            return {}
+
+    def _on_uncaught(exc_type, exc_value, exc_tb) -> None:
+        _crash_report.write_crash_report(
+            exc_type, exc_value, exc_tb,
+            version=_app_version,
+            uptime_seconds=uptime_clock.elapsed(),
+            state_collector=_collect_state_snapshot,
+        )
+    crash.set_uncaught_callback(_on_uncaught)
+
     loop = qasync.QEventLoop(qt_app)
     asyncio.set_event_loop(loop)
     crash.install(loop=loop)
@@ -432,9 +494,16 @@ def _run_with_ui(args: argparse.Namespace) -> int:
         _hydrate_champions_and_icons(overlay, assistant, args.data_dir),
         name="champion-prefetch",
     )
-    update_task = loop.create_task(
-        _check_and_notify_update(overlay, lifecycle), name="update-check"
-    )
+    if startup_mode.safe:
+        # Update checks disabled in Safe Mode — a failed update is one
+        # of the things that could have caused the prior crash, and
+        # nagging about a new version while the user is trying to
+        # diagnose is poor signal-to-noise.
+        update_task = loop.create_task(asyncio.sleep(0), name="update-check-skipped")
+    else:
+        update_task = loop.create_task(
+            _check_and_notify_update(overlay, lifecycle), name="update-check"
+        )
     # Lifecycle entry: cancel async tasks before tearing down the loop so
     # in-flight downloads / icon prefetches abort cleanly instead of
     # raising into qasync's exception handler at shutdown.
@@ -508,7 +577,13 @@ def _run_with_ui(args: argparse.Namespace) -> int:
         _safe_start("diagnostics", diagnostics.start)
     else:
         logging.getLogger(__name__).info("diagnostics disabled via settings")
-    _safe_start("telemetry", telemetry_recorder.start)
+    if startup_mode.safe:
+        # Telemetry intentionally disabled in Safe Mode — the
+        # recorder's batch flush touches disk and could interact with
+        # whatever caused the prior crash.
+        logging.getLogger(__name__).info("telemetry disabled (safe mode)")
+    else:
+        _safe_start("telemetry", telemetry_recorder.start)
 
     # ------------------------------------------------------------------
     # Global hotkeys (Win32 RegisterHotKey via dedicated thread).
@@ -581,7 +656,14 @@ def _run_with_ui(args: argparse.Namespace) -> int:
     store.subscribe(_on_state_change)
     from PyQt6.QtCore import Qt as _Qt
     hotkeys.hotkey_pressed.connect(_on_hotkey, _Qt.ConnectionType.QueuedConnection)
-    _safe_start("hotkeys", hotkeys.start)
+    if startup_mode.safe:
+        # Global hotkey listener disabled in Safe Mode — Win32
+        # RegisterHotKey + a daemon thread are exactly the kind of
+        # OS-level resource that could be implicated in a crash loop.
+        # User can still close the overlay window normally.
+        logging.getLogger(__name__).info("hotkeys disabled (safe mode)")
+    else:
+        _safe_start("hotkeys", hotkeys.start)
     overlay._hotkeys = hotkeys  # keep alive
     lifecycle.register("hotkeys", hotkeys.stop)
 
@@ -595,6 +677,30 @@ def _run_with_ui(args: argparse.Namespace) -> int:
     # late callbacks (hotkey signal, state listener) still find a live
     # event loop to dispatch into.
     lifecycle.register("qt_loop", loop.stop)
+
+    # ------------------------------------------------------------------
+    # Failure-recovery finalizers — run AFTER every service has stopped,
+    # in registration order. session_summary first so its log line
+    # captures the final counter values; clean_shutdown.marker last so
+    # its presence definitively means "everything else completed OK".
+    # ------------------------------------------------------------------
+    from champ_assistant.session_summary import emit_session_summary as _emit_summary
+
+    def _finalize_summary() -> None:
+        _emit_summary(
+            uptime_seconds=uptime_clock.elapsed(),
+            diagnostics=diagnostics,
+            scheduler=scheduler,
+            telemetry_recorder=telemetry_recorder,
+            state_store=store,
+            safe_mode=startup_mode.safe,
+        )
+
+    def _finalize_clean_marker() -> None:
+        _safe_mode.write_clean_shutdown_marker()
+
+    lifecycle.register_finalizer("session_summary", _finalize_summary)
+    lifecycle.register_finalizer("clean_shutdown_marker", _finalize_clean_marker)
 
     # Single shutdown entry: aboutToQuit → ordered teardown. Idempotent,
     # so a fallback finally: shutdown() during an exception path is safe.

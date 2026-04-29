@@ -41,6 +41,23 @@ class CrashHandler:
         self._async_hook: Callable[[asyncio.AbstractEventLoop, dict[str, Any]], None] = (
             self._handle_async
         )
+        # Optional crash-report writer — wired by ``__main__`` after the
+        # uptime clock + state collectors are available. Stored as a
+        # plain callable so this module stays Qt-free + dep-free.
+        self._on_uncaught: Callable[
+            [type[BaseException], BaseException, TracebackType | None], None,
+        ] | None = None
+
+    def set_uncaught_callback(
+        self,
+        callback: Callable[
+            [type[BaseException], BaseException, TracebackType | None], None,
+        ] | None,
+    ) -> None:
+        """Hand over a callable that fires on every (non-KeyboardInterrupt)
+        uncaught exception — both sync and async paths converge here.
+        Idempotent; passing ``None`` unhooks."""
+        self._on_uncaught = callback
 
     # -- Subscription --------------------------------------------------
 
@@ -90,6 +107,7 @@ class CrashHandler:
 
         trace = "".join(traceback.format_exception(exc_type, exc_value, exc_tb))
         logger.error("uncaught_exception", extra={"trace": trace})
+        self._fire_uncaught(exc_type, exc_value, exc_tb)
         self._notify(str(exc_value) or exc_type.__name__)
         # Deliberately NOT calling sys.exit — graceful degradation only.
 
@@ -107,9 +125,27 @@ class CrashHandler:
                 traceback.format_exception(type(exc), exc, exc.__traceback__)
             )
             logger.error("async_exception", extra={"detail": detail, "trace": trace})
+            self._fire_uncaught(type(exc), exc, exc.__traceback__)
         else:
             logger.error("async_exception", extra={"detail": detail, "context": str(context)})
         self._notify(str(exc) if exc else detail)
+
+    def _fire_uncaught(
+        self,
+        exc_type: type[BaseException],
+        exc_value: BaseException,
+        exc_tb: TracebackType | None,
+    ) -> None:
+        """Fan-out to the registered uncaught callback (crash_report
+        writer in production). Failures here are isolated — a broken
+        crash writer must not break the crash handler itself."""
+        cb = self._on_uncaught
+        if cb is None:
+            return
+        try:
+            cb(exc_type, exc_value, exc_tb)
+        except Exception:  # noqa: BLE001
+            logger.exception("safety: uncaught_callback raised — ignoring")
 
     # -- Notification --------------------------------------------------
 

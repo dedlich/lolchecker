@@ -117,6 +117,38 @@ class ConnectionStatusBar(QStatusBar):
         self._info_label.setText("")
         self._info_label.setStyleSheet("")
 
+    # -- safe mode --------------------------------------------------------
+
+    def show_safe_mode_banner(self, on_resume: Callable[[], None]) -> None:
+        """Surface the Safe Mode notice + a Resume button. Reuses the
+        update-button slot since both are mutually exclusive (Safe Mode
+        disables update checks entirely)."""
+        self.set_info(
+            "Safe Mode — previous session ended unexpectedly",
+            color=styles.WARNING,
+        )
+        with contextlib.suppress(TypeError):
+            self._update_button.clicked.disconnect()
+        self._update_button.clicked.connect(on_resume)
+        self._update_button.setText("Resume Normal Mode")
+        self._update_button.setEnabled(True)
+        self._update_button.show()
+        # The "Später" button doesn't apply here — Safe Mode is its own
+        # explicit dismiss flow.
+        self._snooze_button.hide()
+
+    def dismiss_safe_mode_banner(self) -> None:
+        """Hide the Safe Mode banner after Resume is clicked. Note that
+        Safe Mode itself only disengages on the NEXT launch — the
+        banner just acknowledges the user took the action."""
+        self.set_info(
+            "Resume normal mode on next start",
+            color=styles.SUCCESS,
+        )
+        self._update_button.hide()
+
+    # -- update flow ------------------------------------------------------
+
     def show_update_available(
         self,
         tag: str,
