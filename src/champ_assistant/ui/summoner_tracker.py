@@ -246,11 +246,18 @@ class SummonerTrackerPanel(QFrame):
         self.setProperty("panel", True)
         self.setObjectName("summonerTrackerPanel")
 
-        self._tracker = tracker or SpellTracker()
+        # ``tracker or SpellTracker()`` would silently create a phantom
+        # tracker when the caller passed an EMPTY SpellTracker — empty
+        # tracker's __len__ is 0, which is falsy, so `or` falls through
+        # to the new instance. Use explicit None-check.
+        self._tracker = tracker if tracker is not None else SpellTracker()
         self._spell_icons: dict[str, QPixmap] = {}
         self._champion_icons: dict[str, QPixmap] = {}
         self._latest_game_time: float = 0.0
         self._latest_enemies: list[LivePlayer] = []
+        # (summoner_name, spell_name) -> last accepted-click monotonic ts.
+        # Used by the duplicate-click guard in _on_spell_clicked.
+        self._last_click_at: dict[tuple[str, str], float] = {}
 
         outer = QVBoxLayout(self)
         outer.setContentsMargins(10, 10, 10, 10)
@@ -324,22 +331,84 @@ class SummonerTrackerPanel(QFrame):
                 self._latest_game_time,
             )
 
+    # Min interval between two consecutive starts on the same
+    # (summoner, spell) pair — protects against accidental double-
+    # click. Real cooldowns are 90s+, so a 1s lockout is invisible.
+    MIN_TIMER_INTERVAL_S = 1.0
+
     def _on_spell_clicked(self, summoner_name: str, spell_name: str) -> None:
         if not summoner_name or not spell_name or spell_name == "?":
             return
+
+        # Focus guard: ignore clicks if the application isn't active.
+        # Prevents accidental triggers when League has focus + a stray
+        # click bubble somehow reaches our overlay (rare, but clean
+        # to defend against).
+        if not self._app_is_active():
+            return
+
+        # Duplicate-click protection: same (summoner, spell) inside
+        # MIN_TIMER_INTERVAL_S is treated as a no-op.
+        from time import monotonic as _mono
+        key = (summoner_name, spell_name)
+        last_click = self._last_click_at.get(key)
+        now = _mono()
+        if last_click is not None and (now - last_click) < self.MIN_TIMER_INTERVAL_S:
+            return
+        self._last_click_at[key] = now
+
         cooldown = self._lookup_cooldown(summoner_name, spell_name)
         if cooldown <= 0:
             return
         self._tracker.mark_used(
             summoner_name, spell_name, cooldown, self._latest_game_time
         )
+        # Telemetry — emit once per accepted click, never per render.
+        try:
+            from .. import telemetry as _t
+            _t.recorder().record(
+                _t.EV_SPELL_TIMER_STARTED,
+                {
+                    "player_id": summoner_name,
+                    "spell": spell_name,
+                    "source": "scoreboard_click",
+                },
+            )
+        except Exception:  # noqa: BLE001 — telemetry must never break UI
+            pass
         self._render()
 
     def _on_spell_right_clicked(self, summoner_name: str, spell_name: str) -> None:
         if not summoner_name or not spell_name:
             return
+        if not self._app_is_active():
+            return
         self._tracker.reset(summoner_name, spell_name)
+        try:
+            from .. import telemetry as _t
+            _t.recorder().record(
+                _t.EV_SPELL_TIMER_RESET,
+                {
+                    "player_id": summoner_name,
+                    "spell": spell_name,
+                    "source": "scoreboard_click",
+                },
+            )
+        except Exception:  # noqa: BLE001
+            pass
         self._render()
+
+    @staticmethod
+    def _app_is_active() -> bool:
+        """True iff our QApplication has the foreground focus. Returns
+        True when the QApplication isn't constructed (defensive — used
+        in tests where there's no real app state)."""
+        from PyQt6.QtCore import Qt as _Qt
+        from PyQt6.QtWidgets import QApplication
+        app = QApplication.instance()
+        if app is None:
+            return True
+        return app.applicationState() == _Qt.ApplicationState.ApplicationActive
 
     def _lookup_cooldown(self, summoner_name: str, spell_name: str) -> float:
         for player in self._latest_enemies:

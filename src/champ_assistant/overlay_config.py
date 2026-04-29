@@ -46,6 +46,10 @@ class OverlayState:
     # Experimental: vision-based automatic camp detection. Stage A —
     # color heuristic, Windows-only. Disabled by default.
     enable_auto_camp_detection: bool = False
+    # Experimental: vision-based scoreboard visibility detection.
+    # Drives the scoreboard-scoped gold-diff overlay. Same Windows-
+    # only / safe-mode-off triple-gate as camp detection. Off default.
+    enable_scoreboard_detection: bool = False
 
 
 def _config_dir() -> Path:
@@ -78,7 +82,8 @@ def load() -> OverlayState:
                   "show_spikes", "show_scoreboard", "show_minimap_timers",
                   "show_lobby_stats", "floating_positions",
                   "onboarding_seen", "diagnostics_enabled",
-                  "enable_auto_camp_detection"):
+                  "enable_auto_camp_detection",
+                  "enable_scoreboard_detection"):
         if field in data:
             setattr(state, field, data[field])
     return state

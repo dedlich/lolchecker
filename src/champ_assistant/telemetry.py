@@ -59,6 +59,11 @@ EV_OVERLAY_TOGGLE        = "overlay_visibility_toggle"
 # Vision subsystem (Stage A — color heuristic camp detection)
 EV_CAMP_VISIBILITY       = "camp_visibility_detected"
 EV_CAMP_CLEAR_INFERRED   = "camp_clear_inferred"
+# Scoreboard detection + click-driven spell timers
+EV_SCOREBOARD_VISIBLE    = "scoreboard_visible_detected"
+EV_SCOREBOARD_HIDDEN     = "scoreboard_hidden_detected"
+EV_SPELL_TIMER_STARTED   = "spell_timer_started"
+EV_SPELL_TIMER_RESET     = "spell_timer_reset"
 
 
 def _state_dir() -> Path:

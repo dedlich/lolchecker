@@ -620,6 +620,52 @@ def _run_with_ui(args: argparse.Namespace) -> int:
             )
 
     # ------------------------------------------------------------------
+    # Scoreboard visibility vision service — independent worker thread,
+    # writes state.scoreboard_visible into the StateStore on transition.
+    # Same triple-gate as camp detection: settings + safe-mode-off +
+    # Windows-only check inside MinimapCapture.
+    # ------------------------------------------------------------------
+    scoreboard_visibility_service = None
+    scoreboard_overlay_panel = None
+    scoreboard_overlay_controller = None
+    if persisted.enable_scoreboard_detection and not startup_mode.safe:
+        from PyQt6.QtCore import Qt as _SBQt
+        from champ_assistant.vision.scoreboard_visibility_service import (
+            ScoreboardVisibilityService,
+        )
+        from champ_assistant.ui.scoreboard_overlay import (
+            GoldDifferencePanel,
+            ScoreboardOverlayController,
+        )
+
+        scoreboard_visibility_service = ScoreboardVisibilityService()
+
+        # Vision thread → main thread state-store update via queued
+        # signal. Engine-side mutation always lands on the Qt main
+        # thread (StateStore is technically thread-safe but we keep
+        # all writes on one thread for predictability).
+        def _on_scoreboard_visibility(visible: bool) -> None:
+            store.update(scoreboard_visible=visible)
+
+        scoreboard_visibility_service.visibility_changed.connect(
+            _on_scoreboard_visibility, _SBQt.ConnectionType.QueuedConnection,
+        )
+
+        scoreboard_overlay_panel = GoldDifferencePanel()
+        scoreboard_overlay_controller = ScoreboardOverlayController(
+            state_store=store, panel=scoreboard_overlay_panel,
+        )
+
+        _safe_start("scoreboard_visibility", scoreboard_visibility_service.start)
+        lifecycle.register("scoreboard_visibility", scoreboard_visibility_service.stop)
+        lifecycle.register("scoreboard_overlay", scoreboard_overlay_controller.stop)
+    else:
+        if not persisted.enable_scoreboard_detection:
+            logging.getLogger(__name__).info(
+                "scoreboard detection disabled (enable_scoreboard_detection=False)"
+            )
+
+    # ------------------------------------------------------------------
     # Global hotkeys (Win32 RegisterHotKey via dedicated thread).
     # Hotkey -> StateStore.update -> subscriber -> UI side-effect.
     # User-configurable bindings are loaded from disk; defaults apply if

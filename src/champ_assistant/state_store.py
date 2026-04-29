@@ -78,6 +78,12 @@ class GameState:
     # ---- aggregated user toggles --------------------------------------
     passthrough: bool = False
     main_visible: bool = True
+    # Vision-derived: TAB-scoreboard currently shown by the game client.
+    # Pushed by ScoreboardVisibilityService when its 2-frame state
+    # machine confirms a transition. UI gates the gold-diff overlay
+    # on this flag. Default False = "we don't know / scoreboard hidden"
+    # which collapses to the safe behavior of not showing extra chrome.
+    scoreboard_visible: bool = False
 
     # ---- diagnostics counters bumped from outside ---------------------
     revision: int = 0  # bumped on every accepted update — for debugging

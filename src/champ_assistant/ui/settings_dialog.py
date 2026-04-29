@@ -172,9 +172,14 @@ class SettingsDialog(QDialog):
             "Auto Camp Detection — experimentell, nur Windows",
             ovc_state.enable_auto_camp_detection,
         )
+        self._cb_scoreboard_detect = _styled_checkbox(
+            "Scoreboard-Visibility Detection — experimentell, nur Windows",
+            ovc_state.enable_scoreboard_detection,
+        )
         for cb in (
             self._cb_scoreboard, self._cb_minimap, self._cb_lobby,
             self._cb_diagnostics, self._cb_auto_camp,
+            self._cb_scoreboard_detect,
         ):
             outer.addWidget(cb)
 
@@ -388,6 +393,7 @@ class SettingsDialog(QDialog):
         self._display_state.show_lobby_stats = self._cb_lobby.isChecked()
         self._display_state.diagnostics_enabled = self._cb_diagnostics.isChecked()
         self._display_state.enable_auto_camp_detection = self._cb_auto_camp.isChecked()
+        self._display_state.enable_scoreboard_detection = self._cb_scoreboard_detect.isChecked()
         overlay_config.save(self._display_state)
 
         self.settings_changed.emit()
