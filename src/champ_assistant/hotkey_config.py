@@ -123,10 +123,14 @@ def is_valid_combo(combo: str) -> bool:
 # JSON config file
 # --------------------------------------------------------------------------
 DEFAULT_HOTKEYS: dict[str, str] = {
-    "toggle_overlay":  "Ctrl+Alt+H",
-    "toggle_lock":     "Ctrl+Alt+L",
-    "reset_positions": "Ctrl+Alt+R",
-    "reset_layout":    "Ctrl+Alt+D",
+    "toggle_overlay":    "Ctrl+Alt+H",
+    "toggle_lock":       "Ctrl+Alt+L",
+    "reset_positions":   "Ctrl+Alt+R",
+    "reset_layout":      "Ctrl+Alt+D",
+    # Manual scoreboard toggle — alternative to the vision-based
+    # auto-detection. Always available (does NOT require Win32
+    # keyboard hooks; uses the safe RegisterHotKey API).
+    "toggle_scoreboard": "Ctrl+Alt+B",
 }
 
 

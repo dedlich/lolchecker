@@ -22,13 +22,14 @@ def qt_app():
     return QApplication.instance() or QApplication([])
 
 
-def _snap(ally_value: int, enemy_value: int):
+def _snap(ally_value: int, enemy_value: int, *, active_team: str = "ORDER"):
     """Build a minimal mock LcdaSnapshot."""
     return SimpleNamespace(
         ally_aggregate=SimpleNamespace(items_value=ally_value),
         enemy_aggregate=SimpleNamespace(items_value=enemy_value),
-        # state_store also reads .game_time + others; SimpleNamespace
-        # allows missing-attr access only via getattr.
+        active_team=active_team,
+        enemy_team="CHAOS" if active_team == "ORDER" else "ORDER",
+        allies=[], enemies=[],
         game_time=600.0,
     )
 

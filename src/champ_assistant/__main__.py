@@ -702,6 +702,13 @@ def _run_with_ui(args: argparse.Namespace) -> int:
             store.update(passthrough=not cur.passthrough)
         elif name in ("reset_positions", "reset_layout"):
             _reset_widget_positions()
+        elif name == "toggle_scoreboard":
+            # Manual flip — independent of vision detection. If the
+            # vision service is also active, it may flip the value
+            # back on the next frame; that's expected behavior (vision
+            # = source of truth when the in-game scoreboard is open
+            # for real, the hotkey is for cases where it's not).
+            store.update(scoreboard_visible=not cur.scoreboard_visible)
 
     def _reset_widget_positions() -> None:
         from champ_assistant import layout as _layout
