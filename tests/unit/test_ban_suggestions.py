@@ -119,58 +119,53 @@ def test_limit_caps_results() -> None:
 # ----------------------------------------------------------------------
 # Lane-aware scoring (my_role boost)
 # ----------------------------------------------------------------------
-def test_my_role_boosts_in_lane_score() -> None:
-    """Same tier in different lanes → my_role lane outscores."""
+def test_my_role_filters_to_lane() -> None:
+    """With my_role set, only that lane's tier entries score. Off-lane
+    champs drop out of the tier-only ranking entirely."""
     session = ChampSelectSession(phase="BAN_PICK", myTeam=[], theirTeam=[])
     tiers = _tiers({
-        "TOP": [("Darius", "S")],     # 3.0 base
-        "MID": [("Ahri", "S")],       # 3.0 base
-    })
-    # Without my_role: order is undefined between two equal scores.
-    # WITH my_role=TOP, Darius gets 3.0×1.5=4.5 → outranks Ahri at 3.0.
-    bans = suggest_bans(
-        session=session, champions=CHAMPIONS, tiers=tiers,
-        my_role="TOP", limit=2,
-    )
-    assert bans[0].champion_key == "Darius"
-    assert bans[0].score == 4.5
-    assert bans[1].champion_key == "Ahri"
-    assert bans[1].score == 3.0
-
-
-def test_my_role_boost_does_not_override_strict_tier_dominance() -> None:
-    """An S+ off-lane (5.0×1.0=5.0) still beats an S in-lane (3.0×1.5=4.5).
-    The boost shifts close ranks, doesn't completely override raw tier."""
-    session = ChampSelectSession(phase="BAN_PICK", myTeam=[], theirTeam=[])
-    tiers = _tiers({
-        "TOP": [("Darius", "S")],     # in-lane: 3.0×1.5=4.5
-        "MID": [("Ahri", "S+")],      # off-lane: 5.0×1.0=5.0
+        "TOP": [("Darius", "S")],
+        "MID": [("Ahri", "S")],
     })
     bans = suggest_bans(
         session=session, champions=CHAMPIONS, tiers=tiers,
-        my_role="TOP", limit=2,
+        my_role="TOP", limit=5,
     )
-    assert bans[0].champion_key == "Ahri"  # S+ off-lane still wins
-    assert bans[1].champion_key == "Darius"
+    assert [b.champion_key for b in bans] == ["Darius"]
+    assert bans[0].score == 3.0
 
 
-def test_my_role_reasons_appear_first() -> None:
-    """The lane-relevant reason should be the first the user reads,
-    not buried after off-lane reasons."""
+def test_in_lane_tier_beats_off_lane_splus() -> None:
+    """Lane-target rule: an S in YOUR lane beats an S+ in someone
+    else's lane — off-lane is filtered out, not just discounted."""
     session = ChampSelectSession(phase="BAN_PICK", myTeam=[], theirTeam=[])
     tiers = _tiers({
         "TOP": [("Darius", "S")],     # in-lane
-        "MID": [("Darius", "A")],     # off-lane (same champ, multi-role)
+        "MID": [("Ahri", "S+")],      # off-lane — should not appear
+    })
+    bans = suggest_bans(
+        session=session, champions=CHAMPIONS, tiers=tiers,
+        my_role="TOP", limit=5,
+    )
+    assert [b.champion_key for b in bans] == ["Darius"]
+
+
+def test_my_role_reasons_label_is_in_lane() -> None:
+    """When the same champ appears in multiple roles, only the
+    in-lane entry contributes — the off-lane row is suppressed."""
+    session = ChampSelectSession(phase="BAN_PICK", myTeam=[], theirTeam=[])
+    tiers = _tiers({
+        "TOP": [("Darius", "S")],
+        "MID": [("Darius", "A")],
     })
     bans = suggest_bans(
         session=session, champions=CHAMPIONS, tiers=tiers,
         my_role="TOP", limit=1,
     )
     assert bans[0].champion_key == "Darius"
-    # First reason is the YOUR-role one, not "A in MID"
     assert "YOUR TOP" in bans[0].reasons[0]
-    # Both reasons present
-    assert any("MID" in r for r in bans[0].reasons)
+    assert not any("MID" in r for r in bans[0].reasons)
+    assert bans[0].score == 3.0  # only in-lane S, no off-lane A
 
 
 def test_my_role_none_preserves_back_compat() -> None:
@@ -211,13 +206,12 @@ def test_changing_my_role_between_calls_changes_ranking() -> None:
 
 
 def test_enemy_mains_still_dominate_with_my_role() -> None:
-    """Mained-by-multiple-enemies must still take precedence over
-    in-lane tier — the heuristics compose, my_role doesn't override
-    the profile signal."""
+    """Mained-by-multiple-enemies must still surface even when the
+    main is from another lane — profile signal is role-independent."""
     session = ChampSelectSession(phase="BAN_PICK", myTeam=[], theirTeam=[])
     tiers = _tiers({
-        "TOP": [("Darius", "S")],     # 3.0×1.5=4.5 in-lane
-        "MID": [("Yasuo", "A")],      # 1.0×1.0=1.0 off-lane
+        "TOP": [("Darius", "S")],     # 3.0 in-lane
+        "MID": [("Yasuo", "A")],      # filtered out by my_role=TOP
     })
     profiles = {
         5: EnemyProfile(
@@ -233,6 +227,32 @@ def test_enemy_mains_still_dominate_with_my_role() -> None:
         session=session, champions=CHAMPIONS, tiers=tiers,
         enemy_profiles=profiles, my_role="TOP", limit=2,
     )
-    # Yasuo: 1.0 + 4×2 = 9.0 → still ahead of Darius's 4.5
+    # Yasuo: 0 (off-lane filtered) + 4×2 = 8.0 → still ahead of Darius (3.0).
+    # Profile signal works without any tier contribution.
     assert bans[0].champion_key == "Yasuo"
+    assert bans[0].score == 8.0
     assert bans[1].champion_key == "Darius"
+
+
+def test_role_with_no_splus_still_returns_lane_targets() -> None:
+    """Reproducer for the 'static bans' bug: when my_role has no
+    S+ (e.g. MID at patch X), off-lane S+ champs MUST NOT leak into
+    the suggestion list. The MID player's bans should be MID's
+    strongest lane threats — even if those are 'only' S/A — not
+    the global top-3 from other lanes."""
+    session = ChampSelectSession(phase="BAN_PICK", myTeam=[], theirTeam=[])
+    tiers = _tiers({
+        "TOP": [("Darius", "S+")],
+        "JUNGLE": [("LeeSin", "S+")],
+        "BOT": [("Caitlyn", "S+")],
+        "MID": [("Ahri", "S"), ("Yasuo", "A")],
+    })
+    bans = suggest_bans(
+        session=session, champions=CHAMPIONS, tiers=tiers,
+        my_role="MID", limit=3,
+    )
+    keys = [b.champion_key for b in bans]
+    assert keys == ["Ahri", "Yasuo"]
+    assert "Darius" not in keys
+    assert "LeeSin" not in keys
+    assert "Caitlyn" not in keys

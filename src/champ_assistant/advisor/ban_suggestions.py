@@ -1,26 +1,31 @@
 """Ban-pick suggestion engine.
 
-Scoring strategy (lane-aware):
+Scoring strategy (lane-targeted):
 
-  +5  S+ tier in any role           "S+ MID"
-  +3  S  tier in any role           "S TOP"
-  +1  A  tier in any role           "A JUNGLE"
+  +5  S+ tier in player's lane     "S+ in YOUR TOP"
+  +3  S  tier in player's lane     "S in YOUR TOP"
+  +1  A  tier in player's lane     "A in YOUR TOP"
   +4  per enemy main hit            "Mained by 2 enemies"
   -inf  champion already drafted   (excluded from candidate set)
 
-  ×1.5  multiplier on the tier-score whenever ``my_role`` matches the
-        tier-entry's role. Bans relevant to the player's own lane
-        float to the top vs bans that only hurt other lanes.
+When ``my_role`` is set, tier scoring is restricted to that role —
+off-lane S+ champs don't surface as bans because they don't threaten
+the player's matchup. Enemy-mains bonus stays role-independent (a
+champion two enemies main is worth banning regardless of lane).
 
-The previous algorithm was lane-agnostic — an S+ MID and an S+ TOP
-scored identically regardless of the player's actual role. The result
-felt static across sessions because a top-laner saw the same global
-top-3 as a mid-laner.
+Why a hard filter and not a multiplier: an earlier 1.5× boost still
+let off-lane S+ (5.0) beat in-lane S (3.0×1.5=4.5). With only a
+handful of S+ champions in the tier dataset, the same 3-4 names
+surfaced for every role — exactly the "static bans" symptom this
+engine is meant to fix.
+
+When ``my_role`` is None (early champ-select before assignment is
+visible, blind-pick queues), the engine falls back to global
+multi-role aggregation as the only reasonable signal.
 
 A configured Riot API key delivers ``enemy_profiles`` via the existing
 :mod:`champ_assistant.profiling` plumbing; without it the algorithm
-degrades gracefully to a tier-only ranking. ``my_role=None`` falls
-back to the original lane-agnostic behavior — back-compat.
+degrades gracefully to a tier-only ranking.
 """
 from __future__ import annotations
 
@@ -33,13 +38,6 @@ from ..profiling.profile import EnemyProfile
 
 TIER_SCORES = {"S+": 5.0, "S": 3.0, "A": 1.0, "B": 0.0, "C": 0.0, "D": 0.0}
 PROFILE_MAIN_BONUS = 4.0
-# Multiplier applied to tier-scores when the entry's role matches
-# the local player's lane. 1.5 was chosen to be meaningful (an S
-# in-lane outranks an S+ off-lane: 3.0×1.5=4.5 > 5.0×1.0... wait,
-# actually that's still 5 > 4.5 — so an S+ off-lane still wins
-# vs an S in-lane). Concretely: it boosts ties + close ranks toward
-# my lane, doesn't completely override raw tier strength.
-MY_ROLE_TIER_MULTIPLIER = 1.5
 
 
 @dataclass(frozen=True)
@@ -79,34 +77,32 @@ def suggest_bans(
     # can sort reasons by relevance later.
     role_contributions: dict[str, list[tuple[str, float, str]]] = defaultdict(list)
 
-    # 1. Tier-list contribution per role — with my_role boost.
+    # 1. Tier-list contribution.
+    # When the player's lane is known, ban suggestions should target
+    # threats *to that lane* — off-lane S+ doesn't matter to a top-
+    # laner choosing a ban. Filter strictly. When my_role is None,
+    # fall back to all-roles aggregation (best-effort signal).
     for role, entries in tiers.tiers.items():
-        is_my_role = (my_role is not None and role == my_role)
-        multiplier = MY_ROLE_TIER_MULTIPLIER if is_my_role else 1.0
+        if my_role is not None and role != my_role:
+            continue
+        is_my_role = (my_role is not None)
         for entry in entries:
             if entry.champion in drafted:
                 continue
             tier_score = TIER_SCORES.get(entry.tier, 0.0)
             if tier_score <= 0:
                 continue
-            adjusted = tier_score * multiplier
-            scores[entry.champion] += adjusted
+            scores[entry.champion] += tier_score
             label = (
                 f"{entry.tier} in YOUR {role}"
                 if is_my_role
                 else f"{entry.tier} in {role}"
             )
-            role_contributions[entry.champion].append((role, adjusted, label))
+            role_contributions[entry.champion].append((role, tier_score, label))
 
-    # Reasons: emit my_role contributions FIRST (so the user sees the
-    # lane-relevant reason at the top of the row), then everything
-    # else by descending contribution.
     for champ, contribs in role_contributions.items():
-        my_role_first = sorted(
-            contribs,
-            key=lambda c: (c[0] != my_role, -c[1]),
-        )
-        reasons[champ].extend(label for _, _, label in my_role_first)
+        ordered = sorted(contribs, key=lambda c: -c[1])
+        reasons[champ].extend(label for _, _, label in ordered)
 
     # 2. Enemy-mains contribution.
     main_counts: dict[str, int] = defaultdict(int)
