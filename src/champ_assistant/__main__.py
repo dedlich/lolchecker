@@ -407,12 +407,13 @@ def _run_with_ui(args: argparse.Namespace) -> int:
             pass
     overlay.apply_build_requested.connect(_on_apply_build)
 
-    # Hover pick / hover ban: clicking a suggestion card sends a single
-    # LCU PATCH that "hovers" the chosen champion in the player's
-    # current action slot. Hover-only — completion stays manual.
+    # Lock pick / lock ban: clicking a suggestion card sends a single
+    # LCU PATCH that locks in the chosen champion in the player's
+    # current action slot. User preference is direct lock-in (single
+    # click → committed) rather than hover + manual confirm.
     def _on_hover_request(champion_key: str, action_type: str) -> None:
         async def _run() -> None:
-            from champ_assistant.lcu.champ_select import hover_action
+            from champ_assistant.lcu.champ_select import commit_action
             from champ_assistant.lcu.client import LcuClient, LcuClientError
             from champ_assistant.lcu.lockfile import (
                 LockfileNotFound,
@@ -460,16 +461,16 @@ def _run_with_ui(args: argparse.Namespace) -> int:
 
             try:
                 async with LcuClient(lockfile) as lcu:
-                    status = await hover_action(
+                    status = await commit_action(
                         lcu, action_id=action.id, champion_id=champ_id,
                     )
             except LcuClientError as exc:
                 logging.getLogger(__name__).warning(
-                    "hover_failed: type=%s champ=%s err=%s",
+                    "lock_failed: type=%s champ=%s err=%s",
                     action_type, champion_key, exc,
                 )
                 overlay.status_bar.set_info(
-                    f"Hover {champion_key} fehlgeschlagen: {exc}",
+                    f"Lock {champion_key} fehlgeschlagen: {exc}",
                     color="#FF6B6B",
                 )
                 return
@@ -477,12 +478,12 @@ def _run_with_ui(args: argparse.Namespace) -> int:
             if 200 <= status < 300:
                 verb = "Pick" if action_type == "pick" else "Ban"
                 overlay.status_bar.set_info(
-                    f"{verb}: {champion_key} hoveriert — Lock-In manuell bestätigen",
+                    f"{verb} gesetzt: {champion_key}",
                     color="#7FCC7F",
                 )
             else:
                 overlay.status_bar.set_info(
-                    f"Hover {champion_key}: HTTP {status}",
+                    f"Lock {champion_key}: HTTP {status}",
                     color="#FFB84A",
                 )
 

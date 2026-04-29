@@ -151,9 +151,12 @@ def test_default_toggles_are_sane(qt_app, isolated_overlay_config) -> None:  # t
     assert state.diagnostics_enabled is True
     assert state.enable_telemetry is True
     assert state.enable_update_check is True
-    # Experimental vision OFF (Stage A)
+    # Experimental vision: scoreboard detection ON (drives the
+    # gold-diff overlay's tab-scoreboard gating, default-on so users
+    # see the feature without opt-in); camp detection still OFF
+    # (Stage A heuristic, lower confidence).
     assert state.enable_auto_camp_detection is False
-    assert state.enable_scoreboard_detection is False
+    assert state.enable_scoreboard_detection is True
 
 
 # ----------------------------------------------------------------------

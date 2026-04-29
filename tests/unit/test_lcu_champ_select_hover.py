@@ -10,7 +10,7 @@ import asyncio
 from dataclasses import dataclass, field
 from typing import Any
 
-from champ_assistant.lcu.champ_select import hover_action
+from champ_assistant.lcu.champ_select import commit_action, hover_action
 
 
 @dataclass
@@ -56,3 +56,18 @@ def test_hover_action_propagates_4xx_status() -> None:
     client = _RecordingClient(response=_FakeResponse(status_code=409))
     status = asyncio.run(hover_action(client, action_id=99, champion_id=86))
     assert status == 409
+
+
+def test_commit_action_sends_completed_true() -> None:
+    """Single-click direct lock — completed: true makes the pick/ban
+    final without a separate confirmation step. User preference."""
+    client = _RecordingClient()
+    asyncio.run(commit_action(client, action_id=7, champion_id=122))
+    body = client.calls[0][1]
+    assert body == {"championId": 122, "completed": True}
+
+
+def test_commit_action_uses_actions_endpoint() -> None:
+    client = _RecordingClient()
+    asyncio.run(commit_action(client, action_id=42, champion_id=86))
+    assert client.calls[0][0] == "/lol-champ-select/v1/session/actions/42"

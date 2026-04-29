@@ -1,11 +1,13 @@
-"""LCU writes that mutate champ-select state (hover-only).
+"""LCU writes that mutate champ-select state.
 
-The two flows here PATCH a single action slot to "hover" a champion
-in either the player's pick or ban turn. ``completed: false`` keeps
-the action in hover state — the user still needs to manually press
-"Lock In" / "Ban" in the client. We never auto-lock: a wrong-button
-auto-lock can grief a teammate, and tools like Blitz/Porofessor
-follow the same rule. Final commit is always user-driven.
+PATCHes a single action slot to either hover or lock a champion in
+the player's pick or ban turn. Two callable surfaces:
+
+  * ``hover_action`` — ``completed: false``, tentative hover only.
+    The user still has to manually press "Lock In" / "Ban".
+  * ``commit_action`` — ``completed: true``, locks immediately.
+    Single-click flow per user preference; misclicks become real
+    picks/bans, that's the trade-off.
 
 Errors:
   * 4xx from LCU (e.g. action already completed, not your turn) →
@@ -25,14 +27,23 @@ if TYPE_CHECKING:
 async def hover_action(
     client: "LcuClient", *, action_id: int, champion_id: int,
 ) -> int:
-    """PATCH a champ-select action to hover ``champion_id``.
-
-    Returns the HTTP status code so the caller can distinguish 204
-    (success) from anything else for status-bar messaging. Raises
-    LcuClientError on transport failure (already retried internally).
-    """
+    """PATCH a champ-select action to hover ``champion_id`` without
+    completing the slot. Returns the HTTP status code."""
     response = await client.patch(
         f"/lol-champ-select/v1/session/actions/{action_id}",
         json={"championId": champion_id, "completed": False},
+    )
+    return response.status_code
+
+
+async def commit_action(
+    client: "LcuClient", *, action_id: int, champion_id: int,
+) -> int:
+    """PATCH a champ-select action and lock it in. The pick/ban becomes
+    final once Riot accepts the request — no further client-side
+    confirmation needed. Returns the HTTP status code."""
+    response = await client.patch(
+        f"/lol-champ-select/v1/session/actions/{action_id}",
+        json={"championId": champion_id, "completed": True},
     )
     return response.status_code

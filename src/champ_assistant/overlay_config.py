@@ -46,10 +46,12 @@ class OverlayState:
     # Experimental: vision-based automatic camp detection. Stage A —
     # color heuristic, Windows-only. Disabled by default.
     enable_auto_camp_detection: bool = False
-    # Experimental: vision-based scoreboard visibility detection.
-    # Drives the scoreboard-scoped gold-diff overlay. Same Windows-
-    # only / safe-mode-off triple-gate as camp detection. Off default.
-    enable_scoreboard_detection: bool = False
+    # Vision-based scoreboard visibility detection — drives the
+    # scoreboard-scoped gold-diff overlay (panel only renders while
+    # the in-game tab-scoreboard is up). Default ON so users see the
+    # gold-diff feature without manually enabling it; gracefully
+    # no-ops on non-Windows or in safe mode.
+    enable_scoreboard_detection: bool = True
     # Update notifications via GitHub Releases. On by default.
     # Toggleable so users on metered connections / privacy-sensitive
     # setups can opt out.
