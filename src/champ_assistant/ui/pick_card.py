@@ -14,7 +14,7 @@ TEXT_SECONDARY at FS_BODY, the rank prefix replaces it as the lead
 from __future__ import annotations
 
 from PyQt6.QtCore import Qt, pyqtSignal
-from PyQt6.QtGui import QPixmap
+from PyQt6.QtGui import QMouseEvent, QPixmap
 from PyQt6.QtWidgets import (
     QFrame,
     QHBoxLayout,
@@ -47,6 +47,12 @@ class PickCard(QFrame):
     apply_build_requested = pyqtSignal(str, "PyQt_PyObject", "PyQt_PyObject")
     # (champion_key, rune_names, item_names)
 
+    pick_hover_requested = pyqtSignal(str)
+    # (champion_key) — fired when the user clicks anywhere on the card
+    # body (NOT the Apply Build button). The handler asks LCU to hover
+    # this champion in the player's pick slot. Hover-only — final
+    # lock-in stays manual to avoid griefing.
+
     def __init__(
         self,
         suggestion: PickSuggestion,
@@ -60,6 +66,10 @@ class PickCard(QFrame):
         self.setProperty("card", True)
         self.suggestion = suggestion
         self._build = build
+        # Cursor signals "this surface does something on click".
+        # The Apply Build QPushButton accepts its own click events
+        # so it doesn't propagate up to mousePressEvent below.
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
 
         outer = QVBoxLayout(self)
         outer.setContentsMargins(
@@ -139,6 +149,14 @@ class PickCard(QFrame):
                     label.setWordWrap(True)
                     outer.addWidget(label)
             self._add_apply_button(outer, build)
+
+    def mousePressEvent(self, event: QMouseEvent | None) -> None:
+        """Click on the card body → hover this champion in the picker.
+        Clicks on the Apply Build button never reach here (the button
+        accepts and consumes its own events)."""
+        if event is not None and event.button() == Qt.MouseButton.LeftButton:
+            self.pick_hover_requested.emit(self.suggestion.champion_key)
+        super().mousePressEvent(event)
 
     @staticmethod
     def _add_build_lines(outer: QVBoxLayout, build: ChampionBuild) -> None:

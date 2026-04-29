@@ -407,6 +407,98 @@ def _run_with_ui(args: argparse.Namespace) -> int:
             pass
     overlay.apply_build_requested.connect(_on_apply_build)
 
+    # Hover pick / hover ban: clicking a suggestion card sends a single
+    # LCU PATCH that "hovers" the chosen champion in the player's
+    # current action slot. Hover-only — completion stays manual.
+    def _on_hover_request(champion_key: str, action_type: str) -> None:
+        async def _run() -> None:
+            from champ_assistant.lcu.champ_select import hover_action
+            from champ_assistant.lcu.client import LcuClient, LcuClientError
+            from champ_assistant.lcu.lockfile import (
+                LockfileNotFound,
+                find_lockfile,
+                parse_lockfile,
+            )
+
+            session = assistant._latest_session
+            if session is None:
+                overlay.status_bar.set_info(
+                    "Hover: keine aktive Champ-Select-Session",
+                    color="#FFB84A",
+                )
+                return
+
+            action = session.my_pending_action(action_type)
+            if action is None:
+                overlay.status_bar.set_info(
+                    f"Hover: keine offene {action_type}-Aktion gerade",
+                    color="#FFB84A",
+                )
+                return
+
+            champ_id = next(
+                (c.id for c in assistant.champions.values()
+                 if c.key == champion_key),
+                0,
+            )
+            if champ_id == 0:
+                overlay.status_bar.set_info(
+                    f"Hover: Champion {champion_key} nicht in Registry",
+                    color="#FF6B6B",
+                )
+                return
+
+            try:
+                lockfile_path = find_lockfile()
+                lockfile = parse_lockfile(lockfile_path)
+            except LockfileNotFound:
+                overlay.status_bar.set_info(
+                    "Hover: League-Client nicht erreichbar",
+                    color="#FF6B6B",
+                )
+                return
+
+            try:
+                async with LcuClient(lockfile) as lcu:
+                    status = await hover_action(
+                        lcu, action_id=action.id, champion_id=champ_id,
+                    )
+            except LcuClientError as exc:
+                logging.getLogger(__name__).warning(
+                    "hover_failed: type=%s champ=%s err=%s",
+                    action_type, champion_key, exc,
+                )
+                overlay.status_bar.set_info(
+                    f"Hover {champion_key} fehlgeschlagen: {exc}",
+                    color="#FF6B6B",
+                )
+                return
+
+            if 200 <= status < 300:
+                verb = "Pick" if action_type == "pick" else "Ban"
+                overlay.status_bar.set_info(
+                    f"{verb}: {champion_key} hoveriert — Lock-In manuell bestätigen",
+                    color="#7FCC7F",
+                )
+            else:
+                overlay.status_bar.set_info(
+                    f"Hover {champion_key}: HTTP {status}",
+                    color="#FFB84A",
+                )
+
+        import asyncio
+        try:
+            asyncio.create_task(_run())
+        except RuntimeError:
+            pass
+
+    overlay.pick_hover_requested.connect(
+        lambda key: _on_hover_request(key, "pick")
+    )
+    overlay.ban_hover_requested.connect(
+        lambda key: _on_hover_request(key, "ban")
+    )
+
     # When the user saves a new Riot API key in Settings, rebuild the
     # profile service so subsequent enemy profile lookups use it.
     def _on_settings_changed() -> None:

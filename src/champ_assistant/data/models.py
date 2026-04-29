@@ -185,12 +185,34 @@ class TeamMember(BaseModel):
         return value
 
 
+class Action(BaseModel):
+    """A single ban or pick slot in the champ-select sequence.
+
+    LCU payload structure: ``session.actions`` is a list-of-lists —
+    each inner list is a "step" of parallel actions resolving at the
+    same time (e.g. all 6 first-phase bans together). Within a step,
+    each action is one player's intent for one slot.
+
+    For UI-driven hover/select, we look up the local player's
+    not-yet-completed action of a given type (``pick`` or ``ban``).
+    """
+
+    model_config = ConfigDict(frozen=True, populate_by_name=True, extra="ignore")
+
+    id: int = 0
+    actor_cell_id: int = Field(default=-1, alias="actorCellId")
+    champion_id: int = Field(default=0, alias="championId")
+    type: str = ""  # "pick" | "ban" | "ten_bans_reveal" etc.
+    completed: bool = False
+    is_in_progress: bool = Field(default=False, alias="isInProgress")
+
+
 class ChampSelectSession(BaseModel):
     """Normalized champ-select state derived from the LCU session payload.
 
     Real LCU sessions (recent client versions) often only carry the
     phase inside ``timer.phase`` rather than at the top level, plus
-    dozens of fields we don't care about (actions, bans, chatDetails,
+    dozens of fields we don't care about (bans, chatDetails,
     entitledFeatureState, …). The model_validator below pulls phase
     out of the timer when needed; ``extra="ignore"`` swallows the rest.
     """
@@ -201,6 +223,9 @@ class ChampSelectSession(BaseModel):
     local_player_cell_id: int = Field(default=-1, alias="localPlayerCellId")
     my_team: list[TeamMember] = Field(default_factory=list, alias="myTeam")
     their_team: list[TeamMember] = Field(default_factory=list, alias="theirTeam")
+    actions: list[list[Action]] = Field(default_factory=list)
+    """Stepped action sequence — preserved so UI click-to-hover can
+    look up which slot to PATCH for the local player."""
 
     @model_validator(mode="before")
     @classmethod
@@ -221,4 +246,21 @@ class ChampSelectSession(BaseModel):
         for p in self.my_team:
             if p.cell_id == self.local_player_cell_id:
                 return p
+        return None
+
+    def my_pending_action(self, action_type: str) -> Action | None:
+        """Local player's not-yet-completed action of the given type
+        (``"pick"`` or ``"ban"``). ``None`` if the player has no
+        such pending slot — wrong phase, blind pick, action already
+        completed. Caller treats None as "can't PATCH right now"."""
+        if self.local_player_cell_id < 0:
+            return None
+        for step in self.actions:
+            for action in step:
+                if (
+                    action.actor_cell_id == self.local_player_cell_id
+                    and action.type == action_type
+                    and not action.completed
+                ):
+                    return action
         return None

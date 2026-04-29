@@ -52,6 +52,8 @@ class MainOverlay(QMainWindow):
     settings_changed = pyqtSignal()       # user saved a new API key
     apply_build_requested = pyqtSignal(str, "PyQt_PyObject", "PyQt_PyObject")
     # (champion_key, rune_names, item_names)
+    pick_hover_requested = pyqtSignal(str)  # bubbled from PickCard
+    ban_hover_requested = pyqtSignal(str)   # bubbled from BanPanel
 
     def __init__(
         self,
@@ -210,6 +212,7 @@ class MainOverlay(QMainWindow):
         # Ban suggestions sit below the side-by-side champ-select row at
         # full width so the rows have room to breathe.
         self._ban_panel = BanPanel()
+        self._ban_panel.ban_hover_requested.connect(self.ban_hover_requested.emit)
         body_layout.addWidget(self._ban_panel)
 
         self._power_spike_panel = PowerSpikePanel()
@@ -368,6 +371,7 @@ class MainOverlay(QMainWindow):
                 build_reasons=reasons,
             )
             card.apply_build_requested.connect(self.apply_build_requested.emit)
+            card.pick_hover_requested.connect(self.pick_hover_requested.emit)
             self._picks_container.addWidget(card)
 
     # -- in-game panels visibility ---------------------------------------

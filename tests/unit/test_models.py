@@ -5,6 +5,7 @@ import pytest
 from pydantic import ValidationError
 
 from champ_assistant.data.models import (
+    Action,
     Champion,
     ChampSelectSession,
     CounterEntry,
@@ -262,3 +263,85 @@ def test_session_defaults_empty_teams() -> None:
     assert session.my_team == []
     assert session.their_team == []
     assert session.me is None
+
+
+# ---------------------------------------------------------------------------
+# Action / my_pending_action
+# ---------------------------------------------------------------------------
+
+def _session_with_actions(actions: list[list[dict]], cell_id: int = 0) -> ChampSelectSession:
+    return ChampSelectSession.model_validate({
+        "phase": "BAN_PICK",
+        "localPlayerCellId": cell_id,
+        "myTeam": [{"cellId": cell_id}],
+        "theirTeam": [],
+        "actions": actions,
+    })
+
+
+def test_action_parses_lcu_camelcase() -> None:
+    a = Action.model_validate({
+        "id": 7, "actorCellId": 0, "championId": 122,
+        "type": "ban", "completed": False, "isInProgress": True,
+    })
+    assert a.id == 7
+    assert a.actor_cell_id == 0
+    assert a.champion_id == 122
+    assert a.type == "ban"
+    assert a.is_in_progress is True
+
+
+def test_my_pending_action_returns_matching_pending_pick() -> None:
+    session = _session_with_actions([
+        [{"id": 1, "actorCellId": 0, "type": "ban", "completed": True, "championId": 86}],
+        [{"id": 2, "actorCellId": 0, "type": "pick", "completed": False, "championId": 0}],
+    ])
+    pending = session.my_pending_action("pick")
+    assert pending is not None
+    assert pending.id == 2
+    assert pending.type == "pick"
+
+
+def test_my_pending_action_returns_pending_ban() -> None:
+    session = _session_with_actions([
+        [{"id": 5, "actorCellId": 0, "type": "ban", "completed": False, "championId": 0}],
+    ])
+    pending = session.my_pending_action("ban")
+    assert pending is not None
+    assert pending.id == 5
+
+
+def test_my_pending_action_skips_completed() -> None:
+    session = _session_with_actions([
+        [{"id": 1, "actorCellId": 0, "type": "pick", "completed": True, "championId": 86}],
+    ])
+    assert session.my_pending_action("pick") is None
+
+
+def test_my_pending_action_skips_other_actors() -> None:
+    """An ally's pending pick must NOT be returned for the local player."""
+    session = _session_with_actions([
+        [{"id": 1, "actorCellId": 1, "type": "pick", "completed": False, "championId": 0}],
+    ], cell_id=0)
+    assert session.my_pending_action("pick") is None
+
+
+def test_my_pending_action_returns_none_when_no_local_player() -> None:
+    session = ChampSelectSession.model_validate({
+        "phase": "BAN_PICK", "localPlayerCellId": -1, "actions": [],
+    })
+    assert session.my_pending_action("pick") is None
+
+
+def test_session_drops_unknown_action_fields() -> None:
+    """LCU payload sends extra fields per action (pickTurn, type metadata).
+    extra='ignore' must swallow them silently."""
+    session = ChampSelectSession.model_validate({
+        "phase": "BAN_PICK", "localPlayerCellId": 0,
+        "actions": [[{
+            "id": 1, "actorCellId": 0, "type": "pick", "completed": False,
+            "championId": 0, "pickTurn": 1, "isAllyAction": True,
+        }]],
+    })
+    assert len(session.actions) == 1
+    assert session.actions[0][0].id == 1
