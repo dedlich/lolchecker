@@ -83,6 +83,7 @@ a = Analysis(
         "champ_assistant.lifecycle",
         "champ_assistant.logging_setup",
         "champ_assistant.ui.hotkey_capture",
+        "champ_assistant.ui.map_overlay_layer",
         "dotenv",
         "champ_assistant.ui",
         "champ_assistant.ui.overlay",

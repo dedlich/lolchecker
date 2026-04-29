@@ -120,6 +120,18 @@
       "stylesheet": "QLabel { background: rgba(45, 55, 70, 90); color: #B6BCC4; border: 1px solid rgba(60, 70, 85, 100); border-radius: 8px; font-size: 14px; }",
       "text": "\ud83e\udd80",
       "visible": true
+    },
+    {
+      "children": [],
+      "class": "QFrame",
+      "fixed_size": [
+        110,
+        110
+      ],
+      "layout": null,
+      "objectName": "",
+      "stylesheet": "QFrame { background-color: rgba(20, 26, 34, 220); border: 1px solid rgba(60, 70, 85, 180); border-radius: 4px; }",
+      "visible": true
     }
   ],
   "class": "MinimapTimersWidget",

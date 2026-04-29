@@ -120,6 +120,28 @@
       "stylesheet": "QLabel { background: rgba(91, 168, 255, 42); color: rgba(91, 168, 255, 178); border: 1px solid rgba(91, 168, 255, 178); border-radius: 8px; font-family: SF Mono, Menlo, Consolas, monospace; font-size: 11px; font-weight: 700; }",
       "text": "\u22480:45",
       "visible": true
+    },
+    {
+      "children": [
+        {
+          "children": [],
+          "class": "MapOverlayLayer",
+          "fixed_size": null,
+          "layout": null,
+          "objectName": "",
+          "stylesheet": "",
+          "visible": true
+        }
+      ],
+      "class": "QFrame",
+      "fixed_size": [
+        110,
+        110
+      ],
+      "layout": null,
+      "objectName": "",
+      "stylesheet": "QFrame { background-color: rgba(20, 26, 34, 220); border: 1px solid rgba(60, 70, 85, 180); border-radius: 4px; }",
+      "visible": true
     }
   ],
   "class": "MinimapTimersWidget",

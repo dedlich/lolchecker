@@ -18,13 +18,15 @@ Confidence visual encoding (UI-only, never modifies timer values):
 from __future__ import annotations
 
 from PyQt6.QtCore import Qt
-from PyQt6.QtWidgets import QHBoxLayout, QLabel, QVBoxLayout
+from PyQt6.QtGui import QResizeEvent
+from PyQt6.QtWidgets import QFrame, QHBoxLayout, QLabel, QVBoxLayout
 
 from ..jungle_timeline import JUNGLE_CAMPS, CampState, JungleTimelineEngine
 from ..lcda.objectives import ObjectiveTimer
 from ..lcda.source import LcdaSnapshot
 from . import styles
 from .floating_widget import FloatingWidget
+from .map_overlay_layer import MapOverlayLayer
 
 # Confidence thresholds — the spec's three bands. Tunables, but keep
 # in sync with the contract documented in the module docstring.
@@ -208,8 +210,12 @@ def _hex_to_rgb_tuple(value: str) -> tuple[int, int, int]:
 
 class MinimapTimersWidget(FloatingWidget):
     KEY = "minimap_timers"
-    DEFAULT_POS = (1280, 600)  # above the minimap on a 1080p screen
-    DEFAULT_SIZE = (332, 84)
+    DEFAULT_POS = (1280, 480)  # above the minimap on a 1080p screen
+    # Grew from (332, 84) to accommodate the new minimap visualization
+    # area below the existing two rows. The map area is a square panel
+    # of MAP_PANEL_SIZE pixels.
+    DEFAULT_SIZE = (332, 200)
+    MAP_PANEL_SIZE = 110
 
     def __init__(self) -> None:
         super().__init__()
@@ -248,6 +254,27 @@ class MinimapTimersWidget(FloatingWidget):
             bottom.addWidget(cell)
         outer.addLayout(bottom)
 
+        # Row 3: minimap visualization panel — a square area showing
+        # camps at their canonical SR positions with countdown text
+        # painted on top via MapOverlayLayer. Renders nothing until an
+        # engine is attached via attach_engine().
+        map_row = QHBoxLayout()
+        map_row.addStretch(1)
+        self._minimap_panel = QFrame()
+        self._minimap_panel.setFixedSize(self.MAP_PANEL_SIZE, self.MAP_PANEL_SIZE)
+        self._minimap_panel.setStyleSheet(
+            "QFrame {"
+            f" background-color: rgba(20, 26, 34, 220);"
+            f" border: 1px solid {styles.BORDER};"
+            f" border-radius: {styles.RADIUS_SMALL}px;"
+            " }"
+        )
+        map_row.addWidget(self._minimap_panel)
+        map_row.addStretch(1)
+        outer.addLayout(map_row)
+
+        self._map_layer: MapOverlayLayer | None = None
+        self._deferred_scheduler = None  # type: ignore[var-annotated]
         self._latest_game_time = 0.0
         self._engine: JungleTimelineEngine | None = None
         self._engine_unsub = None  # type: ignore[var-annotated]
@@ -258,19 +285,51 @@ class MinimapTimersWidget(FloatingWidget):
 
     def attach_engine(self, engine: JungleTimelineEngine) -> None:
         """Subscribe to the central JungleTimelineEngine. Idempotent —
-        re-attaching swaps the previous subscription."""
+        re-attaching swaps the previous subscription. Creates the
+        minimap visualization layer on first attach."""
         if self._engine_unsub is not None:
             self._engine_unsub()
         self._engine = engine
         self._engine_unsub = engine.subscribe(self._on_camp_states)
+
+        # Lazily create the map overlay layer once we have an engine.
+        # The layer is a child of the panel frame so it inherits the
+        # panel's clip rect and rounded-corner clipping.
+        if self._map_layer is None:
+            self._map_layer = MapOverlayLayer(engine, parent=self._minimap_panel)
+            self._map_layer.setGeometry(self._minimap_panel.rect())
+            self._map_layer.show()
+            # If connect_scheduler was called before attach_engine, the
+            # scheduler reference was deferred — wire it now so the
+            # minimap layer gets its tick.
+            if self._deferred_scheduler is not None:
+                self._map_layer.connect_scheduler(self._deferred_scheduler)
+                self._deferred_scheduler = None
+        else:
+            # Re-attach: swap engine reference on the existing layer.
+            self._map_layer._engine = engine
+
         # Render whatever the engine knows right now (covers the case
         # where the engine ticked before the widget was attached).
         self._on_camp_states(engine.states())
 
     def connect_scheduler(self, scheduler) -> None:  # type: ignore[no-untyped-def]
-        """Hook the central 1 Hz tick — drives the objectives countdown.
-        Camp cells are pushed by the engine's own tick, not from here."""
+        """Hook the central 1 Hz tick — drives the objectives countdown
+        AND the minimap layer's blink/repaint cadence."""
         scheduler.tick.connect(self._refresh_objectives)
+        if self._map_layer is not None:
+            self._map_layer.connect_scheduler(scheduler)
+        else:
+            # Engine not attached yet — defer the connection. Stash the
+            # scheduler so attach_engine() can wire it later.
+            self._deferred_scheduler = scheduler
+
+    def resizeEvent(self, event: QResizeEvent) -> None:  # type: ignore[override]
+        """Keep the map overlay layer matched to its parent panel's
+        rect on every resize. Spec: layer always matches minimap size."""
+        super().resizeEvent(event)
+        if self._map_layer is not None and self._minimap_panel is not None:
+            self._map_layer.setGeometry(self._minimap_panel.rect())
 
     # -- public API ------------------------------------------------------
 
