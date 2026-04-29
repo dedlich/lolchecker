@@ -42,7 +42,11 @@ def _snap(
 # ----------------------------------------------------------------------
 def test_none_snapshot_returns_empty_diff() -> None:
     result = compute_team_gold_diff(None)
-    assert result == {"team_blue": 0, "team_red": 0, "lane_breakdown": {}}
+    assert result == {
+        "team_blue": 0, "team_red": 0,
+        "blue_total": 0, "red_total": 0,
+        "lane_breakdown": {}, "lane_champions": {},
+    }
 
 
 def test_missing_aggregates_returns_empty() -> None:

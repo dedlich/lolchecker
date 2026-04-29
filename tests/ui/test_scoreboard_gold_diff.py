@@ -110,25 +110,47 @@ def test_value_updates_only_when_visible(qt_app) -> None:  # type: ignore[no-unt
     controller = ScoreboardOverlayController(state_store=store, panel=panel)
 
     # Push snapshot while hidden — panel text shouldn't update.
-    initial_text = panel._value_label.text()
+    initial_text = panel._team_arrow.text()
     store.update(lcda_snapshot=_snap(15000, 12000))
     qt_app.processEvents()
-    assert panel._value_label.text() == initial_text
+    assert panel._team_arrow.text() == initial_text
 
-    # Now flip visible — the controller should refresh from latest.
+    # Now flip visible — controller refreshes; blue ahead by 3000.
     store.update(scoreboard_visible=True)
     qt_app.processEvents()
-    assert panel._value_label.text() == "+3000"
+    text = panel._team_arrow.text()
+    assert "◀" in text  # blue ahead arrow
+    assert "3" in text  # magnitude shown (formatted as 3.000 or 3000)
     controller.stop()
 
 
 def test_value_format_negative(qt_app) -> None:  # type: ignore[no-untyped-def]
+    """Red ahead by 3000 → arrow points right, magnitude unsigned."""
     store = StateStore()
     panel = GoldDifferencePanel()
     controller = ScoreboardOverlayController(state_store=store, panel=panel)
     store.update(lcda_snapshot=_snap(10000, 13000), scoreboard_visible=True)
     qt_app.processEvents()
-    assert panel._value_label.text() == "-3000"
+    text = panel._team_arrow.text()
+    assert "▶" in text
+    assert "-" not in text  # in-game style: arrow does the sign
+    controller.stop()
+
+
+def test_team_totals_render(qt_app) -> None:  # type: ignore[no-untyped-def]
+    """Header shows both teams' absolute gold totals (matches the
+    in-game scoreboard layout)."""
+    store = StateStore()
+    panel = GoldDifferencePanel()
+    controller = ScoreboardOverlayController(state_store=store, panel=panel)
+    store.update(lcda_snapshot=_snap(25978, 24050), scoreboard_visible=True)
+    qt_app.processEvents()
+    blue = panel._blue_total.text()
+    red = panel._red_total.text()
+    # Number is shown — formatting may use German "." thousands separator
+    # OR plain digits depending on locale, both acceptable.
+    assert "25" in blue and "978" in blue
+    assert "24" in red and "050" in red
     controller.stop()
 
 

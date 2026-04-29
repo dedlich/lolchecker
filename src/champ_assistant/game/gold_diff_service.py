@@ -31,9 +31,15 @@ if TYPE_CHECKING:
 
 
 class GoldDiff(TypedDict):
-    team_blue: int
-    team_red: int
+    team_blue: int               # signed delta, blue-perspective
+    team_red: int                # mirror — always == -team_blue
+    blue_total: int              # absolute team total, blue side
+    red_total: int               # absolute team total, red side
     lane_breakdown: dict[str, int]
+    lane_champions: dict[str, tuple[str, str]]
+    """Per-lane (blue_champion_name, red_champion_name) so the UI
+    can render champion icons next to each matchup row. Empty dict
+    when ``lane_breakdown`` is empty (lane inference failed)."""
 
 
 # Lane order is canonical — UI iterates this list to render rows.
@@ -145,7 +151,11 @@ def compute_team_gold_diff(
     types all collapse to a zero-diff dict with empty lane_breakdown.
     The UI never has to defend against missing keys.
     """
-    empty: GoldDiff = {"team_blue": 0, "team_red": 0, "lane_breakdown": {}}
+    empty: GoldDiff = {
+        "team_blue": 0, "team_red": 0,
+        "blue_total": 0, "red_total": 0,
+        "lane_breakdown": {}, "lane_champions": {},
+    }
     if snapshot is None:
         return empty
 
@@ -174,14 +184,52 @@ def compute_team_gold_diff(
 
     blue_diff = blue_value - red_value
 
-    # Lane breakdown — best-effort, only when champion_tags provided.
-    lane_breakdown = _try_lane_breakdown(snapshot, champion_tags) if champion_tags else {}
+    # Lane breakdown + per-lane champion names — best-effort, only when
+    # champion_tags provided.
+    lane_breakdown: dict[str, int] = {}
+    lane_champions: dict[str, tuple[str, str]] = {}
+    if champion_tags:
+        lane_breakdown, lane_champions = _try_lane_breakdown_with_champions(
+            snapshot, champion_tags,
+        )
 
     return {
         "team_blue": blue_diff,
         "team_red": -blue_diff,
+        "blue_total": blue_value,
+        "red_total": red_value,
         "lane_breakdown": lane_breakdown,
+        "lane_champions": lane_champions,
     }
+
+
+def _try_lane_breakdown_with_champions(
+    snapshot: "LcdaSnapshot",
+    champion_tags: dict[str, list[str]],
+) -> tuple[dict[str, int], dict[str, tuple[str, str]]]:
+    """Best-effort per-lane gold delta + champion-name pairs from
+    blue's perspective. Returns ``({}, {})`` if either side can't
+    be fully classified."""
+    breakdown, champions = {}, {}
+    raw = _try_lane_breakdown(snapshot, champion_tags)
+    if not raw:
+        return breakdown, champions
+    blue_players = _team_for_side(snapshot, BLUE_TEAM)
+    red_players = _team_for_side(snapshot, RED_TEAM)
+    blue_lanes = _classify_team(blue_players, champion_tags)
+    red_lanes = _classify_team(red_players, champion_tags)
+    if blue_lanes is None or red_lanes is None:
+        return raw, {}
+    for lane in LANE_ORDER:
+        b = blue_lanes.get(lane)
+        r = red_lanes.get(lane)
+        if b is None or r is None:
+            continue
+        champions[lane] = (
+            getattr(b, "champion_name", "") or "",
+            getattr(r, "champion_name", "") or "",
+        )
+    return raw, champions
 
 
 def _try_lane_breakdown(
