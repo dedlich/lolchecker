@@ -315,6 +315,9 @@ class MainOverlay(QMainWindow):
         lobby = getattr(self, "_lobby_stats", None)
         if lobby is not None:
             lobby.update_view(view)
+        # Champ-select state machine: pivot which panels are visible based
+        # on the current sub-phase (bans → picks → loading-screen profiles).
+        self._apply_champ_select_subphase(view)
 
     def _icon_for_key(self, key: str | None) -> QPixmap | None:
         if not key:
@@ -496,6 +499,81 @@ class MainOverlay(QMainWindow):
         # The whole side-by-side champ-select row hides as one block; that
         # keeps the in-game overlay nice and narrow.
         self._champselect_row.setVisible(in_champ_select or not in_game)
+
+    # -- champ-select state machine --------------------------------------
+
+    # Width per phase. Champ-select needs room for enemy panel + picks
+    # side-by-side; in-game shrinks back to a narrow strip. Stored as
+    # min/preferred widths so the user's manual resize still wins on
+    # a re-drag, but our pivots set a sane starting point on phase
+    # transitions.
+    _W_CHAMP_SELECT = 720
+    _W_INGAME = 420
+
+    def _apply_champ_select_subphase(self, view: SessionView) -> None:
+        """Drive panel visibility from the session's display_subphase.
+
+        Each subphase exposes a different focus:
+          * ``ban`` — ban suggestions front and center, picks hidden.
+          * ``pick`` / ``finalization`` — enemy counters + own picks
+            visible, ban panel collapsed (already locked-in).
+          * ``loading`` — both teams' player-profile dump (lobby_stats);
+            ban + pick panels hidden, the floating lobby widget owns
+            the screen real estate.
+          * ``idle`` / ``in_game`` — champ-select row entirely hidden
+            so the overlay stays compact during the live game.
+        """
+        session = view.session
+        subphase = session.display_subphase() if session is not None else "idle"
+
+        if subphase == "in_game":
+            self._champselect_row.setVisible(False)
+            self._ban_panel.setVisible(False)
+            self._set_width(self._W_INGAME)
+            return
+
+        if subphase == "idle":
+            # Pre-lobby / disconnected — keep the whole champ-select
+            # block visible at narrow width so the user sees the
+            # connection-status hint instead of an empty void.
+            self._champselect_row.setVisible(True)
+            self._set_width(self._W_INGAME)
+            return
+
+        # Active champ-select — wider window, then per-subphase pivots.
+        self._champselect_row.setVisible(True)
+        self._set_width(self._W_CHAMP_SELECT)
+
+        if subphase == "ban":
+            # Ban-step focus: bans front, picks suppressed.
+            self._ban_panel.setVisible(True)
+            self._picks_panel.setVisible(False)
+        elif subphase in ("pick", "finalization", "planning"):
+            # Pick/finalization: counters + suggestions take over,
+            # bans collapse (history, not actionable anymore).
+            self._ban_panel.setVisible(False)
+            self._picks_panel.setVisible(True)
+        elif subphase == "loading":
+            # Loading screen → lobby_stats floating widget is the
+            # primary surface. Hide both ban + pick panels in the
+            # main overlay so it doesn't compete.
+            self._ban_panel.setVisible(False)
+            self._picks_panel.setVisible(False)
+        else:
+            # Unknown phase — leave everything visible as a safe
+            # fallback rather than silently hiding.
+            self._ban_panel.setVisible(True)
+            self._picks_panel.setVisible(True)
+
+    def _set_width(self, target_w: int) -> None:
+        """Resize the window to ``target_w`` while respecting the user's
+        explicit drag-to-resize. Only acts when the current width is
+        materially different (>40px) to avoid jitter on every refresh."""
+        current = self.width()
+        if abs(current - target_w) <= 40:
+            return
+        clamped_w, clamped_h = self._clamp_to_screen(target_w, self.height())
+        self.resize(clamped_w, clamped_h)
 
     # -- frameless drag + persistence ------------------------------------
 

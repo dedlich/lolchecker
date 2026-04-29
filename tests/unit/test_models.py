@@ -345,3 +345,69 @@ def test_session_drops_unknown_action_fields() -> None:
     })
     assert len(session.actions) == 1
     assert session.actions[0][0].id == 1
+
+
+# ---------------------------------------------------------------------------
+# display_subphase — UI state machine input
+# ---------------------------------------------------------------------------
+
+def _phase_session(phase: str, actions: list[list[dict]] | None = None) -> ChampSelectSession:
+    return ChampSelectSession.model_validate({
+        "phase": phase, "localPlayerCellId": 0,
+        "myTeam": [{"cellId": 0}], "theirTeam": [],
+        "actions": actions or [],
+    })
+
+
+def test_display_subphase_idle_when_no_phase() -> None:
+    assert _phase_session("").display_subphase() == "idle"
+
+
+def test_display_subphase_planning() -> None:
+    assert _phase_session("PLANNING").display_subphase() == "planning"
+
+
+def test_display_subphase_finalization() -> None:
+    assert _phase_session("FINALIZATION").display_subphase() == "finalization"
+
+
+def test_display_subphase_loading_screen() -> None:
+    """GAME_STARTING is the loading-screen window — UI should pivot
+    to player-profile dump for both teams."""
+    assert _phase_session("GAME_STARTING").display_subphase() == "loading"
+
+
+def test_display_subphase_ban_when_ban_step_in_progress() -> None:
+    actions = [
+        [{"id": 1, "actorCellId": 0, "type": "ban",
+          "isInProgress": True, "completed": False, "championId": 0}],
+    ]
+    assert _phase_session("BAN_PICK", actions).display_subphase() == "ban"
+
+
+def test_display_subphase_pick_when_pick_step_in_progress() -> None:
+    """Bans completed, pick step now active → UI should swap from
+    ban-list view to enemy-counters + pick-suggestions view."""
+    actions = [
+        [{"id": 1, "actorCellId": 0, "type": "ban",
+          "isInProgress": False, "completed": True, "championId": 86}],
+        [{"id": 6, "actorCellId": 0, "type": "pick",
+          "isInProgress": True, "completed": False, "championId": 0}],
+    ]
+    assert _phase_session("BAN_PICK", actions).display_subphase() == "pick"
+
+
+def test_display_subphase_picks_when_no_in_progress_falls_back_to_latest() -> None:
+    """Between-turn gap (no isInProgress) — fall back to the latest
+    action step's type so the UI doesn't flicker mid-phase."""
+    actions = [
+        [{"id": 1, "actorCellId": 0, "type": "ban",
+          "isInProgress": False, "completed": True, "championId": 86}],
+        [{"id": 6, "actorCellId": 1, "type": "pick",
+          "isInProgress": False, "completed": True, "championId": 64}],
+    ]
+    assert _phase_session("BAN_PICK", actions).display_subphase() == "pick"
+
+
+def test_display_subphase_in_game() -> None:
+    assert _phase_session("IN_PROGRESS").display_subphase() == "in_game"

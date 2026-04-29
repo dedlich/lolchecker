@@ -264,3 +264,58 @@ class ChampSelectSession(BaseModel):
                 ):
                     return action
         return None
+
+    def display_subphase(self) -> str:
+        """Coarse-grained phase label the UI uses to choose what to
+        render. Maps the LCU phase + the in-progress action type into
+        a single string so the overlay state-machine has one input.
+
+        Returns one of:
+          ``"idle"``           — no champ-select session
+          ``"planning"``       — role assignment, no actions yet
+          ``"ban"``            — currently in the ban step
+          ``"pick"``           — currently in the pick step
+          ``"finalization"``   — lock-in countdown after picks
+          ``"loading"``        — game starting, players known, no live game
+          ``"in_game"``        — game running
+
+        ``BAN_PICK`` is the umbrella LCU phase covering both bans and
+        picks; we look at which step is currently in progress to
+        differentiate. When the in-progress step is ambiguous (every
+        action either completed or empty), we fall back to the most
+        recent step's type."""
+        phase = (self.phase or "").upper()
+        if phase == "" or phase == "NONE":
+            return "idle"
+        if phase == "GAME_STARTING":
+            return "loading"
+        if phase == "FINALIZATION":
+            return "finalization"
+        if phase == "PLANNING":
+            return "planning"
+        if phase == "BAN_PICK":
+            current = self._current_action_type()
+            return current or "pick"
+        if phase in ("IN_PROGRESS", "GAME"):
+            return "in_game"
+        return phase.lower()
+
+    def _current_action_type(self) -> str | None:
+        """Type of the action step currently in progress. Returns
+        None when no step is active (between turns)."""
+        # Iterate in order — first step with isInProgress wins.
+        for step in self.actions:
+            if any(a.is_in_progress for a in step):
+                # All actions in a step share the same type (Riot's
+                # invariant). Return the first non-empty one.
+                for action in step:
+                    if action.type:
+                        return action.type
+        # No in-progress step (e.g. between turns) — fall back to
+        # the latest step that has any action, useful for "we just
+        # finished bans, picks haven't started" gap.
+        for step in reversed(self.actions):
+            for action in step:
+                if action.type:
+                    return action.type
+        return None
