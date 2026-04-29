@@ -261,6 +261,7 @@ class ChampAssistant:
             champions=self.champions,
             tiers=self.tiers,
             enemy_profiles=self._enemy_profiles_by_cell,  # type: ignore[arg-type]
+            my_role=my_role,  # lane-aware scoring — tier in MY role gets 1.5×
             limit=3,
         )
 
