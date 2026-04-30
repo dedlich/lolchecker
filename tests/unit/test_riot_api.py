@@ -82,34 +82,81 @@ async def test_top_mastery_returns_entries() -> None:
 
 
 @pytest.mark.asyncio
-async def test_streak_computes_signed_streak() -> None:
-    """Latest 5 outcomes: W W W L W → 3-game win streak from the front."""
-    match_outcomes = ["W", "W", "W", "L", "W"]
+async def test_recent_match_summaries_extracts_win_and_role() -> None:
+    """Each summary captures both win + normalized role (TOP/JUNGLE/
+    MID/BOT/SUPPORT) so streak + per-role winrate can both derive
+    from a single fetch path."""
+    match_outcomes = [("W", "TOP"), ("L", "TOP"), ("W", "MIDDLE")]
     match_ids = [f"EUW1_{i}" for i in range(len(match_outcomes))]
 
     def handler(request: httpx.Request) -> httpx.Response:
         url = str(request.url)
         if "/by-puuid/" in url and "/ids" in url:
             return httpx.Response(200, json=match_ids)
-        # Match details endpoint — figure out which one and return win/loss.
         for i, mid in enumerate(match_ids):
             if mid in url:
-                won = match_outcomes[i] == "W"
+                outcome, position = match_outcomes[i]
                 return httpx.Response(200, json={
                     "info": {
-                        "participants": [
-                            {"puuid": "PUUID", "win": won},
-                        ],
+                        "participants": [{
+                            "puuid": "PUUID",
+                            "win": outcome == "W",
+                            "teamPosition": position,
+                        }],
                     },
                 })
         return httpx.Response(404)
 
     client = _client(handler)
-    wins, losses, streak = await client.win_loss_streak("PUUID", count=5)
+    summaries = await client.recent_match_summaries("PUUID", count=3)
+    assert len(summaries) == 3
+    assert summaries[0] == {"win": True, "role": "TOP"}
+    assert summaries[1] == {"win": False, "role": "TOP"}
+    assert summaries[2] == {"win": True, "role": "MID"}  # MIDDLE → MID
+    await client.aclose()
+
+
+def test_streak_from_summaries_pure_aggregation() -> None:
+    """Pure helper — testable without HTTP. W W W L W → streak=3."""
+    from champ_assistant.profiling.riot_api import streak_from_summaries
+    summaries = [
+        {"win": True, "role": "MID"},
+        {"win": True, "role": "MID"},
+        {"win": True, "role": "MID"},
+        {"win": False, "role": "MID"},
+        {"win": True, "role": "MID"},
+    ]
+    wins, losses, streak = streak_from_summaries(summaries)
     assert wins == 4
     assert losses == 1
-    assert streak == 3  # WWW from the front
-    await client.aclose()
+    assert streak == 3
+
+
+def test_role_winrate_from_summaries_aggregates_by_role() -> None:
+    from champ_assistant.profiling.riot_api import role_winrate_from_summaries
+    summaries = [
+        {"win": True, "role": "TOP"},
+        {"win": True, "role": "TOP"},
+        {"win": False, "role": "TOP"},
+        {"win": True, "role": "MID"},
+        {"win": False, "role": "MID"},
+    ]
+    by_role = role_winrate_from_summaries(summaries)
+    assert by_role["TOP"] == (2, 1)
+    assert by_role["MID"] == (1, 1)
+
+
+def test_role_winrate_from_summaries_skips_missing_role() -> None:
+    """Some matches have no teamPosition (ARAM, remake) — drop
+    those rather than misclassify."""
+    from champ_assistant.profiling.riot_api import role_winrate_from_summaries
+    summaries = [
+        {"win": True, "role": "TOP"},
+        {"win": True, "role": None},
+        {"win": False, "role": ""},
+    ]
+    by_role = role_winrate_from_summaries(summaries)
+    assert by_role == {"TOP": (1, 0)}
 
 
 @pytest.mark.asyncio
@@ -154,21 +201,11 @@ async def test_league_entries_by_puuid_returns_empty_on_unranked() -> None:
     await client.aclose()
 
 
-@pytest.mark.asyncio
-async def test_streak_for_loss_run_is_negative() -> None:
-    match_ids = ["L1", "L2", "L3"]
-
-    def handler(request: httpx.Request) -> httpx.Response:
-        url = str(request.url)
-        if "/ids" in url:
-            return httpx.Response(200, json=match_ids)
-        return httpx.Response(200, json={
-            "info": {"participants": [{"puuid": "PUUID", "win": False}]},
-        })
-
-    client = _client(handler)
-    wins, losses, streak = await client.win_loss_streak("PUUID", count=3)
+def test_streak_for_loss_run_is_negative() -> None:
+    """Three losses in a row → streak == -3."""
+    from champ_assistant.profiling.riot_api import streak_from_summaries
+    summaries = [{"win": False, "role": "MID"} for _ in range(3)]
+    wins, losses, streak = streak_from_summaries(summaries)
     assert wins == 0
     assert losses == 3
     assert streak == -3
-    await client.aclose()

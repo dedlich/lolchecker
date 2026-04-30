@@ -211,10 +211,20 @@ class EnemyRow(QFrame):
         # Fallback for stats text + when no icons available, fall back
         # to the old "Mains: A, B, C" format so the data isn't lost.
         bits: list[str] = []
-        wr = profile.win_rate
-        total = profile.wins + profile.losses
-        if total > 0 and wr is not None:
-            bits.append(f"{int(wr * 100)}% WR ({total})")
+        # Main role + winrate ON THAT ROLE first — most useful for the
+        # player ("is this enemy comfortable in their assigned lane?").
+        # Falls through to the legacy overall-WR display when no
+        # role data is available.
+        main_role = profile.main_role
+        if main_role is not None:
+            role_summary = profile.role_summary(main_role)
+            if role_summary is not None:
+                bits.append(f"{main_role} {role_summary}")
+        else:
+            wr = profile.win_rate
+            total = profile.wins + profile.losses
+            if total > 0 and wr is not None:
+                bits.append(f"{int(wr * 100)}% WR ({total})")
         if profile.streak >= 3:
             bits.append(f"W{profile.streak} streak")
         elif profile.streak <= -3:

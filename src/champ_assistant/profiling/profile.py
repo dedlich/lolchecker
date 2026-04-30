@@ -57,6 +57,11 @@ class EnemyProfile:
     losses: int = 0
     streak: int = 0  # positive = win streak, negative = loss streak
     rank: RankBadge = field(default_factory=RankBadge)
+    role_winrates: dict[str, tuple[int, int]] = field(default_factory=dict)
+    """``{role: (wins, losses)}`` over the last ~20 ranked-solo matches.
+    Drives the lobby panel's "main role" indicator + per-role winrate
+    badge. Empty dict means no data (no API key, fetch failed, or
+    player has no recent ranked matches)."""
 
     @property
     def win_rate(self) -> float | None:
@@ -66,11 +71,46 @@ class EnemyProfile:
         return self.wins / total
 
     @property
+    def main_role(self) -> str | None:
+        """The role this player has played most over the recent
+        sample. ``None`` when role_winrates is empty or there's a
+        tie (be conservative — don't pick arbitrarily)."""
+        if not self.role_winrates:
+            return None
+        ranked = sorted(
+            self.role_winrates.items(),
+            key=lambda kv: kv[1][0] + kv[1][1],
+            reverse=True,
+        )
+        top_games = ranked[0][1][0] + ranked[0][1][1]
+        if top_games == 0:
+            return None
+        # Tied with 2nd place → ambiguous, return None.
+        if len(ranked) > 1:
+            second_games = ranked[1][1][0] + ranked[1][1][1]
+            if second_games == top_games:
+                return None
+        return ranked[0][0]
+
+    def role_summary(self, role: str) -> str | None:
+        """Render ``"56% (28W/22L)"`` for ``role``, or None when no
+        data. Used by the EnemyRow badge."""
+        wl = self.role_winrates.get(role)
+        if wl is None:
+            return None
+        wins, losses = wl
+        total = wins + losses
+        if total == 0:
+            return None
+        return f"{int(100 * wins / total)}% ({wins}W/{losses}L)"
+
+    @property
     def has_data(self) -> bool:
         return (
             bool(self.top_champions)
             or (self.wins + self.losses) > 0
             or self.rank.is_ranked
+            or bool(self.role_winrates)
         )
 
 
@@ -119,16 +159,21 @@ class ProfileService:
         return self._cache[cache_key]
 
     async def _compose(self, summoner: object, cache_key: str) -> EnemyProfile:
-        """Shared post-summoner-lookup pipeline: mastery + streak + rank
-        all fanned out concurrently. Every Riot endpoint we hit here
-        is puuid-keyed — Riot retired the by-summoner-id forms."""
-        from .riot_api import SummonerInfo
+        """Shared post-summoner-lookup pipeline: mastery + match
+        summaries + rank all fanned out concurrently. Match summaries
+        feed both streak AND per-role winrate — single fetch path,
+        no double polling of match-v5."""
+        from .riot_api import (
+            SummonerInfo,
+            role_winrate_from_summaries,
+            streak_from_summaries,
+        )
         assert isinstance(summoner, SummonerInfo)
         mastery_task = asyncio.create_task(
             self._client.top_mastery(summoner.puuid, count=3)
         )
-        streak_task = asyncio.create_task(
-            self._client.win_loss_streak(summoner.puuid)
+        summaries_task = asyncio.create_task(
+            self._client.recent_match_summaries(summoner.puuid, count=20)
         )
         rank_task = asyncio.create_task(
             self._client.league_entries_by_puuid(summoner.puuid)
@@ -140,10 +185,12 @@ class ProfileService:
             logger.info("profile_mastery_failed: %s", exc)
             mastery = []
         try:
-            wins, losses, streak = await streak_task
+            summaries = await summaries_task
         except RiotApiError as exc:
-            logger.info("profile_streak_failed: %s", exc)
-            wins, losses, streak = 0, 0, 0
+            logger.info("profile_summaries_failed: %s", exc)
+            summaries = []
+        wins, losses, streak = streak_from_summaries(summaries)
+        role_winrates = role_winrate_from_summaries(summaries)
 
         rank = RankBadge()
         try:
@@ -180,6 +227,7 @@ class ProfileService:
             losses=losses,
             streak=streak,
             rank=rank,
+            role_winrates=role_winrates,
         )
         self._cache[cache_key] = profile
         return profile

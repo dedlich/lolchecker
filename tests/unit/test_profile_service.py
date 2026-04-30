@@ -101,6 +101,56 @@ async def test_disabled_when_no_key() -> None:
     await client.aclose()
 
 
+def test_enemy_profile_main_role_picks_most_played() -> None:
+    """The main_role property returns the role with the most games
+    over the recent ranked sample."""
+    from champ_assistant.profiling.profile import EnemyProfile
+    profile = EnemyProfile(
+        summoner_name="X",
+        role_winrates={"TOP": (8, 4), "MID": (2, 1), "JUNGLE": (3, 2)},
+    )
+    assert profile.main_role == "TOP"
+
+
+def test_enemy_profile_main_role_returns_none_on_tie() -> None:
+    """Tied game counts → ambiguous, main_role recuses itself rather
+    than picking arbitrarily. Avoids "TOP main" claims for autofill
+    players who play TOP/JUNGLE 50/50."""
+    from champ_assistant.profiling.profile import EnemyProfile
+    profile = EnemyProfile(
+        summoner_name="X",
+        role_winrates={"TOP": (5, 5), "MID": (5, 5)},
+    )
+    assert profile.main_role is None
+
+
+def test_enemy_profile_role_summary_renders_winrate_format() -> None:
+    """``56% (28W/22L)`` — matches the in-game scoreboard's stat style."""
+    from champ_assistant.profiling.profile import EnemyProfile
+    profile = EnemyProfile(
+        summoner_name="X",
+        role_winrates={"MID": (28, 22)},
+    )
+    assert profile.role_summary("MID") == "56% (28W/22L)"
+
+
+def test_enemy_profile_role_summary_none_for_unknown_role() -> None:
+    from champ_assistant.profiling.profile import EnemyProfile
+    profile = EnemyProfile(summoner_name="X", role_winrates={"TOP": (1, 0)})
+    assert profile.role_summary("BOT") is None
+
+
+def test_enemy_profile_has_data_includes_role_winrates() -> None:
+    """Role winrate alone counts as "has data" — even before mastery
+    or rank fetches complete."""
+    from champ_assistant.profiling.profile import EnemyProfile
+    profile = EnemyProfile(
+        summoner_name="X",
+        role_winrates={"TOP": (5, 3)},
+    )
+    assert profile.has_data is True
+
+
 @pytest.mark.asyncio
 async def test_summoner_404_returns_empty_profile() -> None:
     def handler(request: httpx.Request) -> httpx.Response:

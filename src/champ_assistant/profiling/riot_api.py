@@ -232,47 +232,103 @@ class RiotApiClient:
         return [str(x) for x in data]
 
     async def match_outcome(self, match_id: str, puuid: str) -> bool | None:
-        """Return True/False (win/loss) for the given player, or None."""
+        """Return True/False (win/loss) for the given player, or None.
+
+        Kept for back-compat — new code should use
+        ``match_participant_info`` which returns the richer dict
+        without an extra fetch."""
+        info = await self.match_participant_info(match_id, puuid)
+        if info is None:
+            return None
+        return info.get("win")
+
+    async def match_participant_info(
+        self, match_id: str, puuid: str,
+    ) -> dict | None:
+        """Return ``{"win": bool, "role": str}`` for ``puuid`` in
+        ``match_id``. Role is normalized to our domain
+        (TOP/JUNGLE/MID/BOT/SUPPORT) from Riot's ``teamPosition``.
+        ``None`` if the participant isn't found or the response
+        shape is unexpected."""
+        from ..data.models import normalize_role
         path = f"/lol/match/v5/matches/{match_id}"
         data = await self._get(self._regional, path)
         info = data.get("info") if isinstance(data, dict) else None
         if not isinstance(info, dict):
             return None
         for participant in info.get("participants") or []:
-            if isinstance(participant, dict) and participant.get("puuid") == puuid:
-                return bool(participant.get("win"))
+            if (
+                isinstance(participant, dict)
+                and participant.get("puuid") == puuid
+            ):
+                team_pos = participant.get("teamPosition") or ""
+                role = normalize_role(team_pos)
+                return {
+                    "win": bool(participant.get("win")),
+                    "role": role,
+                }
         return None
 
-    async def win_loss_streak(
-        self, puuid: str, *, count: int = 10
-    ) -> tuple[int, int, int]:
-        """(wins, losses, current streak signed +/- ).
-
-        Streak is positive on a win run, negative on a loss run.
-        Failures fall through with (0, 0, 0).
-        """
+    async def recent_match_summaries(
+        self,
+        puuid: str,
+        *,
+        count: int = 20,
+        queue: int | None = 420,
+    ) -> list[dict]:
+        """Fetch ``count`` recent ranked-solo match summaries — one
+        ``{win, role}`` dict per match. Failed fetches are silently
+        skipped. Used by ProfileService to compute streak +
+        per-role winrate from a single set of match-v5 calls."""
         try:
-            ids = await self.recent_match_ids(puuid, count=count)
+            ids = await self.recent_match_ids(puuid, count=count, queue=queue)
         except RiotApiError:
-            return 0, 0, 0
+            return []
         if not ids:
-            return 0, 0, 0
-
-        outcomes = await asyncio.gather(
-            *(self.match_outcome(mid, puuid) for mid in ids),
+            return []
+        results = await asyncio.gather(
+            *(self.match_participant_info(mid, puuid) for mid in ids),
             return_exceptions=True,
         )
-        wins = sum(1 for o in outcomes if o is True)
-        losses = sum(1 for o in outcomes if o is False)
-        streak = 0
-        for o in outcomes:
-            if not isinstance(o, bool):
-                break
-            if streak == 0:
-                streak = 1 if o else -1
-                continue
-            if (o and streak > 0) or (not o and streak < 0):
-                streak += 1 if o else -1
-            else:
-                break
-        return wins, losses, streak
+        return [r for r in results if isinstance(r, dict)]
+
+
+def role_winrate_from_summaries(
+    summaries: list[dict],
+) -> dict[str, tuple[int, int]]:
+    """Aggregate ``recent_match_summaries`` output into
+    ``{role: (wins, losses)}``. Pure function, testable without
+    the API client."""
+    out: dict[str, list[int]] = {}
+    for s in summaries:
+        role = s.get("role")
+        if not role:
+            continue
+        bucket = out.setdefault(role, [0, 0])
+        if s.get("win"):
+            bucket[0] += 1
+        else:
+            bucket[1] += 1
+    return {role: (w, l) for role, (w, l) in out.items()}
+
+
+def streak_from_summaries(summaries: list[dict]) -> tuple[int, int, int]:
+    """Aggregate summaries into ``(wins, losses, streak)``. Streak
+    is positive on a win run from the most-recent match backwards,
+    negative on a loss run. Failed/unknown matches break the run."""
+    wins = sum(1 for s in summaries if s.get("win") is True)
+    losses = sum(1 for s in summaries if s.get("win") is False)
+    streak = 0
+    for s in summaries:
+        win = s.get("win")
+        if not isinstance(win, bool):
+            break
+        if streak == 0:
+            streak = 1 if win else -1
+            continue
+        if (win and streak > 0) or (not win and streak < 0):
+            streak += 1 if win else -1
+        else:
+            break
+    return wins, losses, streak
+
