@@ -38,20 +38,35 @@ def test_set_recommendations_renders_top_3(qt_app) -> None:
     panel.set_recommendations(recs)
     visible_rows = [row for row in panel._rows if row.isVisible()]
     assert len(visible_rows) == MAX_VISIBLE_ROWS
-    assert "r0" in visible_rows[0].text()
-    assert "r2" in visible_rows[2].text()
+    # Each row is now a _RecRow card — text lives on the inner label.
+    assert "r0" in visible_rows[0]._text.text()
+    assert "r2" in visible_rows[2]._text.text()
 
 
-def test_severity_glyph_maps_correctly(qt_app) -> None:
+def test_severity_strip_color_changes_per_row(qt_app) -> None:
+    """Each row's stylesheet carries the severity color in its
+    border-left strip — alert=DANGER, warn=WARNING, info=ACCENT."""
+    from champ_assistant.ui import styles
     panel = RecommendationPanel()
     panel.set_recommendations([
         _rec("alarm", "alert"),
         _rec("careful", "warn"),
         _rec("tip", "info"),
     ])
-    assert "🔥" in panel._rows[0].text()
-    assert "⚠" in panel._rows[1].text()
-    assert "•" in panel._rows[2].text()
+    assert styles.DANGER in panel._rows[0].styleSheet()
+    assert styles.WARNING in panel._rows[1].styleSheet()
+    assert styles.ACCENT in panel._rows[2].styleSheet()
+
+
+def test_category_glyph_maps_correctly(qt_app) -> None:
+    """objective → ◈, tempo → ▶, safety → ✕."""
+    panel = RecommendationPanel()
+    panel.set_recommendations([
+        _rec("a", "alert"),  # default category in _rec is "tempo"
+    ])
+    # Default _rec category is tempo, glyph should be ▶
+    glyph_text = panel._rows[0]._glyph.text()
+    assert glyph_text == "▶"
 
 
 def test_set_then_clear_hides_panel(qt_app) -> None:
@@ -66,13 +81,14 @@ def test_set_then_clear_hides_panel(qt_app) -> None:
 def test_demo_populates_one_per_severity(qt_app) -> None:
     """Demo mode shows one example per rule type so the user can
     visually validate every code path during testing."""
+    from champ_assistant.ui import styles
     panel = RecommendationPanel()
     panel.populate_demo()
     visible_rows = [row for row in panel._rows if row.isVisible()]
-    # Only top 3 rendered; check the highest-severity (alert) is first.
-    assert "🔥" in visible_rows[0].text()
-    # Top alerts include objective hints (Baron / Drache / Herald)
-    top_text = visible_rows[0].text()
+    # Top row's severity strip should be DANGER (alert).
+    assert styles.DANGER in visible_rows[0].styleSheet()
+    # Body text on the alert row references one of the objective names.
+    top_text = visible_rows[0]._text.text()
     assert any(s in top_text for s in ("Drache", "Baron", "Herald"))
 
 

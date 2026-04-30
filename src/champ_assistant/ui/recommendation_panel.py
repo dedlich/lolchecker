@@ -1,10 +1,10 @@
 """Floating recommendation panel — surfaces decision-engine output.
 
-Charter B1 V2 — adds a visible UI surface for the decision engine's
-recommendations. Sits in the top-left by default, draggable like any
-other FloatingWidget. Shows the top 3 recommendations sorted by
-severity (alert > warn > info). Hides itself when there are zero
-active recommendations to avoid screen spam.
+Charter B1 V2+ — visible UI surface for the engine. Layout pattern
+mirrors a modern notification center: each rec sits in a card with a
+severity-colored left strip, a category-glyph badge, and the body
+text. Top-left by default, draggable like any other FloatingWidget.
+Auto-hides when zero recs are active.
 
 Demo mode
 =========
@@ -15,7 +15,7 @@ visual validation without needing a live LCDA snapshot. Drives the
 from __future__ import annotations
 
 from PyQt6.QtCore import Qt
-from PyQt6.QtWidgets import QLabel, QVBoxLayout
+from PyQt6.QtWidgets import QFrame, QHBoxLayout, QLabel, QVBoxLayout
 
 from ..advisor.decision_engine import Recommendation
 from . import styles
@@ -24,12 +24,94 @@ from .floating_widget import FloatingWidget
 MAX_VISIBLE_ROWS = 3
 
 
+# Per-category glyph + tint. Icon-on-color reads better than plain
+# text for at-a-glance category identification.
+_CATEGORY_GLYPHS: dict[str, str] = {
+    "objective": "◈",   # diamond — drake/baron/herald
+    "tempo":     "▶",   # play arrow — push the lead
+    "safety":    "✕",   # x — don't fight
+    "lane":      "≡",   # bars — laning play
+}
+
+
+class _RecRow(QFrame):
+    """One recommendation card. Left strip = severity, glyph =
+    category, body = text. Re-set via ``render`` so each row is
+    pre-allocated; layout shifts never fire on rec churn."""
+
+    STRIP_W = 3
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.setProperty("rec-row", True)
+        self.setStyleSheet(self._stylesheet_for("info"))
+
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(
+            styles.SPACING_GRID + self.STRIP_W,
+            styles.SPACING_TIGHT + 2,
+            styles.SPACING_GRID,
+            styles.SPACING_TIGHT + 2,
+        )
+        layout.setSpacing(styles.SPACING_GRID)
+
+        self._glyph = QLabel("•")
+        self._glyph.setFixedWidth(20)
+        self._glyph.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._glyph.setStyleSheet(self._glyph_stylesheet("info"))
+        layout.addWidget(self._glyph)
+
+        self._text = QLabel("")
+        self._text.setWordWrap(True)
+        self._text.setStyleSheet(
+            f"color: {styles.TEXT_PRIMARY};"
+            f" font-size: {styles.FS_BODY}px; font-weight: 600;"
+        )
+        layout.addWidget(self._text, 1)
+
+    def render(self, rec: Recommendation) -> None:
+        self._text.setText(rec.text)
+        self._glyph.setText(_CATEGORY_GLYPHS.get(rec.category, "•"))
+        self._glyph.setStyleSheet(self._glyph_stylesheet(rec.severity))
+        self.setStyleSheet(self._stylesheet_for(rec.severity))
+
+    @staticmethod
+    def _color_for(severity: str) -> str:
+        return {
+            "alert": styles.DANGER,
+            "warn":  styles.WARNING,
+            "info":  styles.ACCENT,
+        }.get(severity, styles.TEXT_MUTED)
+
+    @classmethod
+    def _stylesheet_for(cls, severity: str) -> str:
+        color = cls._color_for(severity)
+        return (
+            f"QFrame[rec-row='true'] {{"
+            f" background-color: {styles.BG_TERTIARY};"
+            f" border-radius: {styles.RADIUS}px;"
+            f" border-left: {cls.STRIP_W}px solid {color};"
+            f" }}"
+            f" QFrame[rec-row='true']:hover {{"
+            f" background-color: {styles.BG_INTERACT};"
+            f" }}"
+        )
+
+    @classmethod
+    def _glyph_stylesheet(cls, severity: str) -> str:
+        return (
+            f"color: {cls._color_for(severity)};"
+            f" font-size: {styles.FS_HEADING}px;"
+            " font-weight: 700;"
+        )
+
+
 class RecommendationPanel(FloatingWidget):
     """See module docstring."""
 
     KEY = "recommendation_panel"
     DEFAULT_POS = (40, 40)
-    DEFAULT_SIZE = (380, 160)
+    DEFAULT_SIZE = (400, 200)
 
     def __init__(self) -> None:
         super().__init__()
@@ -37,26 +119,34 @@ class RecommendationPanel(FloatingWidget):
 
         outer = QVBoxLayout(self)
         outer.setContentsMargins(
-            styles.SPACING_WIDE, styles.SPACING_TIGHT,
-            styles.SPACING_WIDE, styles.SPACING_TIGHT,
+            styles.SPACING_WIDE, styles.SPACING_GRID,
+            styles.SPACING_WIDE, styles.SPACING_GRID,
         )
-        outer.setSpacing(styles.SPACING_TIGHT)
+        outer.setSpacing(styles.SPACING_TIGHT + 2)
 
+        # Header strip — small accent dot + section label.
+        header = QHBoxLayout()
+        header.setSpacing(styles.SPACING_TIGHT)
+        header.setContentsMargins(2, 0, 0, 0)
+        dot = QLabel("●")
+        dot.setStyleSheet(
+            f"color: {styles.ACCENT};"
+            f" font-size: {styles.FS_BODY}px;"
+        )
+        header.addWidget(dot)
         title = QLabel("EMPFEHLUNGEN")
         title.setStyleSheet(
             f"color: {styles.TEXT_MUTED};"
             f" font-size: {styles.FS_LABEL}px; font-weight: 700;"
-            " letter-spacing: 1.4px;"
+            " letter-spacing: 1.6px;"
         )
-        outer.addWidget(title)
+        header.addWidget(title, 1)
+        outer.addLayout(header)
 
-        # Pre-allocate the rows so layout doesn't shift on
-        # set_recommendations — empty rows stay hidden.
-        self._rows: list[QLabel] = []
+        # Pre-allocated row cards. Layout never shifts on rec churn.
+        self._rows: list[_RecRow] = []
         for _ in range(MAX_VISIBLE_ROWS):
-            row = QLabel("")
-            row.setWordWrap(True)
-            row.setStyleSheet(self._row_stylesheet("info"))
+            row = _RecRow()
             row.hide()
             self._rows.append(row)
             outer.addWidget(row)
@@ -69,8 +159,8 @@ class RecommendationPanel(FloatingWidget):
     # -- public API ------------------------------------------------------
 
     def set_recommendations(self, recs: list[Recommendation]) -> None:
-        """Render the top-N recommendations (already severity-sorted
-        by ``decision_engine.evaluate``). Empty list → hide widget."""
+        """Render top-N recommendations (already severity-sorted by
+        ``decision_engine.evaluate``). Empty list → hide widget."""
         if not recs:
             for row in self._rows:
                 row.hide()
@@ -79,21 +169,16 @@ class RecommendationPanel(FloatingWidget):
         top = recs[:MAX_VISIBLE_ROWS]
         for i, row in enumerate(self._rows):
             if i < len(top):
-                rec = top[i]
-                row.setText(f"{self._glyph(rec.severity)}  {rec.text}")
-                row.setStyleSheet(self._row_stylesheet(rec.severity))
+                row.render(top[i])
                 row.show()
             else:
-                row.setText("")
                 row.hide()
         if not self.isVisible():
             self.fade_appear()
 
     def populate_demo(self) -> None:
-        """Fill with example output of every rule, for visual testing
-        without a live game. Each example mirrors what the matching
-        rule would produce in real play. Top-3 by severity will render
-        (alert > warn > info)."""
+        """Fill with example output of every rule for visual testing
+        without a live game. Top-3 by severity render."""
         demo = [
             Recommendation(
                 text="Baron in 35s — Vision-Pinks setzen, "
@@ -149,26 +234,3 @@ class RecommendationPanel(FloatingWidget):
             ),
         ]
         self.set_recommendations(demo)
-
-    # -- styling ---------------------------------------------------------
-
-    @staticmethod
-    def _glyph(severity: str) -> str:
-        return {
-            "alert": "🔥",
-            "warn":  "⚠",
-            "info":  "•",
-        }.get(severity, "•")
-
-    @staticmethod
-    def _row_stylesheet(severity: str) -> str:
-        color = {
-            "alert": styles.DANGER,
-            "warn":  styles.WARNING,
-            "info":  styles.ACCENT,
-        }.get(severity, styles.TEXT_PRIMARY)
-        return (
-            f"color: {color};"
-            f" font-size: {styles.FS_BODY}px; font-weight: 600;"
-            " padding: 2px 0px;"
-        )
