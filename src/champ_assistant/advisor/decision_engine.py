@@ -47,9 +47,14 @@ if TYPE_CHECKING:
 
 # Thresholds — tunables. Pulled out so future re-tuning is one file.
 DRAKE_PRIORITY_WINDOW_S = 30.0  # drake spawning within this is "soon"
+BARON_PRIORITY_WINDOW_S = 45.0  # baron is more impactful → wider lead-up window
+HERALD_LATE_GAME_S = 14 * 60.0  # herald despawns ~14:00; rule silent after
 GOLD_LEAD_THRESHOLD = 3000      # absolute item-value diff that counts as "ahead"
 GOLD_DEFICIT_THRESHOLD = 5000   # behind by this → play safe, don't force
 LEVEL_GAP_THRESHOLD = 1.5       # avg-level diff that makes fighting bad
+KILL_LEAD_THRESHOLD = 5         # kills ahead → real momentum, press it
+KILL_DEFICIT_THRESHOLD = 7      # kills behind → real deficit, bunker
+LATE_GAME_S = 30 * 60.0         # past 30:00 every fight is the last fight
 
 
 @dataclass(frozen=True)
@@ -102,6 +107,29 @@ def _objective_remaining(
             except Exception:  # noqa: BLE001
                 return None
     return None
+
+
+def _team_kill_diff(snapshot: "LcdaSnapshot") -> int:
+    """Allies' total kills minus enemies'. Positive when we're snowballing.
+    Falls back to summing per-player kills when team aggregates are
+    missing."""
+    ally = getattr(snapshot, "ally_aggregate", None)
+    enemy = getattr(snapshot, "enemy_aggregate", None)
+    a = getattr(ally, "kills", None) if ally is not None else None
+    e = getattr(enemy, "kills", None) if enemy is not None else None
+    if a is None:
+        a = sum(
+            getattr(p, "kills", 0)
+            for p in (getattr(snapshot, "allies", []) or [])
+        )
+    if e is None:
+        e = sum(
+            getattr(p, "kills", 0)
+            for p in (getattr(snapshot, "enemies", []) or [])
+        )
+    if not isinstance(a, (int, float)) or not isinstance(e, (int, float)):
+        return 0
+    return int(a) - int(e)
 
 
 # --------------------------------------------------------------------------
@@ -186,14 +214,120 @@ def rule_level_deficit(snapshot: "LcdaSnapshot") -> Recommendation | None:
     )
 
 
+def rule_baron_priority(snapshot: "LcdaSnapshot") -> Recommendation | None:
+    """Baron up soon AND we have resources → set up vision + group.
+    Baron's window is wider than drake (45s vs 30s) because the prep
+    matters more — wave clear, vision sweep, ult availability check."""
+    remaining = _objective_remaining(snapshot, "Baron")
+    if remaining is None or remaining > BARON_PRIORITY_WINDOW_S:
+        return None
+    gold = _team_gold_diff(snapshot)
+    if gold < -GOLD_LEAD_THRESHOLD:
+        return None  # baron_give_up handles the behind case
+    return Recommendation(
+        text=f"Baron in {int(remaining)}s — Vision-Pinks setzen, "
+             f"Side-Wellen prep, Ults checken",
+        severity="alert",
+        category="objective",
+    )
+
+
+def rule_baron_give_up(snapshot: "LcdaSnapshot") -> Recommendation | None:
+    """Baron up but we're significantly behind → don't contest. A
+    Baron-throw at 8k behind is a 14-day vacation."""
+    remaining = _objective_remaining(snapshot, "Baron")
+    if remaining is None or remaining > BARON_PRIORITY_WINDOW_S:
+        return None
+    gold = _team_gold_diff(snapshot)
+    if gold > -GOLD_DEFICIT_THRESHOLD:
+        return None
+    return Recommendation(
+        text=f"Baron ({int(remaining)}s) abgeben — defensiv warten, "
+             f"Konter-Engage suchen",
+        severity="warn",
+        category="objective",
+    )
+
+
+def rule_herald_priority(snapshot: "LcdaSnapshot") -> Recommendation | None:
+    """Herald is an early-game tower-plate engine. Rule only fires
+    in the herald window (≤14:00) and when we're roughly even or
+    ahead. No herald → silent."""
+    game_time = getattr(snapshot, "game_time", 0.0)
+    if game_time > HERALD_LATE_GAME_S:
+        return None
+    remaining = _objective_remaining(snapshot, "Herald")
+    if remaining is None or remaining > DRAKE_PRIORITY_WINDOW_S:
+        return None
+    gold = _team_gold_diff(snapshot)
+    if gold < -GOLD_LEAD_THRESHOLD:
+        return None
+    return Recommendation(
+        text=f"Herald in {int(remaining)}s — top-side prio, "
+             f"Plates abholen",
+        severity="alert",
+        category="objective",
+    )
+
+
+def rule_kill_lead_snowball(snapshot: "LcdaSnapshot") -> Recommendation | None:
+    """Substantial kill lead → press it. More aggressive vision +
+    dive setups. The kill-diff signal is independent from items_value
+    — you can be ahead in kills but behind in items if assists
+    dominated, but the momentum is still real."""
+    diff = _team_kill_diff(snapshot)
+    if diff < KILL_LEAD_THRESHOLD:
+        return None
+    return Recommendation(
+        text=f"+{diff} Kills — Vision deep pushen, dive-Comp hinten "
+             f"einrichten",
+        severity="info",
+        category="tempo",
+    )
+
+
+def rule_kill_deficit_defensive(snapshot: "LcdaSnapshot") -> Recommendation | None:
+    """Substantial kill deficit → bunker. Don't extend, hold turret
+    line, wait for a back-coordinated reset."""
+    diff = _team_kill_diff(snapshot)
+    if diff > -KILL_DEFICIT_THRESHOLD:
+        return None
+    return Recommendation(
+        text=f"{diff} Kills — Bunker am Inhib, kein Überfarmen, "
+             f"auf koordinierten Reset warten",
+        severity="warn",
+        category="safety",
+    )
+
+
+def rule_late_game_group(snapshot: "LcdaSnapshot") -> Recommendation | None:
+    """Past 30:00 every teamfight decides the game. Splitpush is
+    rarely worth the death timer; group as 5 around objectives."""
+    game_time = getattr(snapshot, "game_time", 0.0)
+    if game_time < LATE_GAME_S:
+        return None
+    return Recommendation(
+        text="Late game — group 5, kein Splitpush ohne TP, "
+             "jeder Death = 50s+",
+        severity="info",
+        category="tempo",
+    )
+
+
 # Rule registry — extend by appending a function. Order doesn't affect
 # ``evaluate``'s output (caller sorts by severity).
 ALL_RULES: tuple[Callable[["LcdaSnapshot"], Recommendation | None], ...] = (
     rule_drake_priority,
     rule_drake_give_up,
+    rule_baron_priority,
+    rule_baron_give_up,
+    rule_herald_priority,
     rule_gold_lead_push,
     rule_far_behind_safe,
     rule_level_deficit,
+    rule_kill_lead_snowball,
+    rule_kill_deficit_defensive,
+    rule_late_game_group,
 )
 
 

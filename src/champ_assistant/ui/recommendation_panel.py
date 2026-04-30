@@ -92,11 +92,26 @@ class RecommendationPanel(FloatingWidget):
     def populate_demo(self) -> None:
         """Fill with example output of every rule, for visual testing
         without a live game. Each example mirrors what the matching
-        rule would produce in real play."""
+        rule would produce in real play. Top-3 by severity will render
+        (alert > warn > info)."""
         demo = [
+            Recommendation(
+                text="Baron in 35s — Vision-Pinks setzen, "
+                     "Side-Wellen prep, Ults checken",
+                severity="alert", category="objective",
+            ),
             Recommendation(
                 text="Drache spawnt in 25s — Vision setzen, Side gruppieren",
                 severity="alert", category="objective",
+            ),
+            Recommendation(
+                text="Herald in 18s — top-side prio, Plates abholen",
+                severity="alert", category="objective",
+            ),
+            Recommendation(
+                text="Baron (20s) abgeben — defensiv warten, "
+                     "Konter-Engage suchen",
+                severity="warn", category="objective",
             ),
             Recommendation(
                 text="Drache (28s) abgeben — Side-Wellen pushen, "
@@ -108,6 +123,11 @@ class RecommendationPanel(FloatingWidget):
                 severity="warn", category="safety",
             ),
             Recommendation(
+                text="-9 Kills — Bunker am Inhib, kein Überfarmen, "
+                     "auf koordinierten Reset warten",
+                severity="warn", category="safety",
+            ),
+            Recommendation(
                 text="Level-Nachteil (-2.0) — XP-Wellen sichern, "
                      "keine Skirmishes",
                 severity="warn", category="safety",
@@ -115,6 +135,16 @@ class RecommendationPanel(FloatingWidget):
             Recommendation(
                 text="+4500 Gold — Vision pushen, Wellen kontrollieren, "
                      "nächstes Objective vorbereiten",
+                severity="info", category="tempo",
+            ),
+            Recommendation(
+                text="+7 Kills — Vision deep pushen, dive-Comp hinten "
+                     "einrichten",
+                severity="info", category="tempo",
+            ),
+            Recommendation(
+                text="Late game — group 5, kein Splitpush ohne TP, "
+                     "jeder Death = 50s+",
                 severity="info", category="tempo",
             ),
         ]
