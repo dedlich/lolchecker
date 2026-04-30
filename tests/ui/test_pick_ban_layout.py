@@ -24,6 +24,42 @@ def qt_app():
     return QApplication.instance() or QApplication([])
 
 
+def test_pick_card_renders_item_icons_when_available(qt_app) -> None:
+    """When item_icons map carries pixmaps for the build's items,
+    PickCard renders them as inline swatches instead of plain text."""
+    from PyQt6.QtGui import QImage, QPixmap
+    from champ_assistant.data.models import ChampionBuild
+    img = QImage(8, 8, QImage.Format.Format_RGB32)
+    img.fill(0xFFFFFF)
+    pix = QPixmap.fromImage(img)
+    icons = {"Stridebreaker": pix, "Plated Steelcaps": pix}
+    build = ChampionBuild(
+        runes=["Conqueror"],
+        items=["Stridebreaker", "Plated Steelcaps"],
+        summoners=["Flash"],
+    )
+    card = PickCard(_suggestion("Garen"), build=build, item_icons=icons, rank=1)
+    # Find QLabels with non-null pixmaps (the rune/summoner lines use
+    # text-only QLabels; only items get pixmap-backed swatches).
+    labels = card.findChildren(QLabel)
+    pixmap_labels = [
+        l for l in labels
+        if l.pixmap() is not None and not l.pixmap().isNull()
+    ]
+    assert len(pixmap_labels) == 2  # two items, two swatches
+
+
+def test_pick_card_falls_back_to_text_when_no_item_icon(qt_app) -> None:
+    """A build whose item names aren't in the icon map should still
+    render — as text labels, not as broken/empty pixmaps."""
+    from champ_assistant.data.models import ChampionBuild
+    build = ChampionBuild(items=["MysteryItem"])
+    card = PickCard(_suggestion("Garen"), build=build, item_icons={}, rank=1)
+    labels = card.findChildren(QLabel)
+    text_labels = [l for l in labels if "MysteryItem" in l.text()]
+    assert len(text_labels) >= 1
+
+
 def _suggestion(name: str = "Ahri", score: float = 84.5) -> PickSuggestion:
     return PickSuggestion(
         champion_key=name, score=score, tier="A",

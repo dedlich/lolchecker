@@ -1123,6 +1123,18 @@ async def _hydrate_champions_and_icons(
             except Exception:
                 log.exception("spell_icons_fetch_failed")
                 spell_bytes = {}
+            # Item icons — same pattern, scoped to the items we know
+            # how to map (ITEM_IDS contains every item we've curated
+            # for builds.json). One-time prefetch per session; results
+            # cache to disk via the DataDragon cache layer.
+            try:
+                from champ_assistant.data.items_data import ITEM_IDS
+                item_ids = sorted(set(ITEM_IDS.values()))
+                item_icon_bytes = await dd.prefetch_item_icons(patch, item_ids)
+                log.info("item_icon_prefetch_done count=%d", len(item_icon_bytes))
+            except Exception:
+                log.exception("item_icons_fetch_failed")
+                item_icon_bytes = {}
     except Exception:
         log.exception("hydrate_failed")
         return
@@ -1167,6 +1179,25 @@ async def _hydrate_champions_and_icons(
     overlay.summoner_tracker.set_champion_icons(name_to_pixmap)
     overlay.summoner_tracker.set_spell_icons(spell_pixmaps)
 
+    # Item icons — keyed by item-NAME so PickCard's _build_line can
+    # look them up directly from the build.items list (which carries
+    # names, not IDs). Maps "Stridebreaker" → QPixmap.
+    from champ_assistant.data.items_data import ITEM_IDS as _ITEM_IDS
+    item_pixmaps: dict[str, QPixmap] = {}
+    for item_name, item_id in _ITEM_IDS.items():
+        data = item_icon_bytes.get(item_id)
+        if data is None:
+            continue
+        pm = QPixmap()
+        if not pm.loadFromData(data):
+            continue
+        item_pixmaps[item_name] = pm.scaled(
+            32, 32,
+            QtCore.AspectRatioMode.KeepAspectRatio,
+            QtCore.TransformationMode.SmoothTransformation,
+        )
+    overlay.set_item_icons(item_pixmaps)
+
     # Forward champion icons to the floating lobby widget if it's enabled.
     lobby = getattr(overlay, "_lobby_stats", None)
     if lobby is not None:
@@ -1177,8 +1208,8 @@ async def _hydrate_champions_and_icons(
             lobby.update_view(overlay._last_view)
 
     log.info(
-        "icon_prefetch_done champs=%d spells=%d",
-        len(pixmaps), len(spell_pixmaps),
+        "icon_prefetch_done champs=%d spells=%d items=%d",
+        len(pixmaps), len(spell_pixmaps), len(item_pixmaps),
     )
 
 

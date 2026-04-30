@@ -37,6 +37,7 @@ VERSIONS_URL = f"{DDRAGON_BASE}/api/versions.json"
 CHAMPIONS_URL_TEMPLATE = f"{DDRAGON_BASE}/cdn/{{patch}}/data/en_US/champion.json"
 CHAMPION_ICON_URL_TEMPLATE = f"{DDRAGON_BASE}/cdn/{{patch}}/img/champion/{{key}}.png"
 SPELL_ICON_URL_TEMPLATE = f"{DDRAGON_BASE}/cdn/{{patch}}/img/spell/{{file}}"
+ITEM_ICON_URL_TEMPLATE = f"{DDRAGON_BASE}/cdn/{{patch}}/img/item/{{item_id}}.png"
 
 # LCDA returns spell display names; Data Dragon stores them under file IDs
 # starting with ``Summoner``. This map covers every spell currently usable
@@ -259,3 +260,52 @@ class DataDragon:
             *(one(n) for n in SUMMONER_SPELL_FILES)
         )
         return {n: data for n, data in results if data is not None}
+
+    async def fetch_item_icon(self, patch: str, item_id: int) -> bytes:
+        """Return PNG bytes for an item icon, cached on disk."""
+        cache_key = f"ddragon:item:{patch}:{item_id}"
+        cached = self.cache.get(cache_key)
+        if cached is not None:
+            return cached
+
+        if self._client is None:
+            raise RuntimeError("DataDragon must be used as an async context manager")
+
+        url = ITEM_ICON_URL_TEMPLATE.format(patch=patch, item_id=item_id)
+        try:
+            response = await self._client.get(url)
+            response.raise_for_status()
+            data = response.content
+        except httpx.HTTPError as exc:
+            raise DataDragonError(
+                f"item icon fetch failed for {item_id} on {patch}: {exc}"
+            ) from exc
+
+        self.cache.set(cache_key, data, expire=self.TTL_CHAMPIONS)
+        return data
+
+    async def prefetch_item_icons(
+        self,
+        patch: str,
+        item_ids: list[int],
+        *,
+        concurrency: int = 8,
+    ) -> dict[int, bytes]:
+        """Fetch every item icon in parallel; return id → PNG bytes.
+        Failed fetches are skipped (logged, not raised) so a single
+        404 doesn't take down the whole prefetch — same contract as
+        prefetch_icons for champions."""
+        import asyncio
+
+        sem = asyncio.Semaphore(concurrency)
+
+        async def one(item_id: int) -> tuple[int, bytes | None]:
+            async with sem:
+                try:
+                    return item_id, await self.fetch_item_icon(patch, item_id)
+                except DataDragonError as exc:
+                    logger.warning("ddragon_item_icon_skipped %d: %s", item_id, exc)
+                    return item_id, None
+
+        results = await asyncio.gather(*(one(i) for i in item_ids))
+        return {i: data for i, data in results if data is not None}

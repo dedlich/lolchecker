@@ -31,6 +31,7 @@ from . import styles
 from .widgets import TierBadge
 
 ICON_SIZE = 28
+BUILD_ITEM_ICON_PX = 26  # per-item swatch size in the build display
 
 
 class PickCard(QFrame):
@@ -63,11 +64,13 @@ class PickCard(QFrame):
         *,
         rank: int | None = None,
         build_reasons: list[str] | None = None,
+        item_icons: dict[str, QPixmap] | None = None,
     ) -> None:
         super().__init__()
         self.setProperty("card", True)
         self.suggestion = suggestion
         self._build = build
+        self._item_icons = item_icons or {}
         # Cursor signals "this surface does something on click".
         # The Apply Build QPushButton accepts its own click events
         # so it doesn't propagate up to mousePressEvent below.
@@ -273,27 +276,70 @@ class PickCard(QFrame):
             )
         super().mousePressEvent(event)
 
-    @staticmethod
-    def _add_build_lines(outer: QVBoxLayout, build: ChampionBuild) -> None:
+    def _add_build_lines(self, outer: QVBoxLayout, build: ChampionBuild) -> None:
         """Three compact lines for runes / items / summoners. Each line
-        carries a colored leading sigil + bullet-separated content with
-        its own accent so the rows visually parse at a glance.
-
-        ``outer`` may be either the main card layout (back-compat) or
-        the variant-switching ``_build_section`` sub-layout. Either way
-        we just append rows to it."""
+        carries a colored leading sigil; runes + summoners stay text,
+        items get rendered as inline icons (with text fallback when no
+        icon was prefetched for that name)."""
         if build.runes:
             outer.addWidget(_build_line(
                 "🛡", build.runes, styles.TIER_A, sep=" • ",
             ))
         if build.items:
-            outer.addWidget(_build_line(
-                "⚔", build.items, styles.TIER_S, sep="  ›  ",
-            ))
+            outer.addLayout(self._items_row(build.items))
         if build.summoners:
             outer.addWidget(_build_line(
                 "✨", build.summoners, styles.TEXT_SECONDARY, sep=" • ",
             ))
+
+    def _items_row(self, item_names: list[str]) -> QHBoxLayout:
+        """Render the item list as a row of small icon labels with
+        sword-sigil prefix. Items without a prefetched icon fall
+        through to a single text label so the data isn't lost. The
+        full sequence is preserved — no dedup, no reordering."""
+        row = QHBoxLayout()
+        row.setSpacing(2)
+        row.setContentsMargins(0, 0, 0, 0)
+        sigil = QLabel("⚔")
+        sigil.setStyleSheet(
+            f"color: {styles.TIER_S};"
+            f" font-size: {styles.FS_HEADING}px;"
+            " padding-right: 4px;"
+        )
+        row.addWidget(sigil)
+        for i, name in enumerate(item_names):
+            pix = self._item_icons.get(name)
+            if pix is not None and not pix.isNull():
+                lbl = QLabel()
+                lbl.setFixedSize(BUILD_ITEM_ICON_PX, BUILD_ITEM_ICON_PX)
+                lbl.setScaledContents(True)
+                lbl.setPixmap(pix)
+                lbl.setToolTip(name)
+                lbl.setStyleSheet(
+                    f"border: 1px solid {styles.BORDER_FAINT};"
+                    f" border-radius: {styles.RADIUS_SMALL}px;"
+                )
+                row.addWidget(lbl)
+            else:
+                # No icon available yet — text fallback so the item
+                # is at least readable while the prefetch finishes.
+                lbl = QLabel(name)
+                lbl.setStyleSheet(
+                    f"color: {styles.TIER_S};"
+                    f" font-size: {styles.FS_LABEL}px;"
+                    " padding: 0 4px;"
+                )
+                row.addWidget(lbl)
+            if i < len(item_names) - 1:
+                arrow = QLabel("›")
+                arrow.setStyleSheet(
+                    f"color: {styles.TEXT_MUTED};"
+                    f" font-size: {styles.FS_LABEL}px;"
+                    " padding: 0 2px;"
+                )
+                row.addWidget(arrow)
+        row.addStretch(1)
+        return row
 
     def _add_apply_button(self, outer: QVBoxLayout, build: ChampionBuild) -> None:
         """Apply Build button — pushes the recommended runes into a new

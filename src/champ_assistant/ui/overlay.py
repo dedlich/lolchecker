@@ -258,6 +258,9 @@ class MainOverlay(QMainWindow):
         # Champion icon cache (string key like "Garen" → scaled QPixmap).
         # Filled asynchronously by the icon-prefetch task in __main__.
         self._champion_icons: dict[str, QPixmap] = {}
+        # Item icon cache (item NAME like "Stridebreaker" → scaled QPixmap).
+        # Same async-fill path as champion icons.
+        self._item_icons: dict[str, QPixmap] = {}
         self._last_view: SessionView | None = None
 
     @property
@@ -279,6 +282,14 @@ class MainOverlay(QMainWindow):
         was already rendered, re-render it so the icons appear immediately.
         """
         self._champion_icons.update(icons)
+        if self._last_view is not None:
+            self.update_view(self._last_view)
+
+    def set_item_icons(self, icons: dict[str, QPixmap]) -> None:
+        """Inject prefetched item icons keyed by ITEM NAME (not ID).
+        Re-renders the current view so PickCard rows show icons in
+        place of the prior text-only build display."""
+        self._item_icons.update(icons)
         if self._last_view is not None:
             self.update_view(self._last_view)
 
@@ -362,6 +373,7 @@ class MainOverlay(QMainWindow):
             card = PickCard(
                 s, icon=icon, build=build, rank=idx,
                 build_reasons=reasons,
+                item_icons=self._item_icons,
             )
             card.apply_build_requested.connect(self.apply_build_requested.emit)
             card.pick_hover_requested.connect(self.pick_hover_requested.emit)
