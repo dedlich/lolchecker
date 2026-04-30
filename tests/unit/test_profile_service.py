@@ -151,6 +151,75 @@ def test_enemy_profile_has_data_includes_role_winrates() -> None:
     assert profile.has_data is True
 
 
+# ----------------------------------------------------------------------
+# Behavior tags — compute_behavior_tags
+# ----------------------------------------------------------------------
+def test_behavior_tags_empty_for_no_data() -> None:
+    from champ_assistant.profiling.profile import EnemyProfile
+    profile = EnemyProfile(summoner_name="X")
+    assert profile.behavior_tags == []
+
+
+def test_behavior_tags_otp_when_one_role_dominates() -> None:
+    """≥70% of recent games on a single role → OTP label."""
+    from champ_assistant.profiling.profile import EnemyProfile
+    profile = EnemyProfile(
+        summoner_name="X",
+        role_winrates={"MID": (15, 2), "TOP": (2, 1)},  # 17/3 = 85%
+    )
+    assert "OTP MID" in profile.behavior_tags
+
+
+def test_behavior_tags_autofill_when_no_clear_main() -> None:
+    """Spread roles, no role >45% → autofill suspect."""
+    from champ_assistant.profiling.profile import EnemyProfile
+    profile = EnemyProfile(
+        summoner_name="X",
+        role_winrates={
+            "TOP": (3, 2), "JUNGLE": (3, 2), "MID": (3, 2),
+            "BOT": (2, 1),
+        },
+    )
+    assert "Autofill?" in profile.behavior_tags
+
+
+def test_behavior_tags_hot_streak() -> None:
+    from champ_assistant.profiling.profile import EnemyProfile
+    profile = EnemyProfile(summoner_name="X", wins=4, losses=1, streak=4)
+    assert any("Hot" in t for t in profile.behavior_tags)
+
+
+def test_behavior_tags_cold_streak() -> None:
+    from champ_assistant.profiling.profile import EnemyProfile
+    profile = EnemyProfile(summoner_name="X", wins=1, losses=4, streak=-4)
+    assert any("Tilt" in t for t in profile.behavior_tags)
+
+
+def test_behavior_tags_champion_specialist() -> None:
+    """High mastery points (≥500k) on top champ → specialist."""
+    from champ_assistant.profiling.profile import EnemyProfile, TopChampion
+    profile = EnemyProfile(
+        summoner_name="X",
+        top_champions=[TopChampion(157, 700_000, 7)],
+    )
+    assert "Champ-Spec" in profile.behavior_tags
+
+
+def test_behavior_tags_veteran_account_level() -> None:
+    from champ_assistant.profiling.profile import EnemyProfile
+    profile = EnemyProfile(summoner_name="X", level=400)
+    assert "Veteran" in profile.behavior_tags
+
+
+def test_behavior_tags_newbie_account_level() -> None:
+    from champ_assistant.profiling.profile import EnemyProfile
+    profile = EnemyProfile(
+        summoner_name="X", level=30,
+        role_winrates={"MID": (1, 0)},  # has_data → tags compute
+    )
+    assert "Newbie" in profile.behavior_tags
+
+
 @pytest.mark.asyncio
 async def test_summoner_404_returns_empty_profile() -> None:
     def handler(request: httpx.Request) -> httpx.Response:

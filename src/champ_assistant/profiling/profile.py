@@ -111,7 +111,81 @@ class EnemyProfile:
             or (self.wins + self.losses) > 0
             or self.rank.is_ranked
             or bool(self.role_winrates)
+            or self.level > 0
         )
+
+    @property
+    def behavior_tags(self) -> list[str]:
+        """Curated short-form labels derived from the rest of the
+        profile. Pure function over the existing fields — no extra
+        API fetches needed. Returns sorted shortest-to-longest so
+        the UI can pack them tightly."""
+        return compute_behavior_tags(self)
+
+
+# ----------------------------------------------------------------------
+# Behavior-tag computation — pure function, testable without HTTP
+# ----------------------------------------------------------------------
+
+# Role-share threshold for "this player only plays X" labelling.
+# 70%+ of the recent-20 sample on one role = pretty solid OTP.
+OTP_ROLE_SHARE = 0.70
+# Below this share for the most-played role we suspect autofill —
+# "they play too many roles to claim a main".
+AUTOFILL_TOP_SHARE = 0.45
+# Streak length that flips into hot/cold pills.
+HOT_STREAK = 4
+COLD_STREAK = -4
+# Mastery point threshold for "champ specialist" tag — 500k is the
+# Riot point where champion-mastery levels max out at 7.
+HIGH_MASTERY_POINTS = 500_000
+# Account-level brackets — purely informational.
+VETERAN_LEVEL = 250
+NEWBIE_LEVEL = 50
+
+
+def compute_behavior_tags(profile: "EnemyProfile") -> list[str]:
+    """Derive a compact set of behavior labels from an EnemyProfile.
+    Empty list when the profile has no data yet (fetch in flight).
+    """
+    if not profile.has_data:
+        return []
+
+    tags: list[str] = []
+
+    # Role-play patterns.
+    if profile.role_winrates:
+        total_games = sum(w + l for w, l in profile.role_winrates.values())
+        if total_games > 0:
+            shares = {
+                role: (w + l) / total_games
+                for role, (w, l) in profile.role_winrates.items()
+            }
+            top_role, top_share = max(shares.items(), key=lambda kv: kv[1])
+            if top_share >= OTP_ROLE_SHARE:
+                tags.append(f"OTP {top_role}")
+            elif top_share < AUTOFILL_TOP_SHARE:
+                tags.append("Autofill?")
+
+    # Recent-form streaks.
+    if profile.streak >= HOT_STREAK:
+        tags.append(f"Hot W{profile.streak}")
+    elif profile.streak <= COLD_STREAK:
+        tags.append(f"Tilt L{abs(profile.streak)}")
+
+    # Champion specialist — top mastery is meaningfully high.
+    if profile.top_champions:
+        top = profile.top_champions[0]
+        if top.points >= HIGH_MASTERY_POINTS:
+            tags.append("Champ-Spec")
+
+    # Account level — informational, not actionable.
+    if profile.level >= VETERAN_LEVEL:
+        tags.append("Veteran")
+    elif 0 < profile.level <= NEWBIE_LEVEL:
+        tags.append("Newbie")
+
+    return tags
 
 
 class ProfileService:

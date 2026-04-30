@@ -73,6 +73,25 @@ class _LobbyRow(QFrame):
         self._stats.setWordWrap(True)
         outer.addWidget(self._stats)
 
+        # Per-role winrate breakdown — one line, only roles with data,
+        # sorted descending by games played. Empty string when no role
+        # data yet so the row's height stays stable.
+        self._roles = QLabel("")
+        self._roles.setStyleSheet(
+            f"color: {styles.TEXT_MUTED}; font-size: {styles.FS_CAPTION}px;"
+            f" font-family: {styles.FONT_MONO};"
+        )
+        self._roles.setWordWrap(True)
+        outer.addWidget(self._roles)
+
+        # Behavior-tag pills row — small colored chips (OTP, Hot, Tilt,
+        # Champ-Spec, Veteran, Newbie). Empty layout when no tags so
+        # the row collapses cleanly.
+        self._tags_row = QHBoxLayout()
+        self._tags_row.setSpacing(4)
+        self._tags_row.setContentsMargins(0, 0, 0, 0)
+        outer.addLayout(self._tags_row)
+
     def set_data(
         self,
         *,
@@ -116,18 +135,80 @@ class _LobbyRow(QFrame):
         total = profile.wins + profile.losses
         if total and wr is not None:
             bits.append(f"{int(wr * 100)}% WR ({total})")
-        if profile.streak >= 3:
-            bits.append(f"W{profile.streak}")
-        elif profile.streak <= -3:
-            bits.append(f"L{abs(profile.streak)} (tilt?)")
+        # Streak rendering moves into the tag row when severe (≥4) —
+        # the legacy ≥3 hint here only fires for the in-between band.
+        if profile.streak == 3:
+            bits.append("W3")
+        elif profile.streak == -3:
+            bits.append("L3")
         self._stats.setText(" · ".join(bits))
+
+        # Per-role winrate line — compact, sorted by games played desc.
+        if profile.role_winrates:
+            ordered = sorted(
+                profile.role_winrates.items(),
+                key=lambda kv: kv[1][0] + kv[1][1],
+                reverse=True,
+            )
+            parts = []
+            for role, (w, l) in ordered:
+                games = w + l
+                if games == 0:
+                    continue
+                parts.append(f"{role} {int(100 * w / games)}%/{games}g")
+            self._roles.setText(" · ".join(parts))
+        else:
+            self._roles.setText("")
+
+        # Behavior tags as small pills.
+        self._refill_tags(profile.behavior_tags)
+
+    def _refill_tags(self, tags: list[str]) -> None:
+        """Tear down + rebuild the small pill chips. Cheap — at most
+        5-6 tags, max 6 QLabel instances per row."""
+        while self._tags_row.count():
+            item = self._tags_row.takeAt(0)
+            widget = item.widget() if item is not None else None
+            if widget is not None:
+                widget.deleteLater()
+        for tag in tags:
+            chip = QLabel(tag)
+            chip.setStyleSheet(_tag_chip_stylesheet(tag))
+            self._tags_row.addWidget(chip)
+        self._tags_row.addStretch(1)
 
     def clear(self) -> None:
         self._portrait.clear()
         self._champion.setText("")
         self._summoner.setText("")
-        self._rank.setText("")
         self._stats.setText("")
+        self._roles.setText("")
+        self._refill_tags([])
+        self._rank_pill.hide()
+
+
+def _tag_chip_stylesheet(tag: str) -> str:
+    """Pick a chip color based on tag semantics. Tilt = red, hot = green,
+    OTP = accent purple, others neutral. Sticks to design tokens."""
+    if tag.startswith("Hot"):
+        color = styles.SUCCESS
+    elif tag.startswith("Tilt"):
+        color = styles.DANGER
+    elif tag.startswith("OTP"):
+        color = styles.ACCENT
+    elif tag == "Autofill?":
+        color = styles.WARNING
+    elif tag == "Champ-Spec":
+        color = styles.TIER_S
+    else:
+        color = styles.TEXT_MUTED
+    return (
+        f"color: white;"
+        f" background-color: {color};"
+        f" font-size: {styles.FS_CAPTION}px; font-weight: 700;"
+        f" padding: 1px 6px; border-radius: {styles.RADIUS_SMALL}px;"
+        " letter-spacing: 0.3px;"
+    )
 
 
 class LobbyStatsWidget(FloatingWidget):
