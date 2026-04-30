@@ -3,6 +3,7 @@
   "builds": {
     "Aatrox": {
       "TOP": {
+        "name": "Conqueror Bruiser",
         "runes": [
           "Conqueror",
           "Triumph",
@@ -20,6 +21,50 @@
         "summoners": [
           "Flash",
           "Teleport"
+        ],
+        "variants": [
+          {
+            "name": "Phase Rush Splitpush",
+            "runes": [
+              "Phase Rush",
+              "Triumph",
+              "Legend: Tenacity",
+              "Last Stand",
+              "Second Wind",
+              "Unflinching"
+            ],
+            "items": [
+              "Stridebreaker",
+              "Black Cleaver",
+              "Sterak's Gage",
+              "Plated Steelcaps"
+            ],
+            "summoners": [
+              "Flash",
+              "Teleport"
+            ]
+          },
+          {
+            "name": "Press the Attack Lethality",
+            "runes": [
+              "Press the Attack",
+              "Triumph",
+              "Legend: Bloodline",
+              "Coup de Grace",
+              "Sudden Impact",
+              "Eyeball Collection"
+            ],
+            "items": [
+              "Profane Hydra",
+              "Black Cleaver",
+              "Edge of Night",
+              "Plated Steelcaps"
+            ],
+            "summoners": [
+              "Flash",
+              "Ignite"
+            ]
+          }
         ]
       }
     },
@@ -573,23 +618,68 @@
     },
     "Darius": {
       "TOP": {
+        "name": "Conqueror Bruiser",
         "runes": [
           "Conqueror",
           "Triumph",
           "Legend: Tenacity",
           "Last Stand",
-          "Demolish",
+          "Bone Plating",
           "Unflinching"
         ],
         "items": [
           "Stridebreaker",
+          "Black Cleaver",
           "Sterak's Gage",
-          "Death's Dance",
           "Plated Steelcaps"
         ],
         "summoners": [
           "Flash",
-          "Teleport"
+          "Ghost"
+        ],
+        "variants": [
+          {
+            "name": "Phase Rush Bruiser",
+            "runes": [
+              "Phase Rush",
+              "Triumph",
+              "Legend: Tenacity",
+              "Last Stand",
+              "Second Wind",
+              "Unflinching"
+            ],
+            "items": [
+              "Trinity Force",
+              "Black Cleaver",
+              "Sterak's Gage",
+              "Plated Steelcaps"
+            ],
+            "summoners": [
+              "Flash",
+              "Teleport"
+            ]
+          },
+          {
+            "name": "Press the Attack Lethality",
+            "runes": [
+              "Press the Attack",
+              "Triumph",
+              "Legend: Bloodline",
+              "Coup de Grace",
+              "Sudden Impact",
+              "Eyeball Collection"
+            ],
+            "items": [
+              "Profane Hydra",
+              "Black Cleaver",
+              "Edge of Night",
+              "Plated Steelcaps"
+            ],
+            "summoners": [
+              "Flash",
+              "Ignite"
+            ]
+          }
         ]
       }
     },
@@ -767,6 +857,7 @@
     },
     "Ezreal": {
       "BOT": {
+        "name": "Manaflow First-Strike",
         "runes": [
           "First Strike",
           "Magical Footwear",
@@ -779,11 +870,55 @@
           "Trinity Force",
           "Muramana",
           "Rapid Firecannon",
-          "Ionian Boots of Lucidity"
+          "Berserker's Greaves"
         ],
         "summoners": [
           "Flash",
           "Heal"
+        ],
+        "variants": [
+          {
+            "name": "Press the Attack Crit",
+            "runes": [
+              "Press the Attack",
+              "Presence of Mind",
+              "Legend: Bloodline",
+              "Coup de Grace",
+              "Manaflow Band",
+              "Transcendence"
+            ],
+            "items": [
+              "Essence Reaver",
+              "Infinity Edge",
+              "Rapid Firecannon",
+              "Berserker's Greaves"
+            ],
+            "summoners": [
+              "Flash",
+              "Heal"
+            ]
+          },
+          {
+            "name": "Dark Harvest Lethality",
+            "runes": [
+              "Dark Harvest",
+              "Sudden Impact",
+              "Eyeball Collection",
+              "Treasure Hunter",
+              "Manaflow Band",
+              "Transcendence"
+            ],
+            "items": [
+              "Profane Hydra",
+              "Muramana",
+              "Edge of Night",
+              "Ionian Boots of Lucidity"
+            ],
+            "summoners": [
+              "Flash",
+              "Heal"
+            ]
+          }
         ]
       }
     },
@@ -1708,23 +1843,68 @@
     },
     "LeeSin": {
       "JUNGLE": {
+        "name": "Conqueror Bruiser",
         "runes": [
           "Conqueror",
           "Triumph",
           "Legend: Tenacity",
           "Last Stand",
-          "Second Wind",
-          "Unflinching"
+          "Sudden Impact",
+          "Treasure Hunter"
         ],
         "items": [
           "Eclipse",
-          "Sundered Sky",
           "Black Cleaver",
+          "Sterak's Gage",
           "Plated Steelcaps"
         ],
         "summoners": [
           "Flash",
           "Smite"
+        ],
+        "variants": [
+          {
+            "name": "Press the Attack Bruiser",
+            "runes": [
+              "Press the Attack",
+              "Triumph",
+              "Legend: Alacrity",
+              "Last Stand",
+              "Second Wind",
+              "Unflinching"
+            ],
+            "items": [
+              "Trinity Force",
+              "Black Cleaver",
+              "Death's Dance",
+              "Plated Steelcaps"
+            ],
+            "summoners": [
+              "Flash",
+              "Smite"
+            ]
+          },
+          {
+            "name": "Electrocute Assassin",
+            "runes": [
+              "Electrocute",
+              "Sudden Impact",
+              "Eyeball Collection",
+              "Treasure Hunter",
+              "Triumph",
+              "Coup de Grace"
+            ],
+            "items": [
+              "Profane Hydra",
+              "Black Cleaver",
+              "Edge of Night",
+              "Plated Steelcaps"
+            ],
+            "summoners": [
+              "Flash",
+              "Smite"
+            ]
+          }
         ]
       }
     },
@@ -1818,6 +1998,7 @@
     },
     "Lulu": {
       "SUPPORT": {
+        "name": "Summon Aery Enchanter",
         "runes": [
           "Summon Aery",
           "Manaflow Band",
@@ -1828,13 +2009,36 @@
         ],
         "items": [
           "Moonstone Renewer",
-          "Ardent Censer",
-          "Staff of Flowing Water",
+          "Mikael's Blessing",
+          "Redemption",
           "Ionian Boots of Lucidity"
         ],
         "summoners": [
           "Flash",
-          "Exhaust"
+          "Ignite"
+        ],
+        "variants": [
+          {
+            "name": "Aery Mid (Off-Meta)",
+            "runes": [
+              "Summon Aery",
+              "Manaflow Band",
+              "Transcendence",
+              "Scorch",
+              "Sudden Impact",
+              "Ultimate Hunter"
+            ],
+            "items": [
+              "Ludens Companion",
+              "Shadowflame",
+              "Rabadon's Deathcap",
+              "Sorcerer's Shoes"
+            ],
+            "summoners": [
+              "Flash",
+              "Ignite"
+            ]
+          }
         ]
       }
     },
@@ -4026,13 +4230,14 @@
     },
     "Yasuo": {
       "MID": {
+        "name": "Lethal Tempo Crit",
         "runes": [
           "Lethal Tempo",
           "Triumph",
           "Legend: Alacrity",
           "Last Stand",
-          "Bone Plating",
-          "Unflinching"
+          "Sudden Impact",
+          "Eyeball Collection"
         ],
         "items": [
           "Immortal Shieldbow",
@@ -4043,6 +4248,50 @@
         "summoners": [
           "Flash",
           "Ignite"
+        ],
+        "variants": [
+          {
+            "name": "Conqueror Bruiser",
+            "runes": [
+              "Conqueror",
+              "Triumph",
+              "Legend: Tenacity",
+              "Last Stand",
+              "Bone Plating",
+              "Unflinching"
+            ],
+            "items": [
+              "Stridebreaker",
+              "Sterak's Gage",
+              "Sundered Sky",
+              "Plated Steelcaps"
+            ],
+            "summoners": [
+              "Flash",
+              "Ignite"
+            ]
+          },
+          {
+            "name": "Press the Attack On-Hit",
+            "runes": [
+              "Press the Attack",
+              "Presence of Mind",
+              "Legend: Alacrity",
+              "Coup de Grace",
+              "Taste of Blood",
+              "Treasure Hunter"
+            ],
+            "items": [
+              "Kraken Slayer",
+              "Phantom Dancer",
+              "Infinity Edge",
+              "Berserker's Greaves"
+            ],
+            "summoners": [
+              "Flash",
+              "Ignite"
+            ]
+          }
         ]
       },
       "TOP": {
