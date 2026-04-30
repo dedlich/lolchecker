@@ -261,6 +261,8 @@ class MainOverlay(QMainWindow):
         # Item icon cache (item NAME like "Stridebreaker" → scaled QPixmap).
         # Same async-fill path as champion icons.
         self._item_icons: dict[str, QPixmap] = {}
+        # Rune icon cache (rune NAME like "Conqueror" → scaled QPixmap).
+        self._rune_icons: dict[str, QPixmap] = {}
         self._last_view: SessionView | None = None
 
     @property
@@ -290,6 +292,13 @@ class MainOverlay(QMainWindow):
         Re-renders the current view so PickCard rows show icons in
         place of the prior text-only build display."""
         self._item_icons.update(icons)
+        if self._last_view is not None:
+            self.update_view(self._last_view)
+
+    def set_rune_icons(self, icons: dict[str, QPixmap]) -> None:
+        """Inject prefetched rune icons keyed by rune NAME. Same
+        async-fill semantics as set_item_icons."""
+        self._rune_icons.update(icons)
         if self._last_view is not None:
             self.update_view(self._last_view)
 
@@ -374,6 +383,7 @@ class MainOverlay(QMainWindow):
                 s, icon=icon, build=build, rank=idx,
                 build_reasons=reasons,
                 item_icons=self._item_icons,
+                rune_icons=self._rune_icons,
             )
             card.apply_build_requested.connect(self.apply_build_requested.emit)
             card.pick_hover_requested.connect(self.pick_hover_requested.emit)

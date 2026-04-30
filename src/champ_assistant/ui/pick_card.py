@@ -32,6 +32,7 @@ from .widgets import TierBadge
 
 ICON_SIZE = 28
 BUILD_ITEM_ICON_PX = 26  # per-item swatch size in the build display
+BUILD_RUNE_ICON_PX = 22  # per-rune swatch — slightly smaller, runes row is denser
 
 
 class PickCard(QFrame):
@@ -65,12 +66,14 @@ class PickCard(QFrame):
         rank: int | None = None,
         build_reasons: list[str] | None = None,
         item_icons: dict[str, QPixmap] | None = None,
+        rune_icons: dict[str, QPixmap] | None = None,
     ) -> None:
         super().__init__()
         self.setProperty("card", True)
         self.suggestion = suggestion
         self._build = build
         self._item_icons = item_icons or {}
+        self._rune_icons = rune_icons or {}
         # Cursor signals "this surface does something on click".
         # The Apply Build QPushButton accepts its own click events
         # so it doesn't propagate up to mousePressEvent below.
@@ -277,20 +280,53 @@ class PickCard(QFrame):
         super().mousePressEvent(event)
 
     def _add_build_lines(self, outer: QVBoxLayout, build: ChampionBuild) -> None:
-        """Three compact lines for runes / items / summoners. Each line
-        carries a colored leading sigil; runes + summoners stay text,
-        items get rendered as inline icons (with text fallback when no
-        icon was prefetched for that name)."""
+        """Three compact lines for runes / items / summoners. Runes + items
+        render as inline icons when prefetch has caught up; summoners
+        stay text since the existing summoner_tracker handles their icons
+        elsewhere and we don't want two icon caches for the same data."""
         if build.runes:
-            outer.addWidget(_build_line(
-                "🛡", build.runes, styles.TIER_A, sep=" • ",
-            ))
+            outer.addLayout(self._runes_row(build.runes))
         if build.items:
             outer.addLayout(self._items_row(build.items))
         if build.summoners:
             outer.addWidget(_build_line(
                 "✨", build.summoners, styles.TEXT_SECONDARY, sep=" • ",
             ))
+
+    def _runes_row(self, rune_names: list[str]) -> QHBoxLayout:
+        """Render the rune list as a row of small icons. Falls back to
+        text labels for any rune we don't have an icon for (rare —
+        usually means the rune was added in a patch newer than our
+        PERK_IDS table)."""
+        row = QHBoxLayout()
+        row.setSpacing(2)
+        row.setContentsMargins(0, 0, 0, 0)
+        sigil = QLabel("🛡")
+        sigil.setStyleSheet(
+            f"color: {styles.TIER_A};"
+            f" font-size: {styles.FS_HEADING}px;"
+            " padding-right: 4px;"
+        )
+        row.addWidget(sigil)
+        for name in rune_names:
+            pix = self._rune_icons.get(name)
+            if pix is not None and not pix.isNull():
+                lbl = QLabel()
+                lbl.setFixedSize(BUILD_RUNE_ICON_PX, BUILD_RUNE_ICON_PX)
+                lbl.setScaledContents(True)
+                lbl.setPixmap(pix)
+                lbl.setToolTip(name)
+                row.addWidget(lbl)
+            else:
+                lbl = QLabel(name)
+                lbl.setStyleSheet(
+                    f"color: {styles.TIER_A};"
+                    f" font-size: {styles.FS_LABEL}px;"
+                    " padding: 0 4px;"
+                )
+                row.addWidget(lbl)
+        row.addStretch(1)
+        return row
 
     def _items_row(self, item_names: list[str]) -> QHBoxLayout:
         """Render the item list as a row of small icon labels with

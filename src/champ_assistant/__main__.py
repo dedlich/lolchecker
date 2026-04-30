@@ -1135,6 +1135,16 @@ async def _hydrate_champions_and_icons(
             except Exception:
                 log.exception("item_icons_fetch_failed")
                 item_icon_bytes = {}
+            # Rune icons — same prefetch pattern; PERK_IDS lists every
+            # rune we might surface in a build display.
+            try:
+                from champ_assistant.data.perks_data import PERK_IDS
+                perk_ids = sorted(set(PERK_IDS.values()))
+                rune_icon_bytes = await dd.prefetch_rune_icons(patch, perk_ids)
+                log.info("rune_icon_prefetch_done count=%d", len(rune_icon_bytes))
+            except Exception:
+                log.exception("rune_icons_fetch_failed")
+                rune_icon_bytes = {}
     except Exception:
         log.exception("hydrate_failed")
         return
@@ -1198,6 +1208,24 @@ async def _hydrate_champions_and_icons(
         )
     overlay.set_item_icons(item_pixmaps)
 
+    # Rune icons — keyed by rune NAME so PickCard's rune row can look
+    # them up directly off ChampionBuild.runes (which carries names).
+    from champ_assistant.data.perks_data import PERK_IDS as _PERK_IDS
+    rune_pixmaps: dict[str, QPixmap] = {}
+    for rune_name, perk_id in _PERK_IDS.items():
+        data = rune_icon_bytes.get(perk_id)
+        if data is None:
+            continue
+        pm = QPixmap()
+        if not pm.loadFromData(data):
+            continue
+        rune_pixmaps[rune_name] = pm.scaled(
+            32, 32,
+            QtCore.AspectRatioMode.KeepAspectRatio,
+            QtCore.TransformationMode.SmoothTransformation,
+        )
+    overlay.set_rune_icons(rune_pixmaps)
+
     # Forward champion icons to the floating lobby widget if it's enabled.
     lobby = getattr(overlay, "_lobby_stats", None)
     if lobby is not None:
@@ -1208,8 +1236,8 @@ async def _hydrate_champions_and_icons(
             lobby.update_view(overlay._last_view)
 
     log.info(
-        "icon_prefetch_done champs=%d spells=%d items=%d",
-        len(pixmaps), len(spell_pixmaps), len(item_pixmaps),
+        "icon_prefetch_done champs=%d spells=%d items=%d runes=%d",
+        len(pixmaps), len(spell_pixmaps), len(item_pixmaps), len(rune_pixmaps),
     )
 
 

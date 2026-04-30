@@ -38,6 +38,10 @@ CHAMPIONS_URL_TEMPLATE = f"{DDRAGON_BASE}/cdn/{{patch}}/data/en_US/champion.json
 CHAMPION_ICON_URL_TEMPLATE = f"{DDRAGON_BASE}/cdn/{{patch}}/img/champion/{{key}}.png"
 SPELL_ICON_URL_TEMPLATE = f"{DDRAGON_BASE}/cdn/{{patch}}/img/spell/{{file}}"
 ITEM_ICON_URL_TEMPLATE = f"{DDRAGON_BASE}/cdn/{{patch}}/img/item/{{item_id}}.png"
+RUNES_REFORGED_URL_TEMPLATE = (
+    f"{DDRAGON_BASE}/cdn/{{patch}}/data/en_US/runesReforged.json"
+)
+RUNE_ICON_URL_TEMPLATE = f"{DDRAGON_BASE}/cdn/img/{{icon_path}}"
 
 # LCDA returns spell display names; Data Dragon stores them under file IDs
 # starting with ``Summoner``. This map covers every spell currently usable
@@ -283,6 +287,108 @@ class DataDragon:
 
         self.cache.set(cache_key, data, expire=self.TTL_CHAMPIONS)
         return data
+
+    async def fetch_rune_paths(self, patch: str) -> dict[int, str]:
+        """Fetch ``runesReforged.json`` and return ``{perk_id: icon_path}``.
+        The icon path is relative to ``cdn/img/`` (e.g.
+        ``perk-images/Styles/Precision/Conqueror/Conqueror.png``).
+        Includes both keystones / minor runes AND tree-style icons —
+        callers filter by which IDs they care about."""
+        cache_key = f"ddragon:runes_reforged:{patch}"
+        cached = self.cache.get(cache_key)
+        if cached is not None:
+            assert isinstance(cached, dict)
+            return cached
+
+        if self._client is None:
+            raise RuntimeError("DataDragon must be used as an async context manager")
+
+        url = RUNES_REFORGED_URL_TEMPLATE.format(patch=patch)
+        try:
+            response = await self._client.get(url)
+            response.raise_for_status()
+            data = response.json()
+        except (httpx.HTTPError, ValueError) as exc:
+            raise DataDragonError(
+                f"runes_reforged fetch failed for {patch}: {exc}"
+            ) from exc
+
+        out: dict[int, str] = {}
+        for tree in data:
+            if not isinstance(tree, dict):
+                continue
+            tree_id = tree.get("id")
+            tree_icon = tree.get("icon")
+            if isinstance(tree_id, int) and isinstance(tree_icon, str):
+                out[tree_id] = tree_icon
+            for slot in tree.get("slots") or []:
+                for perk in slot.get("runes") or []:
+                    pid = perk.get("id")
+                    icon = perk.get("icon")
+                    if isinstance(pid, int) and isinstance(icon, str):
+                        out[pid] = icon
+
+        self.cache.set(cache_key, out, expire=self.TTL_CHAMPIONS)
+        return out
+
+    async def fetch_rune_icon(self, icon_path: str) -> bytes:
+        """Return PNG bytes for a rune icon at ``icon_path`` (relative
+        to cdn/img/), cached on disk by the path itself — no patch
+        dependency since rune icons are stable across patches."""
+        cache_key = f"ddragon:rune_icon:{icon_path}"
+        cached = self.cache.get(cache_key)
+        if cached is not None:
+            return cached
+
+        if self._client is None:
+            raise RuntimeError("DataDragon must be used as an async context manager")
+
+        url = RUNE_ICON_URL_TEMPLATE.format(icon_path=icon_path)
+        try:
+            response = await self._client.get(url)
+            response.raise_for_status()
+            data = response.content
+        except httpx.HTTPError as exc:
+            raise DataDragonError(
+                f"rune icon fetch failed for {icon_path}: {exc}"
+            ) from exc
+
+        self.cache.set(cache_key, data, expire=self.TTL_CHAMPIONS)
+        return data
+
+    async def prefetch_rune_icons(
+        self,
+        patch: str,
+        perk_ids: list[int],
+        *,
+        concurrency: int = 8,
+    ) -> dict[int, bytes]:
+        """Fetch rune icons for the given perk IDs in parallel; return
+        id → PNG bytes. Pairs with PERK_IDS in perks_data.py — callers
+        pass ``list(PERK_IDS.values())`` to prefetch every rune they
+        might surface in a build display."""
+        import asyncio
+        try:
+            paths = await self.fetch_rune_paths(patch)
+        except DataDragonError as exc:
+            logger.warning("ddragon_runes_reforged_failed: %s", exc)
+            return {}
+
+        sem = asyncio.Semaphore(concurrency)
+
+        async def one(perk_id: int) -> tuple[int, bytes | None]:
+            path = paths.get(perk_id)
+            if path is None:
+                return perk_id, None
+            async with sem:
+                try:
+                    return perk_id, await self.fetch_rune_icon(path)
+                except DataDragonError as exc:
+                    logger.warning("ddragon_rune_icon_skipped %d: %s", perk_id, exc)
+                    return perk_id, None
+
+        results = await asyncio.gather(*(one(p) for p in perk_ids))
+        return {pid: data for pid, data in results if data is not None}
 
     async def prefetch_item_icons(
         self,
