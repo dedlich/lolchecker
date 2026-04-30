@@ -987,6 +987,14 @@ async def _run_lcda_watcher(
     from champ_assistant import health_monitor as _health
     _health.monitor().register_service("lcda_pipeline")
 
+    # Decision engine (charter B1) — runs once per snapshot, logs the
+    # top recommendation. No UI surface yet; rule firing is visible in
+    # app.log. UI panel comes in V2 once we've validated the heuristics
+    # against real games.
+    from champ_assistant.advisor import decision_engine as _decisions
+    _last_recommendation: list[str] = [""]
+    _decision_log = logging.getLogger("champ_assistant.decisions")
+
     async def on_snapshot(snap: object) -> None:
         arrived = _time.monotonic()
         try:
@@ -1010,6 +1018,16 @@ async def _run_lcda_watcher(
             diagnostics.record_event_latency_ms(
                 (_time.monotonic() - arrived) * 1000.0
             )
+        # Decision engine pass — log only when the top rec changes,
+        # so a rule firing every snapshot doesn't flood the log.
+        try:
+            recs = _decisions.evaluate(snap)
+            top = recs[0].text if recs else ""
+            if top and top != _last_recommendation[0]:
+                _last_recommendation[0] = top
+                _decision_log.info("recommendation: %s", top)
+        except Exception:
+            log.exception("decision_engine_failed")
         if scheduler is not None:
             scheduler.request_repaint()
 
