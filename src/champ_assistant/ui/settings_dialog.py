@@ -525,21 +525,30 @@ def _vertical(parent: QWidget) -> QVBoxLayout:
 
 
 def _section_header(text: str) -> QLabel:
-    label = QLabel(text.upper())
+    """Section title with a small accent dot prefix — mirrors the
+    title-bar pattern from v1.7.0 so the visual rhythm is consistent
+    across the app. Compact letter-spaced uppercase for that
+    modern-overlay vibe."""
+    label = QLabel(f"●  {text.upper()}")
     label.setStyleSheet(
-        f"color: {styles.TEXT_MUTED};"
+        f"color: {styles.ACCENT};"
         f" font-size: {styles.FS_LABEL}px;"
         " font-weight: 700; text-transform: uppercase;"
-        " letter-spacing: 1.2px; padding-top: 4px;"
+        " letter-spacing: 1.6px; padding: 12px 0 4px 0;"
     )
     return label
 
 
 def _hint_label(text: str) -> QLabel:
+    """Caption-style hint underneath a control. Slightly indented so
+    it visually anchors to the control above without competing with
+    the next section header."""
     label = QLabel(text)
     label.setStyleSheet(
-        f"color: {styles.TEXT_MUTED}; font-size: {styles.FS_LABEL}px;"
-        " padding-left: 24px;"
+        f"color: {styles.TEXT_MUTED};"
+        f" font-size: {styles.FS_CAPTION}px;"
+        f" padding-left: 24px; padding-bottom: 6px;"
+        " line-height: 1.4;"
     )
     label.setWordWrap(True)
     return label
