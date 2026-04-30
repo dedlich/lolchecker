@@ -16,6 +16,8 @@ from champ_assistant.advisor.decision_engine import (
     LEVEL_GAP_THRESHOLD,
     Recommendation,
     evaluate,
+    fight_score,
+    win_probability,
     rule_baron_give_up,
     rule_baron_priority,
     rule_drake_give_up,
@@ -391,3 +393,122 @@ def test_evaluate_composes_kill_lead_with_drake_priority() -> None:
     severities = [r.severity for r in recs]
     assert "alert" in severities
     assert severities[0] == "alert"  # alert sorted first
+
+
+# ----------------------------------------------------------------------
+# v2 spec — Recommendation extension fields
+# ----------------------------------------------------------------------
+def test_recommendation_has_v2_defaults() -> None:
+    """v2 added confidence / risk / ttl_s. Legacy callers that omit
+    them should still get a usable Recommendation with conservative
+    defaults (rule fired → moderate confidence, medium risk, 15s ttl)."""
+    rec = Recommendation(text="x", severity="info", category="tempo")
+    assert 0.0 <= rec.confidence <= 1.0
+    assert rec.risk in ("LOW", "MEDIUM", "HIGH")
+    assert rec.ttl_s > 0
+
+
+def test_recommendation_accepts_explicit_v2_fields() -> None:
+    rec = Recommendation(
+        text="Force fight", severity="alert", category="objective",
+        confidence=0.9, risk="LOW", ttl_s=30.0,
+    )
+    assert rec.confidence == 0.9
+    assert rec.risk == "LOW"
+    assert rec.ttl_s == 30.0
+
+
+# ----------------------------------------------------------------------
+# Layer 2 — fight_score (weighted sum of advantage signals)
+# ----------------------------------------------------------------------
+def test_fight_score_zero_for_neutral_state() -> None:
+    snap = _Snap(
+        ally_aggregate=_Aggregate(items_value=15000, kills=10),
+        enemy_aggregate=_Aggregate(items_value=15000, kills=10),
+        allies=[_Player(level=10)],
+        enemies=[_Player(level=10)],
+    )
+    assert abs(fight_score(snap)) < 0.05
+
+
+def test_fight_score_positive_when_clearly_ahead() -> None:
+    snap = _Snap(
+        ally_aggregate=_Aggregate(items_value=20000, kills=15),
+        enemy_aggregate=_Aggregate(items_value=15000, kills=10),
+        allies=[_Player(level=12)],
+        enemies=[_Player(level=11)],
+    )
+    score = fight_score(snap)
+    assert score > 0.3
+
+
+def test_fight_score_negative_when_far_behind() -> None:
+    snap = _Snap(
+        ally_aggregate=_Aggregate(items_value=10000, kills=5),
+        enemy_aggregate=_Aggregate(items_value=18000, kills=15),
+        allies=[_Player(level=10)],
+        enemies=[_Player(level=12)],
+    )
+    score = fight_score(snap)
+    assert score < -0.3
+
+
+def test_fight_score_clamped_to_unit_range() -> None:
+    """Saturate the inputs — score must stay in [-1, 1]."""
+    snap = _Snap(
+        ally_aggregate=_Aggregate(items_value=999_999, kills=999),
+        enemy_aggregate=_Aggregate(items_value=0, kills=0),
+        allies=[_Player(level=18)],
+        enemies=[_Player(level=1)],
+    )
+    assert -1.0 <= fight_score(snap) <= 1.0
+
+
+def test_fight_score_none_snapshot_returns_zero() -> None:
+    assert fight_score(None) == 0.0
+
+
+# ----------------------------------------------------------------------
+# Layer 3 — win_probability (logistic of fight_score)
+# ----------------------------------------------------------------------
+def test_win_probability_neutral_state_is_about_half() -> None:
+    snap = _Snap(
+        ally_aggregate=_Aggregate(items_value=15000, kills=10),
+        enemy_aggregate=_Aggregate(items_value=15000, kills=10),
+        allies=[_Player(level=10)],
+        enemies=[_Player(level=10)],
+    )
+    assert abs(win_probability(snap) - 0.5) < 0.05
+
+
+def test_win_probability_strong_lead_above_threshold() -> None:
+    snap = _Snap(
+        ally_aggregate=_Aggregate(items_value=22000, kills=20),
+        enemy_aggregate=_Aggregate(items_value=12000, kills=5),
+        allies=[_Player(level=14)],
+        enemies=[_Player(level=10)],
+    )
+    assert win_probability(snap) > 0.8
+
+
+def test_win_probability_strong_deficit_below_threshold() -> None:
+    snap = _Snap(
+        ally_aggregate=_Aggregate(items_value=8000, kills=2),
+        enemy_aggregate=_Aggregate(items_value=20000, kills=18),
+        allies=[_Player(level=8)],
+        enemies=[_Player(level=14)],
+    )
+    assert win_probability(snap) < 0.2
+
+
+def test_win_probability_bounded_zero_to_one() -> None:
+    """The logistic clamp must stay in [0, 1] regardless of input."""
+    for items in (0, 999_999):
+        snap = _Snap(
+            ally_aggregate=_Aggregate(items_value=items, kills=0),
+            enemy_aggregate=_Aggregate(items_value=999_999 - items, kills=0),
+            allies=[_Player(level=10)],
+            enemies=[_Player(level=10)],
+        )
+        p = win_probability(snap)
+        assert 0.0 <= p <= 1.0

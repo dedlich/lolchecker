@@ -15,6 +15,7 @@ visual validation without needing a live LCDA snapshot. Drives the
 from __future__ import annotations
 
 from PyQt6.QtCore import Qt
+from PyQt6.QtGui import QColor, QPainter, QPaintEvent
 from PyQt6.QtWidgets import QFrame, QHBoxLayout, QLabel, QVBoxLayout
 
 from ..advisor.decision_engine import Recommendation
@@ -22,6 +23,7 @@ from . import styles
 from .floating_widget import FloatingWidget
 
 MAX_VISIBLE_ROWS = 3
+CONFIDENCE_BAR_HEIGHT_PX = 3  # thin strip at the bottom of each rec card
 
 
 # Per-category glyph + tint. Icon-on-color reads better than plain
@@ -45,6 +47,10 @@ class _RecRow(QFrame):
         super().__init__()
         self.setProperty("rec-row", True)
         self.setStyleSheet(self._stylesheet_for("info"))
+        # Confidence-bar state — set by render(). Defaults make the
+        # bar invisible until a real Recommendation lands.
+        self._severity: str | None = None
+        self._confidence: float = 0.0
 
         layout = QHBoxLayout(self)
         layout.setContentsMargins(
@@ -74,6 +80,37 @@ class _RecRow(QFrame):
         self._glyph.setText(_CATEGORY_GLYPHS.get(rec.category, "•"))
         self._glyph.setStyleSheet(self._glyph_stylesheet(rec.severity))
         self.setStyleSheet(self._stylesheet_for(rec.severity))
+        # Stash for paintEvent — confidence bar at bottom of the card.
+        self._severity = rec.severity
+        self._confidence = max(0.0, min(1.0, rec.confidence))
+        self.update()
+
+    def paintEvent(self, event: QPaintEvent) -> None:  # type: ignore[override]
+        super().paintEvent(event)
+        # Render the confidence bar over the bottom-inside edge of the
+        # card. Color matches severity, width fills proportional to
+        # the rec's confidence.
+        if not getattr(self, "_severity", None):
+            return
+        painter = QPainter(self)
+        try:
+            painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+            color = QColor(self._color_for(self._severity))
+            color.setAlpha(220)
+            painter.setBrush(color)
+            painter.setPen(Qt.PenStyle.NoPen)
+            inner_w = self.width() - 2 * (self.STRIP_W + 4)
+            bar_w = int(inner_w * self._confidence)
+            painter.drawRoundedRect(
+                self.STRIP_W + 4,
+                self.height() - CONFIDENCE_BAR_HEIGHT_PX - 4,
+                bar_w,
+                CONFIDENCE_BAR_HEIGHT_PX,
+                CONFIDENCE_BAR_HEIGHT_PX // 2,
+                CONFIDENCE_BAR_HEIGHT_PX // 2,
+            )
+        finally:
+            painter.end()
 
     @staticmethod
     def _color_for(severity: str) -> str:
@@ -178,12 +215,15 @@ class RecommendationPanel(FloatingWidget):
 
     def populate_demo(self) -> None:
         """Fill with example output of every rule for visual testing
-        without a live game. Top-3 by severity render."""
+        without a live game. Top-3 by severity render. Each demo
+        rec carries a representative confidence value so the new
+        bottom confidence-bar reads visually on first paint."""
         demo = [
             Recommendation(
                 text="Baron in 35s — Vision-Pinks setzen, "
                      "Side-Wellen prep, Ults checken",
                 severity="alert", category="objective",
+                confidence=0.92, risk="MEDIUM", ttl_s=35.0,
             ),
             Recommendation(
                 text="Drache spawnt in 25s — Vision setzen, Side gruppieren",

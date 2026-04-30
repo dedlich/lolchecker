@@ -61,10 +61,22 @@ LATE_GAME_S = 30 * 60.0         # past 30:00 every fight is the last fight
 class Recommendation:
     """One actionable hint. Severity sorts these in the UI; category
     groups them so the user can see at a glance whether it's an
-    attacking play, a safety call, or an objective decision."""
+    attacking play, a safety call, or an objective decision.
+
+    The confidence / risk / ttl_s fields were added in the v2 spec
+    pass — they describe HOW SURE we are about the call, what the
+    downside looks like, and how long the call stays valid. All
+    three default to conservative values so legacy rules that didn't
+    set them still produce sensible output."""
     text: str           # human-readable, German, short ("Drache forcen")
     severity: str       # "info" | "warn" | "alert"
     category: str       # "objective" | "tempo" | "safety" | "lane"
+    # v2 additions — confidence band 0..1 (UI renders as a bar / glow),
+    # risk band drives danger-coloring of the action, ttl_s tells the
+    # UI how long this hint stays relevant before it should fade.
+    confidence: float = 0.7    # default = "rule fired, moderate confidence"
+    risk: str = "MEDIUM"       # "LOW" | "MEDIUM" | "HIGH"
+    ttl_s: float = 15.0        # seconds before the hint becomes stale
 
 
 # --------------------------------------------------------------------------
@@ -93,6 +105,48 @@ def _avg_level_diff(snapshot: "LcdaSnapshot") -> float:
     a = sum(getattr(p, "level", 0) for p in allies) / len(allies)
     e = sum(getattr(p, "level", 0) for p in enemies) / len(enemies)
     return a - e
+
+
+def fight_score(snapshot: "LcdaSnapshot | None") -> float:
+    """Layer-2 scoring (v2 spec): weighted sum of advantage signals →
+    a single 'how good is fighting right now' number in [-1.0..+1.0].
+
+    Positive = we win this fight, negative = we lose. The mapping is
+    intentionally calibrated against the existing thresholds:
+
+      * gold_diff: ±5000 saturates one full point (≈ kill-spree gap)
+      * level_diff: ±2.0 levels saturates (1 level ≈ 0.5 point)
+      * kill_diff: ±10 saturates (large team-snowball)
+
+    Pure function — no side effects. Used by future Layer-3 prediction
+    helpers + as a confidence input for individual rules.
+    """
+    if snapshot is None:
+        return 0.0
+    gold = _team_gold_diff(snapshot)
+    levels = _avg_level_diff(snapshot)
+    kills = _team_kill_diff(snapshot)
+    score = (
+        max(-1.0, min(1.0, gold / 5000.0)) * 0.45
+        + max(-1.0, min(1.0, levels / 2.0)) * 0.30
+        + max(-1.0, min(1.0, kills / 10.0)) * 0.25
+    )
+    return max(-1.0, min(1.0, score))
+
+
+def win_probability(snapshot: "LcdaSnapshot | None") -> float:
+    """Layer-3 prediction (v2 spec): logistic-shape mapping of
+    fight_score into a [0..1] win-probability estimate.
+
+    Heuristic, not a trained model — fight_score is already bounded
+    [-1..1] so the logistic just smooths it into a probability that
+    the UI can render as a bar / percentage. Future swap-in of a real
+    regression model is a single function-body change.
+    """
+    s = fight_score(snapshot)
+    # Logistic with steepness 3 — roughly 0.95 at +1, 0.05 at -1.
+    import math
+    return 1.0 / (1.0 + math.exp(-3.0 * s))
 
 
 def _objective_remaining(
