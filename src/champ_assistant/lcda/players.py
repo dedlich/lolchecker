@@ -79,6 +79,14 @@ class LivePlayer:
     assists: int = 0
     creep_score: int = 0
     items_value: int = 0   # sum of items[].price — proxy for gold spent
+    respawn_timer: float = 0.0  # seconds until respawn; 0 = alive
+
+    @property
+    def is_alive(self) -> bool:
+        """True when the player is on the map. False during the
+        death-timer respawn window — used by the decision engine
+        to detect numbers (dis)advantage."""
+        return self.respawn_timer <= 0.0
 
 
 def _canonical_name(raw: dict) -> str:
@@ -131,6 +139,7 @@ def parse_players(all_players: list[dict]) -> list[LivePlayer]:
                 assists=int(scores.get("assists") or 0),
                 creep_score=int(scores.get("creepScore") or 0),
                 items_value=items_value,
+                respawn_timer=float(entry.get("respawnTimer") or 0.0),
             )
         )
     return players

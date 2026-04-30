@@ -158,8 +158,8 @@ def test_default_toggles_are_sane(qt_app, isolated_overlay_config) -> None:  # t
     assert state.enable_update_check is True
     # Low Resource Mode opt-in only — never default
     assert state.low_resource_mode is False
-    # Focus Mode opt-in only
-    assert state.focus_mode is False
+    # Focus Mode default ON per v2 spec ("show one decision at a time")
+    assert state.focus_mode is True
     # Experimental vision: scoreboard detection ON (drives the
     # gold-diff overlay's tab-scoreboard gating, default-on so users
     # see the feature without opt-in); camp detection still OFF

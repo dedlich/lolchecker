@@ -169,6 +169,22 @@ def _objective_remaining(
     return None
 
 
+def _alive_count(players: list, default_to_full_team: bool = True) -> int:
+    """Count players currently on the map (respawn_timer == 0).
+    Falls back to ``len(players)`` when respawn data isn't carried
+    (older LCDA payloads / replayed fixtures) — alternative is to
+    silently report everyone as dead, which would spam fight-avoidance
+    recommendations during the early-game window."""
+    if not players:
+        return 0
+    has_respawn = any(
+        getattr(p, "respawn_timer", None) is not None for p in players
+    )
+    if not has_respawn and default_to_full_team:
+        return len(players)
+    return sum(1 for p in players if getattr(p, "is_alive", True))
+
+
 def _team_kill_diff(snapshot: "LcdaSnapshot") -> int:
     """Allies' total kills minus enemies'. Positive when we're snowballing.
     Falls back to summing per-player kills when team aggregates are
@@ -440,6 +456,59 @@ def rule_kill_deficit_defensive(snapshot: "LcdaSnapshot") -> Recommendation | No
     )
 
 
+def rule_numbers_disadvantage(snapshot: "LcdaSnapshot") -> Recommendation | None:
+    """Allies dead while enemies are up → don't fight, don't extend.
+    Highest-priority safety call — overrides drake/baron context.
+    """
+    allies_alive = _alive_count(getattr(snapshot, "allies", []) or [])
+    enemies_alive = _alive_count(getattr(snapshot, "enemies", []) or [])
+    if allies_alive >= enemies_alive:
+        return None
+    deficit = enemies_alive - allies_alive
+    if deficit <= 0:
+        return None
+    return Recommendation(
+        text=f"{deficit} Mate(s) tot — KEINE Fights, "
+             f"defensiv positionieren bis Respawn",
+        severity="alert",
+        category="safety",
+        confidence=0.92,
+        risk="HIGH",
+        ttl_s=8.0,
+        reasons=(
+            f"Allies alive: {allies_alive}/5",
+            f"Enemies alive: {enemies_alive}/5",
+            "Numbers-Disadvantage = Death-Risk × 5",
+        ),
+    )
+
+
+def rule_numbers_advantage(snapshot: "LcdaSnapshot") -> Recommendation | None:
+    """Enemies dead → push the temporary 5v4 / 5v3. The window is
+    short (single death = ~30s), so the rec ttl matches that."""
+    allies_alive = _alive_count(getattr(snapshot, "allies", []) or [])
+    enemies_alive = _alive_count(getattr(snapshot, "enemies", []) or [])
+    if enemies_alive >= allies_alive:
+        return None
+    advantage = allies_alive - enemies_alive
+    if advantage <= 0:
+        return None
+    return Recommendation(
+        text=f"{advantage} Gegner tot — Pressure machen, "
+             f"Objective forcen oder Wave-Crash",
+        severity="alert",
+        category="tempo",
+        confidence=0.90,
+        risk="LOW",
+        ttl_s=12.0,
+        reasons=(
+            f"Allies alive: {allies_alive}/5",
+            f"Enemies alive: {enemies_alive}/5",
+            "Window ist kurz — sofort ausnutzen",
+        ),
+    )
+
+
 def rule_late_game_group(snapshot: "LcdaSnapshot") -> Recommendation | None:
     """Past 30:00 every teamfight decides the game. Splitpush is
     rarely worth the death timer; group as 5 around objectives."""
@@ -465,6 +534,10 @@ def rule_late_game_group(snapshot: "LcdaSnapshot") -> Recommendation | None:
 # Rule registry — extend by appending a function. Order doesn't affect
 # ``evaluate``'s output (caller sorts by severity).
 ALL_RULES: tuple[Callable[["LcdaSnapshot"], Recommendation | None], ...] = (
+    # Numbers-asymmetry rules first — if a teammate is dead we want
+    # the SAFETY call to dominate over any objective-priority rule.
+    rule_numbers_disadvantage,
+    rule_numbers_advantage,
     rule_drake_priority,
     rule_drake_give_up,
     rule_baron_priority,

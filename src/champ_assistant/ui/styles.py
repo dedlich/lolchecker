@@ -161,17 +161,17 @@ def floating_panel_stylesheet() -> str:
     than a sweep across every floating widget. Three identical-ish
     inline gradients with subtly different alphas was the old anti-pattern.
     """
-    # Glass-style: more translucent gradient + accent-tinted top
-    # highlight + softer border. Real backdrop-blur isn't reachable
-    # from Qt6 stylesheets, but the layered translucency + warm-cool
-    # gradient gives the look without needing a custom QPainter pass.
+    # Premium-solid: opaker als Glass-Style. The v2 spec walked the
+    # glass attempt back — translucent panels disappeared into busy
+    # game backgrounds. Higher alpha (240) gives a clean, readable
+    # surface that still has subtle gradient depth + accent border.
     return (
         "QFrame[panel='true'] {"
         " background: qlineargradient(x1:0, y1:0, x2:0, y2:1,"
-        "  stop:0 rgba(28, 38, 54, 175),"
-        "  stop:0.4 rgba(18, 24, 35, 175),"
-        "  stop:1 rgba(10, 14, 20, 185));"
-        f" border: 1px solid {BORDER_FAINT};"
+        "  stop:0 rgba(26, 33, 46, 240),"
+        "  stop:0.4 rgba(18, 24, 35, 240),"
+        "  stop:1 rgba(12, 16, 24, 245));"
+        f" border: 1px solid {BORDER};"
         f" border-radius: {RADIUS_LARGE}px;"
         " }"
     )

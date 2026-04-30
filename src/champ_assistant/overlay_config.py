@@ -68,10 +68,10 @@ class OverlayState:
     # LRM off again restores the prior preferences.
     low_resource_mode: bool = False
     # Focus Mode (v2 spec) — collapses the recommendation panel to
-    # the top-1 alert only. Hides the rest of the rec list to reduce
-    # cognitive load mid-game. Off by default — most users want the
-    # top-3 fan-out for context.
-    focus_mode: bool = False
+    # the top-1 alert only. ON by default per the "show one decision
+    # at a time" UX principle from the v2 spec; users who want the
+    # top-3 context fan-out can disable it in Settings.
+    focus_mode: bool = True
 
 
 def _config_dir() -> Path:

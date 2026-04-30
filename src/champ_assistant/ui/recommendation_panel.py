@@ -87,22 +87,44 @@ class _RecRow(QFrame):
         self._glyph.setStyleSheet(self._glyph_stylesheet("info"))
         layout.addWidget(self._glyph)
 
+        text_col = QVBoxLayout()
+        text_col.setSpacing(2)
+        text_col.setContentsMargins(0, 0, 0, 0)
         self._text = QLabel("")
         self._text.setWordWrap(True)
         self._text.setStyleSheet(
             f"color: {styles.TEXT_PRIMARY};"
             f" font-size: {styles.FS_BODY}px; font-weight: 600;"
         )
-        layout.addWidget(self._text, 1)
+        text_col.addWidget(self._text)
+        # Meta-row right under the action: "78% • MEDIUM" — quick at-a-
+        # glance confidence + risk read without opening the InsightPanel.
+        self._meta = QLabel("")
+        self._meta.setStyleSheet(
+            f"color: {styles.TEXT_MUTED};"
+            f" font-size: {styles.FS_CAPTION}px; font-weight: 600;"
+            " letter-spacing: 0.4px;"
+        )
+        text_col.addWidget(self._meta)
+        layout.addLayout(text_col, 1)
 
     def render(self, rec: Recommendation) -> None:
         self._text.setText(rec.text)
         self._glyph.setText(_CATEGORY_GLYPHS.get(rec.category, "•"))
         self._glyph.setStyleSheet(self._glyph_stylesheet(rec.severity))
-        self.setStyleSheet(self._stylesheet_for(rec.severity))
+        # High-confidence + alert → swap to a glow-bordered stylesheet
+        # variant for that "this matters" feel without piling on
+        # extra UI chrome.
+        glow = rec.confidence >= 0.8 and rec.severity == "alert"
+        self.setStyleSheet(self._stylesheet_for(rec.severity, glow=glow))
         # Stash for paintEvent — confidence bar at bottom of the card.
         self._severity = rec.severity
         self._confidence = max(0.0, min(1.0, rec.confidence))
+        # Meta-line: "78% • MEDIUM • 12s" (TTL only when present).
+        meta = f"{int(rec.confidence * 100)}% • {rec.risk}"
+        if rec.ttl_s and rec.ttl_s > 0:
+            meta += f" • {int(rec.ttl_s)}s"
+        self._meta.setText(meta)
         # Pulse only when this is a high-priority alert AND the
         # engine is confident enough to warrant the attention.
         if rec.severity == "alert" and rec.confidence >= PULSE_PRIORITY_THRESHOLD:
@@ -168,8 +190,22 @@ class _RecRow(QFrame):
         }.get(severity, styles.TEXT_MUTED)
 
     @classmethod
-    def _stylesheet_for(cls, severity: str) -> str:
+    def _stylesheet_for(cls, severity: str, *, glow: bool = False) -> str:
         color = cls._color_for(severity)
+        # Glow variant — full-width accent border instead of just the
+        # left strip, plus a brighter background. Reserved for high-
+        # confidence alerts so the user catches the call instantly.
+        if glow:
+            return (
+                f"QFrame[rec-row='true'] {{"
+                f" background-color: {styles.BG_ELEVATED};"
+                f" border-radius: {styles.RADIUS}px;"
+                f" border: 2px solid {color};"
+                f" }}"
+                f" QFrame[rec-row='true']:hover {{"
+                f" background-color: {styles.BG_INTERACT};"
+                f" }}"
+            )
         return (
             f"QFrame[rec-row='true'] {{"
             f" background-color: {styles.BG_TERTIARY};"
