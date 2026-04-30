@@ -125,6 +125,10 @@ def build_parser() -> argparse.ArgumentParser:
                         help="Emit randomized state updates (with --dry-run).")
     parser.add_argument("--rate", type=float, default=10.0,
                         help="Stress-mode update rate in Hz (default: 10).")
+    parser.add_argument("--demo-recommendations", action="store_true",
+                        help="Render all decision-engine rules in the "
+                             "recommendation panel for visual testing "
+                             "(no live game required).")
     parser.add_argument("--no-ui", action="store_true",
                         help="Skip the Qt window (print events instead).")
     parser.add_argument("--data-dir", type=Path, default=DEFAULT_DATA_DIR,
@@ -675,6 +679,7 @@ def _run_with_ui(args: argparse.Namespace) -> int:
     # state object drives every visibility / feature flag below.
     from champ_assistant.ui.lobby_stats_widget import LobbyStatsWidget
     from champ_assistant.ui.minimap_timers_widget import MinimapTimersWidget
+    from champ_assistant.ui.recommendation_panel import RecommendationPanel
     from champ_assistant.ui.scoreboard_widget import ScoreboardWidget
     floating: list[object] = []
     if persisted.show_scoreboard:
@@ -685,6 +690,15 @@ def _run_with_ui(args: argparse.Namespace) -> int:
         minimap.connect_scheduler(scheduler)
         minimap.attach_engine(jungle_engine)
         floating.append(minimap)
+    # Recommendation panel — surfaces decision_engine output as
+    # severity-sorted on-screen hints. Always shown (it self-hides
+    # when no recs are active), so we can validate behavior in real
+    # games. Demo mode pre-fills with examples for visual testing.
+    recommendation_panel = RecommendationPanel()
+    floating.append(recommendation_panel)
+    if getattr(args, "demo_recommendations", False):
+        recommendation_panel.populate_demo()
+        recommendation_panel.show()
     lobby_stats: LobbyStatsWidget | None = None
     if persisted.show_lobby_stats:
         lobby_stats = LobbyStatsWidget()
@@ -988,12 +1002,16 @@ async def _run_lcda_watcher(
     _health.monitor().register_service("lcda_pipeline")
 
     # Decision engine (charter B1) — runs once per snapshot, logs the
-    # top recommendation. No UI surface yet; rule firing is visible in
-    # app.log. UI panel comes in V2 once we've validated the heuristics
-    # against real games.
+    # top recommendation AND pushes the full sorted list into the
+    # floating recommendation panel (when present).
     from champ_assistant.advisor import decision_engine as _decisions
+    from champ_assistant.ui.recommendation_panel import RecommendationPanel
     _last_recommendation: list[str] = [""]
     _decision_log = logging.getLogger("champ_assistant.decisions")
+    _rec_panel: RecommendationPanel | None = next(
+        (w for w in floating_consumers if isinstance(w, RecommendationPanel)),
+        None,
+    )
 
     async def on_snapshot(snap: object) -> None:
         arrived = _time.monotonic()
@@ -1018,14 +1036,17 @@ async def _run_lcda_watcher(
             diagnostics.record_event_latency_ms(
                 (_time.monotonic() - arrived) * 1000.0
             )
-        # Decision engine pass — log only when the top rec changes,
-        # so a rule firing every snapshot doesn't flood the log.
+        # Decision engine pass — log when the top rec changes (so the
+        # log doesn't flood) and push the full sorted list into the
+        # floating panel for live on-screen display.
         try:
             recs = _decisions.evaluate(snap)
             top = recs[0].text if recs else ""
             if top and top != _last_recommendation[0]:
                 _last_recommendation[0] = top
                 _decision_log.info("recommendation: %s", top)
+            if _rec_panel is not None:
+                _rec_panel.set_recommendations(recs)
         except Exception:
             log.exception("decision_engine_failed")
         if scheduler is not None:
