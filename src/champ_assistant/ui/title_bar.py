@@ -22,7 +22,7 @@ from . import styles
 
 
 class TitleBar(QFrame):
-    HEIGHT = 28
+    HEIGHT = 32
 
     minimize_clicked = pyqtSignal()
     close_clicked = pyqtSignal()
@@ -51,33 +51,36 @@ class TitleBar(QFrame):
         layout.setContentsMargins(12, 0, 6, 0)
         layout.setSpacing(8)
 
+        # Brand mark — small accent dot before the title carries the
+        # "modern app" feel without needing a real logo.
+        brand_dot = QLabel("●")
+        brand_dot.setStyleSheet(
+            f"color: {styles.ACCENT};"
+            f" font-size: {styles.FS_BODY}px;"
+            " padding-right: 2px;"
+        )
+        layout.addWidget(brand_dot)
+
         self._title = QLabel("Champ Assistant")
         self._title.setStyleSheet(
             f"color: {styles.TEXT_PRIMARY}; font-weight: 700;"
-            f" font-size: {styles.FS_LABEL}px; letter-spacing: 0.4px;"
+            f" font-size: {styles.FS_BODY}px; letter-spacing: 0.6px;"
         )
         layout.addWidget(self._title)
 
         self._version = QLabel("")
         self._version.setStyleSheet(
             f"color: {styles.TEXT_MUTED}; font-family: {styles.FONT_MONO};"
-            f" font-size: {styles.FS_CAPTION}px; padding-left: 4px;"
+            f" font-size: {styles.FS_CAPTION}px; padding-left: 6px;"
         )
         layout.addWidget(self._version, 1)
 
-        # Per-section toggles. Each toggle is a small lettered button that
-        # the user can click to hide that panel.
+        # Per-section toggles retired from the title bar — the cryptic
+        # letter buttons (S, !) added clutter without serving discovery.
+        # The same toggles live in Settings → Widgets, which is how
+        # users find them now. ``_toggles`` stays as an empty dict so
+        # legacy callers (set_panel_visible) don't crash on lookup.
         self._toggles: dict[str, QToolButton] = {}
-        for label, key, tip in (
-            ("S", "summoners",  "Summoner-Cooldowns ein/aus"),
-            ("!", "spikes",     "Power Spikes ein/aus"),
-        ):
-            btn = self._mk_toggle(label, tip)
-            btn.toggled.connect(
-                lambda checked, k=key: self.panel_toggled.emit(k, checked)
-            )
-            self._toggles[key] = btn
-            layout.addWidget(btn)
 
         # Opacity slider — 50%..100%. Compact, 60px wide.
         self._opacity_slider = QSlider(Qt.Orientation.Horizontal)

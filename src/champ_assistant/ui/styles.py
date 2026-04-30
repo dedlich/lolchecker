@@ -25,29 +25,30 @@ from __future__ import annotations
 from typing import Final
 
 # --------------------------------------------------------------------------
-# Backgrounds (layered)
+# Backgrounds (layered) — modernized with deeper navy + cleaner steps
 # --------------------------------------------------------------------------
 BG_PRIMARY:    Final[str] = "#0A0E14"
-BG_SECONDARY:  Final[str] = "#141A22"
-BG_TERTIARY:   Final[str] = "#1D2530"
-BG_ELEVATED:   Final[str] = "#27313F"
-BG_INTERACT:   Final[str] = "#2F3A4A"   # hover
+BG_SECONDARY:  Final[str] = "#121823"
+BG_TERTIARY:   Final[str] = "#1B2433"
+BG_ELEVATED:   Final[str] = "#252F40"
+BG_INTERACT:   Final[str] = "#2F3A4D"   # hover
+BG_HIGHLIGHT:  Final[str] = "rgba(77, 163, 255, 32)"  # accent-tinted active state
 
 # --------------------------------------------------------------------------
-# Text
+# Text — sharper contrast on primary, more separation from secondary
 # --------------------------------------------------------------------------
-TEXT_PRIMARY:   Final[str] = "#ECEEF1"
-TEXT_SECONDARY: Final[str] = "#B6BCC4"
-TEXT_MUTED:     Final[str] = "#7A848F"
-TEXT_DISABLED:  Final[str] = "#4D5662"
+TEXT_PRIMARY:   Final[str] = "#F2F4F7"
+TEXT_SECONDARY: Final[str] = "#B0B7C2"
+TEXT_MUTED:     Final[str] = "#717A86"
+TEXT_DISABLED:  Final[str] = "#4A535F"
 
 # --------------------------------------------------------------------------
-# Brand + state colors
+# Brand + state colors — cooler, more saturated accent (modern overlay tone)
 # --------------------------------------------------------------------------
-ACCENT:         Final[str] = "#5BA8FF"
-ACCENT_BRIGHT:  Final[str] = "#7DBBFF"
-ACCENT_DIM:     Final[str] = "#2A5180"
-ACCENT_FAINT:   Final[str] = "rgba(91, 168, 255, 30)"
+ACCENT:         Final[str] = "#4DA3FF"
+ACCENT_BRIGHT:  Final[str] = "#7BBDFF"
+ACCENT_DIM:     Final[str] = "#234D7A"
+ACCENT_FAINT:   Final[str] = "rgba(77, 163, 255, 30)"
 
 DANGER:         Final[str] = "#FF6B6B"
 DANGER_DIM:     Final[str] = "#7D2F2F"
@@ -95,8 +96,8 @@ FS_CAPTION:     Final[int] = 10
 FS_LABEL:       Final[int] = 11
 FS_BODY:        Final[int] = 12
 FS_HEADING:     Final[int] = 14
-FS_TITLE:       Final[int] = 17
-FS_DISPLAY:     Final[int] = 18  # scoreboard kill counters, hotkey-capture preview
+FS_TITLE:       Final[int] = 18   # bumped from 17 — better section-header presence
+FS_DISPLAY:     Final[int] = 22   # bumped from 18 — score/team-totals now read as hero numbers
 
 # --------------------------------------------------------------------------
 # Spacing + radius (4pt grid)
@@ -109,6 +110,7 @@ SPACING_LOOSE:  Final[int] = 16
 RADIUS_SMALL:   Final[int] = 4
 RADIUS:         Final[int] = 8
 RADIUS_LARGE:   Final[int] = 12
+RADIUS_PILL:    Final[int] = 999  # full-rounded chips (tags, badges)
 
 # --------------------------------------------------------------------------
 # Padding/margin scale — explicit (top, right, bottom, left) tuples.
@@ -124,8 +126,9 @@ PAD_DIALOG:     Final[tuple[int, int, int, int]] = (18, 20, 18, 20)
 # Shadow profiles — paired with QGraphicsDropShadowEffect. Subtle by
 # default; see the spec ("Avoid heavy glow effects").
 # --------------------------------------------------------------------------
-SHADOW_FLOAT:   Final[dict[str, int]] = {"blur": 22, "x": 0, "y": 3, "alpha": 160}
-SHADOW_PANEL:   Final[dict[str, int]] = {"blur": 12, "x": 0, "y": 2, "alpha": 90}
+SHADOW_FLOAT:   Final[dict[str, int]] = {"blur": 28, "x": 0, "y": 4, "alpha": 180}
+SHADOW_PANEL:   Final[dict[str, int]] = {"blur": 16, "x": 0, "y": 2, "alpha": 110}
+SHADOW_HOVER:   Final[dict[str, int]] = {"blur": 36, "x": 0, "y": 6, "alpha": 200}
 
 # --------------------------------------------------------------------------
 # Animation timing — single source so every fade/transition uses the
