@@ -206,8 +206,8 @@ def _tag_chip_stylesheet(tag: str) -> str:
         f"color: white;"
         f" background-color: {color};"
         f" font-size: {styles.FS_CAPTION}px; font-weight: 700;"
-        f" padding: 1px 6px; border-radius: {styles.RADIUS_SMALL}px;"
-        " letter-spacing: 0.3px;"
+        f" padding: 2px 8px; border-radius: {styles.RADIUS_PILL}px;"
+        " letter-spacing: 0.4px;"
     )
 
 

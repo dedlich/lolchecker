@@ -261,19 +261,21 @@ def global_stylesheet() -> str:
         }}
         QFrame[card="true"] {{
             background-color: {BG_TERTIARY};
-            border-radius: {RADIUS_SMALL}px;
+            border-radius: {RADIUS}px;
             border: 1px solid {BORDER_FAINT};
         }}
         QFrame[card="true"]:hover {{
-            border-color: {BORDER};
+            border-color: {BORDER_ACCENT};
             background-color: {BG_ELEVATED};
         }}
         QFrame[role="row"] {{
             background-color: {BG_TERTIARY};
-            border-radius: {RADIUS_SMALL}px;
+            border-radius: {RADIUS}px;
+            border: 1px solid {BORDER_FAINT};
         }}
         QFrame[role="row"]:hover {{
             background-color: {BG_INTERACT};
+            border-color: {BORDER_ACCENT};
         }}
 
         /* Status + tray-related */

@@ -297,7 +297,7 @@ class EnemyRow(QFrame):
             f"color: white;"
             f" background-color: {color};"
             f" font-size: {styles.FS_CAPTION}px; font-weight: 700;"
-            f" padding: 1px 6px; border-radius: {styles.RADIUS_SMALL}px;"
+            f" padding: 2px 8px; border-radius: {styles.RADIUS_PILL}px;"
             " letter-spacing: 0.4px;"
         )
         self._damage_badge.show()

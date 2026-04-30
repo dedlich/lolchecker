@@ -42,12 +42,22 @@ class _BanRow(QFrame):
         self.setProperty("role", "row")
         self.setCursor(Qt.CursorShape.PointingHandCursor)
         self._champion_key = suggestion.champion_key
-        # Subtle red left-border carries the ban semantic.
+        # Override the inherited red left-border with the new
+        # design-token rhythm — full rounded card, accent-glow on
+        # hover. The DANGER semantic survives via the score color
+        # + rank prefix tint.
+        # Red accent strip lives ON the row's left edge as a
+        # vertical bar, NOT as a stylesheet border (would conflict
+        # with the global QFrame[role='row'] hover state). Keep
+        # the inherited row stylesheet so hover-glow + radius
+        # stay consistent across all panels.
         self.setStyleSheet(
             f"QFrame[role='row'] {{ background-color: {styles.BG_TERTIARY};"
-            f" border-radius: {styles.RADIUS_SMALL}px;"
+            f" border-radius: {styles.RADIUS}px;"
             f" border-left: 3px solid {styles.DANGER}; }}"
-            f" QFrame[role='row']:hover {{ background-color: {styles.BG_INTERACT}; }}"
+            f" QFrame[role='row']:hover {{"
+            f" background-color: {styles.BG_INTERACT};"
+            f" border-color: {styles.DANGER}; }}"
         )
         layout = QHBoxLayout(self)
         layout.setContentsMargins(

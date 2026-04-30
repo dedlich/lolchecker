@@ -30,9 +30,9 @@ from ..data.models import ChampionBuild
 from . import styles
 from .widgets import TierBadge
 
-ICON_SIZE = 28
-BUILD_ITEM_ICON_PX = 26  # per-item swatch size in the build display
-BUILD_RUNE_ICON_PX = 22  # per-rune swatch — slightly smaller, runes row is denser
+ICON_SIZE = 36  # bumped from 28 — champion portrait is the visual anchor
+BUILD_ITEM_ICON_PX = 28  # bumped from 26 to balance the bigger portrait
+BUILD_RUNE_ICON_PX = 24  # bumped from 22 — bigger runes read at a glance
 
 
 class PickCard(QFrame):
