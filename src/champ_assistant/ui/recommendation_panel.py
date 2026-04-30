@@ -14,16 +14,29 @@ visual validation without needing a live LCDA snapshot. Drives the
 """
 from __future__ import annotations
 
-from PyQt6.QtCore import Qt
+from PyQt6.QtCore import (
+    QEasingCurve,
+    QPropertyAnimation,
+    Qt,
+)
 from PyQt6.QtGui import QColor, QPainter, QPaintEvent
-from PyQt6.QtWidgets import QFrame, QHBoxLayout, QLabel, QVBoxLayout
+from PyQt6.QtWidgets import (
+    QFrame,
+    QGraphicsOpacityEffect,
+    QHBoxLayout,
+    QLabel,
+    QVBoxLayout,
+)
 
 from ..advisor.decision_engine import Recommendation
 from . import styles
 from .floating_widget import FloatingWidget
 
 MAX_VISIBLE_ROWS = 3
+FOCUS_MODE_ROWS = 1
 CONFIDENCE_BAR_HEIGHT_PX = 3  # thin strip at the bottom of each rec card
+PULSE_DURATION_MS = 1200      # full 1→0.85→1 cycle for high-priority alerts
+PULSE_PRIORITY_THRESHOLD = 0.8
 
 
 # Per-category glyph + tint. Icon-on-color reads better than plain
@@ -51,6 +64,13 @@ class _RecRow(QFrame):
         # bar invisible until a real Recommendation lands.
         self._severity: str | None = None
         self._confidence: float = 0.0
+        # Pulse animation — opacity oscillates 1.0 → 0.85 → 1.0 in a
+        # loop on high-priority alerts. Cheap, non-intrusive attention
+        # cue. Only set up once; start/stop_pulse() drive the QPropertyAnimation.
+        self._opacity_effect = QGraphicsOpacityEffect(self)
+        self._opacity_effect.setOpacity(1.0)
+        self.setGraphicsEffect(self._opacity_effect)
+        self._pulse_anim: QPropertyAnimation | None = None
 
         layout = QHBoxLayout(self)
         layout.setContentsMargins(
@@ -83,7 +103,34 @@ class _RecRow(QFrame):
         # Stash for paintEvent — confidence bar at bottom of the card.
         self._severity = rec.severity
         self._confidence = max(0.0, min(1.0, rec.confidence))
+        # Pulse only when this is a high-priority alert AND the
+        # engine is confident enough to warrant the attention.
+        if rec.severity == "alert" and rec.confidence >= PULSE_PRIORITY_THRESHOLD:
+            self._start_pulse()
+        else:
+            self._stop_pulse()
         self.update()
+
+    def _start_pulse(self) -> None:
+        if self._pulse_anim is not None:
+            return  # already pulsing
+        anim = QPropertyAnimation(self._opacity_effect, b"opacity", self)
+        anim.setDuration(PULSE_DURATION_MS)
+        anim.setStartValue(1.0)
+        anim.setKeyValueAt(0.5, 0.85)
+        anim.setEndValue(1.0)
+        anim.setLoopCount(-1)  # infinite
+        anim.setEasingCurve(QEasingCurve.Type.InOutSine)
+        anim.start()
+        self._pulse_anim = anim
+
+    def _stop_pulse(self) -> None:
+        if self._pulse_anim is None:
+            return
+        self._pulse_anim.stop()
+        self._pulse_anim.deleteLater()
+        self._pulse_anim = None
+        self._opacity_effect.setOpacity(1.0)
 
     def paintEvent(self, event: QPaintEvent) -> None:  # type: ignore[override]
         super().paintEvent(event)
@@ -153,6 +200,9 @@ class RecommendationPanel(FloatingWidget):
     def __init__(self) -> None:
         super().__init__()
         self.setStyleSheet(styles.floating_panel_stylesheet())
+        # Focus mode — collapses to top-1 only when active. Toggled by
+        # set_focus_mode(). Default off; the user opts in via Settings.
+        self._focus_mode = False
 
         outer = QVBoxLayout(self)
         outer.setContentsMargins(
@@ -197,21 +247,47 @@ class RecommendationPanel(FloatingWidget):
 
     def set_recommendations(self, recs: list[Recommendation]) -> None:
         """Render top-N recommendations (already severity-sorted by
-        ``decision_engine.evaluate``). Empty list → hide widget."""
+        ``decision_engine.evaluate``). Empty list → hide widget.
+        When focus_mode is on, collapses to top-1 only."""
         if not recs:
             for row in self._rows:
                 row.hide()
+                row._stop_pulse()
             self.hide()
             return
-        top = recs[:MAX_VISIBLE_ROWS]
+        cap = FOCUS_MODE_ROWS if self._focus_mode else MAX_VISIBLE_ROWS
+        top = recs[:cap]
         for i, row in enumerate(self._rows):
             if i < len(top):
                 row.render(top[i])
                 row.show()
             else:
                 row.hide()
+                row._stop_pulse()
         if not self.isVisible():
             self.fade_appear()
+
+    def set_focus_mode(self, on: bool) -> None:
+        """Toggle focus mode at runtime. Re-renders the current top
+        recommendation with the new cap so the change is visible
+        immediately, not only on next snapshot."""
+        if self._focus_mode == on:
+            return
+        self._focus_mode = on
+        # Force a re-render with whatever's currently visible.
+        active_recs: list[Recommendation] = []
+        for row in self._rows:
+            if row.isVisible() and row._severity is not None:
+                # We can't reconstruct the full Recommendation from
+                # the row state alone; just hide extras when entering
+                # focus, no-op when exiting (next snapshot will fan
+                # them back out).
+                pass
+        if on:
+            for i, row in enumerate(self._rows):
+                if i >= FOCUS_MODE_ROWS:
+                    row.hide()
+                    row._stop_pulse()
 
     def populate_demo(self) -> None:
         """Fill with example output of every rule for visual testing

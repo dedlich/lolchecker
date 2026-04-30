@@ -695,7 +695,17 @@ def _run_with_ui(args: argparse.Namespace) -> int:
     # when no recs are active), so we can validate behavior in real
     # games. Demo mode pre-fills with examples for visual testing.
     recommendation_panel = RecommendationPanel()
+    recommendation_panel.set_focus_mode(persisted.focus_mode)
     floating.append(recommendation_panel)
+
+    # InsightPanel — detail-view of the top recommendation. Hidden by
+    # default; toggled via Ctrl+Alt+I global hotkey.
+    from champ_assistant.ui.insight_panel import InsightPanel
+    insight_panel = InsightPanel()
+    # Track the latest top-rec so InsightPanel.toggle() always opens
+    # with the most current recommendation, not a stale one.
+    _latest_top_rec: list = [None]
+    floating.append(insight_panel)
     if getattr(args, "demo_recommendations", False):
         recommendation_panel.populate_demo()
         recommendation_panel.show()
@@ -881,6 +891,11 @@ def _run_with_ui(args: argparse.Namespace) -> int:
             # = source of truth when the in-game scoreboard is open
             # for real, the hotkey is for cases where it's not).
             store.update(scoreboard_visible=not cur.scoreboard_visible)
+        elif name == "toggle_insight":
+            # Detail-view of the current top recommendation. Toggle
+            # so a second press dismisses the panel. Latest top is
+            # stashed on the panel itself by the LCDA dispatch loop.
+            insight_panel.toggle(getattr(insight_panel, "_latest_top", None))
 
     def _reset_widget_positions() -> None:
         from champ_assistant import layout as _layout
@@ -1005,11 +1020,16 @@ async def _run_lcda_watcher(
     # top recommendation AND pushes the full sorted list into the
     # floating recommendation panel (when present).
     from champ_assistant.advisor import decision_engine as _decisions
+    from champ_assistant.ui.insight_panel import InsightPanel as _InsightPanelType
     from champ_assistant.ui.recommendation_panel import RecommendationPanel
     _last_recommendation: list[str] = [""]
     _decision_log = logging.getLogger("champ_assistant.decisions")
     _rec_panel: RecommendationPanel | None = next(
         (w for w in floating_consumers if isinstance(w, RecommendationPanel)),
+        None,
+    )
+    _insight: _InsightPanelType | None = next(
+        (w for w in floating_consumers if isinstance(w, _InsightPanelType)),
         None,
     )
 
@@ -1038,7 +1058,9 @@ async def _run_lcda_watcher(
             )
         # Decision engine pass — log when the top rec changes (so the
         # log doesn't flood) and push the full sorted list into the
-        # floating panel for live on-screen display.
+        # floating panel for live on-screen display. Also keep the
+        # InsightPanel's internal "latest top" up-to-date so the
+        # Ctrl+Alt+I hotkey always opens with the current rec.
         try:
             recs = _decisions.evaluate(snap)
             top = recs[0].text if recs else ""
@@ -1047,6 +1069,13 @@ async def _run_lcda_watcher(
                 _decision_log.info("recommendation: %s", top)
             if _rec_panel is not None:
                 _rec_panel.set_recommendations(recs)
+            if _insight is not None:
+                top_rec = recs[0] if recs else None
+                # Stash for the hotkey path AND update the panel if
+                # already open so it reflects the latest state live.
+                _insight._latest_top = top_rec  # type: ignore[attr-defined]
+                if _insight.isVisible():
+                    _insight.set_recommendation(top_rec)
         except Exception:
             log.exception("decision_engine_failed")
         if scheduler is not None:

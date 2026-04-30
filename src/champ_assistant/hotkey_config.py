@@ -131,6 +131,9 @@ DEFAULT_HOTKEYS: dict[str, str] = {
     # auto-detection. Always available (does NOT require Win32
     # keyboard hooks; uses the safe RegisterHotKey API).
     "toggle_scoreboard": "Ctrl+Alt+B",
+    # Toggle the InsightPanel detail-view for the current top
+    # recommendation (v2 spec).
+    "toggle_insight":    "Ctrl+Alt+I",
 }
 
 

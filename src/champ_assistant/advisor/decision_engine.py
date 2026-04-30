@@ -77,6 +77,12 @@ class Recommendation:
     confidence: float = 0.7    # default = "rule fired, moderate confidence"
     risk: str = "MEDIUM"       # "LOW" | "MEDIUM" | "HIGH"
     ttl_s: float = 15.0        # seconds before the hint becomes stale
+    # Bulletpoints the InsightPanel renders when the user expands a
+    # recommendation. Each entry is a short factual statement of WHY
+    # the rule fired ("Drache in 25s", "Team-Gold-Diff +2400"). Empty
+    # tuple is the safe default — legacy rules without explicit
+    # reasons just don't expand.
+    reasons: tuple[str, ...] = ()
 
 
 # --------------------------------------------------------------------------
@@ -209,6 +215,14 @@ def rule_drake_priority(snapshot: "LcdaSnapshot") -> Recommendation | None:
         text=f"Drache spawnt in {int(remaining)}s — Vision setzen, Side gruppieren",
         severity="alert",
         category="objective",
+        confidence=0.85,
+        risk="MEDIUM",
+        ttl_s=remaining,
+        reasons=(
+            f"Drache spawnt in {int(remaining)}s",
+            f"Team-Gold-Diff: {gold:+d}",
+            f"Level-Diff: {levels:+.1f}",
+        ),
     )
 
 
@@ -226,6 +240,14 @@ def rule_drake_give_up(snapshot: "LcdaSnapshot") -> Recommendation | None:
              f"Gold-Diff aufholen",
         severity="warn",
         category="objective",
+        confidence=0.80,
+        risk="HIGH",
+        ttl_s=remaining,
+        reasons=(
+            f"Drache spawnt in {int(remaining)}s",
+            f"Team-Gold-Diff: {gold:+d} (unter -{GOLD_DEFICIT_THRESHOLD})",
+            "Contest = Risk vs Reward negativ",
+        ),
     )
 
 
@@ -240,6 +262,14 @@ def rule_gold_lead_push(snapshot: "LcdaSnapshot") -> Recommendation | None:
              f"nächstes Objective vorbereiten",
         severity="info",
         category="tempo",
+        confidence=0.75,
+        risk="LOW",
+        ttl_s=20.0,
+        reasons=(
+            f"Team-Gold-Vorsprung: +{gold}",
+            "Über Schwelle für aktiven Tempo-Push",
+            "Nächstes Objective sollte priorisiert werden",
+        ),
     )
 
 
@@ -252,6 +282,14 @@ def rule_far_behind_safe(snapshot: "LcdaSnapshot") -> Recommendation | None:
         text=f"{gold} Gold — Safe spielen, Wellen abräumen, keine Fights",
         severity="warn",
         category="safety",
+        confidence=0.80,
+        risk="HIGH",
+        ttl_s=30.0,
+        reasons=(
+            f"Team-Gold-Diff: {gold} (unter -{GOLD_DEFICIT_THRESHOLD})",
+            "Fights statistisch verloren",
+            "Wave-Clear sichert XP + Gold ohne Risiko",
+        ),
     )
 
 
@@ -265,6 +303,14 @@ def rule_level_deficit(snapshot: "LcdaSnapshot") -> Recommendation | None:
              f"keine Skirmishes",
         severity="warn",
         category="safety",
+        confidence=0.78,
+        risk="HIGH",
+        ttl_s=20.0,
+        reasons=(
+            f"Avg-Level-Diff: {diff:+.1f}",
+            f"Schwelle: ±{LEVEL_GAP_THRESHOLD}",
+            "Fair fights gehen verloren bei Level-Disparität",
+        ),
     )
 
 
@@ -283,6 +329,14 @@ def rule_baron_priority(snapshot: "LcdaSnapshot") -> Recommendation | None:
              f"Side-Wellen prep, Ults checken",
         severity="alert",
         category="objective",
+        confidence=0.88,
+        risk="MEDIUM",
+        ttl_s=remaining,
+        reasons=(
+            f"Baron spawnt in {int(remaining)}s",
+            f"Team-Gold-Diff: {gold:+d}",
+            "Baron-Buff = Game-Winner — Setup-Phase kritisch",
+        ),
     )
 
 
@@ -300,6 +354,14 @@ def rule_baron_give_up(snapshot: "LcdaSnapshot") -> Recommendation | None:
              f"Konter-Engage suchen",
         severity="warn",
         category="objective",
+        confidence=0.82,
+        risk="HIGH",
+        ttl_s=remaining,
+        reasons=(
+            f"Baron spawnt in {int(remaining)}s",
+            f"Team-Gold-Diff: {gold:+d} (deutlich hinten)",
+            "Baron-Throw = 14-Tage Vacation",
+        ),
     )
 
 
@@ -321,6 +383,14 @@ def rule_herald_priority(snapshot: "LcdaSnapshot") -> Recommendation | None:
              f"Plates abholen",
         severity="alert",
         category="objective",
+        confidence=0.82,
+        risk="LOW",
+        ttl_s=remaining,
+        reasons=(
+            f"Herald spawnt in {int(remaining)}s",
+            f"Game-Time: {int(game_time)}s (im Herald-Window)",
+            "Herald → Plates = +400g pro Plate",
+        ),
     )
 
 
@@ -337,6 +407,14 @@ def rule_kill_lead_snowball(snapshot: "LcdaSnapshot") -> Recommendation | None:
              f"einrichten",
         severity="info",
         category="tempo",
+        confidence=0.78,
+        risk="LOW",
+        ttl_s=25.0,
+        reasons=(
+            f"Team-Kill-Diff: +{diff}",
+            "Momentum-Signal — Vision sollte aggressiv vorgeschoben werden",
+            "Dive-Setups statt Lane-Farming",
+        ),
     )
 
 
@@ -351,6 +429,14 @@ def rule_kill_deficit_defensive(snapshot: "LcdaSnapshot") -> Recommendation | No
              f"auf koordinierten Reset warten",
         severity="warn",
         category="safety",
+        confidence=0.80,
+        risk="HIGH",
+        ttl_s=30.0,
+        reasons=(
+            f"Team-Kill-Diff: {diff}",
+            "Skirmishes verlieren wir statistisch",
+            "Defensive Position + koordinierter Back = nur Weg raus",
+        ),
     )
 
 
@@ -365,6 +451,14 @@ def rule_late_game_group(snapshot: "LcdaSnapshot") -> Recommendation | None:
              "jeder Death = 50s+",
         severity="info",
         category="tempo",
+        confidence=0.85,
+        risk="MEDIUM",
+        ttl_s=60.0,
+        reasons=(
+            f"Game-Time: {int(game_time / 60)}min",
+            "Death-Timer 50s+ — jeder Tod = verlorenes Objective",
+            "Splitpush-Risk > Reward ohne TP-Insurance",
+        ),
     )
 
 

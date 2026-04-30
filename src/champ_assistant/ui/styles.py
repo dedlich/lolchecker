@@ -161,12 +161,18 @@ def floating_panel_stylesheet() -> str:
     than a sweep across every floating widget. Three identical-ish
     inline gradients with subtly different alphas was the old anti-pattern.
     """
+    # Glass-style: more translucent gradient + accent-tinted top
+    # highlight + softer border. Real backdrop-blur isn't reachable
+    # from Qt6 stylesheets, but the layered translucency + warm-cool
+    # gradient gives the look without needing a custom QPainter pass.
     return (
         "QFrame[panel='true'] {"
         " background: qlineargradient(x1:0, y1:0, x2:0, y2:1,"
-        "  stop:0 rgba(20, 26, 34, 195), stop:1 rgba(10, 14, 20, 195));"
-        f" border: 1px solid {BORDER};"
-        f" border-radius: {RADIUS}px;"
+        "  stop:0 rgba(28, 38, 54, 175),"
+        "  stop:0.4 rgba(18, 24, 35, 175),"
+        "  stop:1 rgba(10, 14, 20, 185));"
+        f" border: 1px solid {BORDER_FAINT};"
+        f" border-radius: {RADIUS_LARGE}px;"
         " }"
     )
 

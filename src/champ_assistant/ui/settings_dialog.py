@@ -50,6 +50,7 @@ class SettingsDialog(QDialog):
         ("reset_positions",   "Reset widget positions"),
         ("reset_layout",      "Reset widget layout"),
         ("toggle_scoreboard", "Toggle scoreboard"),
+        ("toggle_insight",    "Toggle insight panel"),
     )
 
     def __init__(
@@ -328,6 +329,18 @@ class SettingsDialog(QDialog):
             "sie nur zur Laufzeit."
         ))
 
+        body.addWidget(_section_header("Focus Mode"))
+        self._cb_focus = _checkbox(
+            "Focus Mode (nur Top-1 Empfehlung, weniger Cognitive Load)",
+            self._display_state.focus_mode,
+        )
+        body.addWidget(self._cb_focus)
+        body.addWidget(_hint_label(
+            "Statt Top-3 Recommendations rendert das Panel nur die "
+            "wichtigste. Hilft im stress-light wenn man eh nur EINE "
+            "Sache anzeigen will."
+        ))
+
         body.addWidget(_section_header("Logging"))
         self._cb_diagnostics = _checkbox(
             "Diagnose-Logging (CPU / Speicher / FPS alle 10s)",
@@ -424,6 +437,7 @@ class SettingsDialog(QDialog):
         s.enable_update_check       = self._cb_update_check.isChecked()
         s.enable_telemetry          = self._cb_telemetry.isChecked()
         s.low_resource_mode         = self._cb_low_resource.isChecked()
+        s.focus_mode                = self._cb_focus.isChecked()
         overlay_config.save(s)
 
         self.settings_changed.emit()

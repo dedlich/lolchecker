@@ -67,6 +67,11 @@ class OverlayState:
     # stay as the user set them; LRM overrides at startup, so toggling
     # LRM off again restores the prior preferences.
     low_resource_mode: bool = False
+    # Focus Mode (v2 spec) — collapses the recommendation panel to
+    # the top-1 alert only. Hides the rest of the rec list to reduce
+    # cognitive load mid-game. Off by default — most users want the
+    # top-3 fan-out for context.
+    focus_mode: bool = False
 
 
 def _config_dir() -> Path:
@@ -103,7 +108,8 @@ def load() -> OverlayState:
                   "enable_scoreboard_detection",
                   "enable_update_check",
                   "enable_telemetry",
-                  "low_resource_mode"):
+                  "low_resource_mode",
+                  "focus_mode"):
         if field in data:
             setattr(state, field, data[field])
     return state
