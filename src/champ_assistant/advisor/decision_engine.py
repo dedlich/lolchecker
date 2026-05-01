@@ -370,6 +370,34 @@ ELDER_BUFF_EXPIRY_ALERT_S = 60.0
 _LANE_DISPLAY: dict[str, str] = {"L0": "Bot", "L1": "Mid", "L2": "Top"}
 
 
+def _herald_pickup(
+    snapshot: "LcdaSnapshot", *, team: str
+) -> tuple[float, float] | None:
+    """Return (pickup_game_time, remaining_window_s) if the given team picked
+    up Rift Herald and the 3-minute placement window hasn't expired.
+
+    ``team`` is "ally" or "enemy". Walks HeraldKill events to find the last
+    one taken by that team and returns remaining seconds within the 180s window.
+    """
+    events = getattr(snapshot, "raw_events", []) or []
+    players = list(
+        getattr(snapshot, "allies" if team == "ally" else "enemies", []) or []
+    )
+    if not events or not players:
+        return None
+    ids = _player_ids(players)
+    herald_kills = [e for e in events if e.get("EventName") == "HeraldKill"]
+    if not herald_kills:
+        return None
+    last = herald_kills[-1]
+    if (last.get("KillerName") or "") not in ids:
+        return None
+    pickup_t = float(last.get("EventTime") or 0.0)
+    game_time = float(getattr(snapshot, "game_time", 0.0) or 0.0)
+    remaining = HERALD_USAGE_WINDOW_S - (game_time - pickup_t)
+    return (pickup_t, remaining) if remaining > 0 else None
+
+
 def _enemy_herald_pickup(snapshot: "LcdaSnapshot") -> tuple[float, float] | None:
     """Return (pickup_game_time, remaining_window_s) if enemy picked up herald
     and the 3-minute usage window hasn't expired, else None.
@@ -1509,6 +1537,64 @@ def rule_enemy_herald_danger(snapshot: "LcdaSnapshot") -> Recommendation | None:
     )
 
 
+def rule_ally_herald_window(snapshot: "LcdaSnapshot") -> Recommendation | None:
+    """Ally picked up Rift Herald — place it within 3 minutes (B4 tempo).
+
+    Eye of the Herald expires 180s after pickup. The rule fires for the
+    full window with escalating urgency so the team doesn't waste the item:
+    - >120s remaining → info "Herald platzieren!"
+    - 60–120s           → warn "Herald läuft ab — JETZT platzieren!"
+    - ≤60s              → alert "Herald JETZT! Nur noch Xs!"
+    """
+    pickup = _herald_pickup(snapshot, team="ally")
+    if pickup is None:
+        return None
+    _, remaining = pickup
+    if remaining > 120:
+        return Recommendation(
+            text=f"Ally Herald — platzieren! ({int(remaining)}s verbleibend)",
+            severity="info",
+            category="tempo",
+            confidence=0.90,
+            risk="LOW",
+            ttl_s=remaining,
+            kind="ally_herald",
+            reasons=(
+                f"Eye of the Herald: {int(remaining)}s bis Ablauf",
+                "Herald → TOP/MID Tower = Plate-Gold + Map-Pressure",
+                "Jetzt sidelaners informieren + platzieren",
+            ),
+        )
+    if remaining > 60:
+        return Recommendation(
+            text=f"Herald läuft ab in {int(remaining)}s — JETZT platzieren!",
+            severity="warn",
+            category="tempo",
+            confidence=0.93,
+            risk="LOW",
+            ttl_s=remaining,
+            kind="ally_herald",
+            reasons=(
+                f"Eye of the Herald: nur noch {int(remaining)}s!",
+                "Herald Ablauf = verschwendetes Objective",
+                "Sofort Top- oder Mid-Tower angreifen",
+            ),
+        )
+    return Recommendation(
+        text=f"Herald JETZT! Nur noch {int(remaining)}s — sofort platzieren!",
+        severity="alert",
+        category="tempo",
+        confidence=0.96,
+        risk="LOW",
+        ttl_s=remaining,
+        kind="ally_herald",
+        reasons=(
+            f"Eye of the Herald: {int(remaining)}s — KRITISCH",
+            "Herald verschwindet gleich — sofort nutzen!",
+        ),
+    )
+
+
 def rule_ally_inhib_down(snapshot: "LcdaSnapshot") -> Recommendation | None:
     """Enemy destroyed one or more of OUR inhibitors — defensive alert (B4).
 
@@ -1789,6 +1875,7 @@ ALL_RULES: tuple[Callable[["LcdaSnapshot"], Recommendation | None], ...] = (
     rule_late_game_group,
     # Lane/base pressure — structural map-state (turrets + inhibs + herald).
     rule_enemy_herald_danger,
+    rule_ally_herald_window,
     rule_enemy_inhibitor_down,
     rule_ally_inhib_down,
     rule_baron_buff_expiring,
@@ -1841,7 +1928,8 @@ def _suppress_dominated(recs: list[Recommendation]) -> list[Recommendation]:
                       "dragon_take", "dragon_free", "baron_take", "baron_free",
                       "flash_down",            # engage window irrelevant when short-handed
                       "baron_buff_expiring",   # pushing while outnumbered is still bad
-                      "elder_buff_expiring"}   # same — don't fight when short-handed
+                      "elder_buff_expiring",   # same — don't fight when short-handed
+                      "ally_herald"}           # don't split to place herald while down
         return [r for r in recs if r.kind not in _offensive]
 
     # Rule 3 — free-window objective absorbs standalone numbers_adv

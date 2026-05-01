@@ -1764,3 +1764,147 @@ def test_elder_buff_expiring_in_all_rules() -> None:
     )
     recs = evaluate(snap)
     assert any(r.kind == "elder_buff_expiring" for r in recs)
+
+
+# ----------------------------------------------------------------------
+# rule_ally_herald_window (B4 — Eye of the Herald placement reminder)
+# ----------------------------------------------------------------------
+from champ_assistant.advisor.decision_engine import (  # noqa: E402
+    HERALD_USAGE_WINDOW_S,
+    _herald_pickup,
+    rule_ally_herald_window,
+)
+
+
+def _herald_event(killer: str, event_time: float) -> dict:
+    return {"EventName": "HeraldKill", "KillerName": killer, "EventTime": event_time}
+
+
+def test_herald_pickup_ally_returns_remaining_when_active() -> None:
+    ally = _Player(champion_name="Jinx", summoner_name="Jinx")
+    snap = _Snap(
+        game_time=500.0,
+        allies=[ally],
+        raw_events=[_herald_event("Jinx", 400.0)],
+    )
+    result = _herald_pickup(snap, team="ally")
+    assert result is not None
+    _, remaining = result
+    assert remaining == pytest.approx(HERALD_USAGE_WINDOW_S - 100.0)
+
+
+def test_herald_pickup_ally_none_when_enemy_took_it() -> None:
+    ally = _Player(champion_name="Jinx", summoner_name="Jinx")
+    enemy = _Player(champion_name="Draven", summoner_name="Draven")
+    snap = _Snap(
+        game_time=500.0,
+        allies=[ally],
+        enemies=[enemy],
+        raw_events=[_herald_event("Draven", 400.0)],
+    )
+    assert _herald_pickup(snap, team="ally") is None
+
+
+def test_herald_pickup_ally_none_when_expired() -> None:
+    ally = _Player(champion_name="Jinx", summoner_name="Jinx")
+    snap = _Snap(
+        game_time=700.0,
+        allies=[ally],
+        raw_events=[_herald_event("Jinx", 400.0)],
+    )
+    assert _herald_pickup(snap, team="ally") is None
+
+
+def test_rule_ally_herald_window_info_when_plenty_of_time() -> None:
+    """150s remaining → info severity, category=tempo."""
+    ally = _Player(champion_name="Jinx", summoner_name="Jinx")
+    pickup_t = 600.0 - (HERALD_USAGE_WINDOW_S - 150.0)
+    snap = _Snap(
+        game_time=600.0,
+        allies=[ally],
+        raw_events=[_herald_event("Jinx", pickup_t)],
+    )
+    rec = rule_ally_herald_window(snap)
+    assert rec is not None
+    assert rec.kind == "ally_herald"
+    assert rec.severity == "info"
+    assert rec.category == "tempo"
+
+
+def test_rule_ally_herald_window_warn_at_90s() -> None:
+    ally = _Player(champion_name="Jinx", summoner_name="Jinx")
+    pickup_t = 600.0 - (HERALD_USAGE_WINDOW_S - 90.0)
+    snap = _Snap(
+        game_time=600.0,
+        allies=[ally],
+        raw_events=[_herald_event("Jinx", pickup_t)],
+    )
+    rec = rule_ally_herald_window(snap)
+    assert rec is not None
+    assert rec.severity == "warn"
+
+
+def test_rule_ally_herald_window_alert_at_45s() -> None:
+    ally = _Player(champion_name="Jinx", summoner_name="Jinx")
+    pickup_t = 600.0 - (HERALD_USAGE_WINDOW_S - 45.0)
+    snap = _Snap(
+        game_time=600.0,
+        allies=[ally],
+        raw_events=[_herald_event("Jinx", pickup_t)],
+    )
+    rec = rule_ally_herald_window(snap)
+    assert rec is not None
+    assert rec.severity == "alert"
+
+
+def test_rule_ally_herald_window_silent_when_no_herald() -> None:
+    snap = _Snap(allies=[_Player(champion_name="Jinx")])
+    assert rule_ally_herald_window(snap) is None
+
+
+def test_rule_ally_herald_window_silent_when_expired() -> None:
+    ally = _Player(champion_name="Jinx", summoner_name="Jinx")
+    snap = _Snap(
+        game_time=800.0,
+        allies=[ally],
+        raw_events=[_herald_event("Jinx", 400.0)],
+    )
+    assert rule_ally_herald_window(snap) is None
+
+
+def test_ally_herald_in_all_rules() -> None:
+    ally = _Player(champion_name="Jinx", summoner_name="Jinx")
+    pickup_t = 600.0 - (HERALD_USAGE_WINDOW_S - 90.0)
+    snap = _Snap(
+        game_time=600.0,
+        allies=[ally],
+        raw_events=[_herald_event("Jinx", pickup_t)],
+    )
+    recs = evaluate(snap)
+    assert any(r.kind == "ally_herald" for r in recs)
+
+
+def test_ally_herald_suppressed_by_numbers_disadv() -> None:
+    """Don't split to place herald while a teammate is dead."""
+    recs = [
+        _rec("numbers_disadv", "alert"),
+        _rec("ally_herald", "warn"),
+    ]
+    result = _suppress_dominated(recs)
+    assert not any(r.kind == "ally_herald" for r in result)
+    assert any(r.kind == "numbers_disadv" for r in result)
+
+
+def test_enemy_herald_danger_still_works_after_refactor() -> None:
+    """_enemy_herald_pickup must continue working after _herald_pickup refactor."""
+    from champ_assistant.advisor.decision_engine import _enemy_herald_pickup
+    enemy = _Player(champion_name="Draven", summoner_name="Draven")
+    snap = _Snap(
+        game_time=500.0,
+        enemies=[enemy],
+        raw_events=[_herald_event("Draven", 400.0)],
+    )
+    result = _enemy_herald_pickup(snap)
+    assert result is not None
+    _, remaining = result
+    assert remaining == pytest.approx(HERALD_USAGE_WINDOW_S - 100.0)
