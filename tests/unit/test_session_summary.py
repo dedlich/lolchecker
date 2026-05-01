@@ -4,6 +4,8 @@ from __future__ import annotations
 import logging
 from types import SimpleNamespace
 
+import pytest
+
 from champ_assistant.session_summary import UptimeClock, emit_session_summary
 
 
@@ -93,11 +95,14 @@ def test_summary_emit_is_constant_time() -> None:
     assert elapsed < 0.05, f"emit took {elapsed:.3f}s — should be near-instant"
 
 
-def test_uptime_clock_monotonic() -> None:
+def test_uptime_clock_monotonic(monkeypatch: pytest.MonkeyPatch) -> None:
+    import champ_assistant.session_summary as _mod
+    now = [100.0]
+    monkeypatch.setattr(_mod.time, "monotonic", lambda: now[0])
     clock = UptimeClock()
-    a = clock.elapsed()
-    import time as _t
-    _t.sleep(0.01)
-    b = clock.elapsed()
-    assert b >= a
-    assert b >= 0.01
+    assert clock.elapsed() == pytest.approx(0.0)
+    now[0] = 100.05
+    assert clock.elapsed() == pytest.approx(0.05)
+    # max(0.0, ...) guard: backwards-clock never returns negative
+    now[0] = 99.0
+    assert clock.elapsed() == 0.0
