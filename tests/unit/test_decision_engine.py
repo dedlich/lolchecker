@@ -15,20 +15,27 @@ from champ_assistant.advisor.decision_engine import (
     LATE_GAME_S,
     LEVEL_GAP_THRESHOLD,
     Recommendation,
+    _drake_stack_count,
+    _suppress_dominated,
     evaluate,
     fight_score,
     win_probability,
     rule_baron_give_up,
     rule_baron_priority,
+    rule_baron_window,
     rule_drake_give_up,
     rule_drake_priority,
+    rule_dragon_window,
     rule_far_behind_safe,
+    rule_fight_opportunity,
     rule_gold_lead_push,
     rule_herald_priority,
     rule_kill_deficit_defensive,
     rule_kill_lead_snowball,
     rule_late_game_group,
     rule_level_deficit,
+    rule_numbers_advantage,
+    rule_numbers_disadvantage,
 )
 
 
@@ -41,7 +48,10 @@ class _Aggregate:
 @dataclass
 class _Player:
     summoner_name: str = "X"
+    champion_name: str = ""
     level: int = 1
+    is_alive: bool = True
+    respawn_timer: float | None = None
 
 
 @dataclass
@@ -72,6 +82,7 @@ class _Snap:
     allies: list = field(default_factory=list)
     enemies: list = field(default_factory=list)
     objectives: list = field(default_factory=list)
+    raw_events: list = field(default_factory=list)
 
 
 def _drake_in(seconds: float) -> _Objective:
@@ -512,3 +523,168 @@ def test_win_probability_bounded_zero_to_one() -> None:
         )
         p = win_probability(snap)
         assert 0.0 <= p <= 1.0
+
+
+# ----------------------------------------------------------------------
+# Regression: empty-team guard
+# (Bug: rules fired with allies=[] before team identity established,
+#  producing spurious 0v5 safety spam in the first LCDA ticks.)
+# ----------------------------------------------------------------------
+
+def test_numbers_disadvantage_silent_when_allies_empty() -> None:
+    snap = _Snap(allies=[], enemies=[_Player() for _ in range(5)])
+    assert rule_numbers_disadvantage(snap) is None
+
+
+def test_numbers_advantage_silent_when_allies_empty() -> None:
+    snap = _Snap(allies=[], enemies=[_Player() for _ in range(5)])
+    assert rule_numbers_advantage(snap) is None
+
+
+def test_dragon_window_silent_when_allies_empty() -> None:
+    snap = _Snap(allies=[], enemies=[_Player() for _ in range(5)], objectives=[_drake_in(15)])
+    assert rule_dragon_window(snap) is None
+
+
+def test_baron_window_silent_when_allies_empty() -> None:
+    snap = _Snap(
+        allies=[],
+        enemies=[_Player() for _ in range(5)],
+        objectives=[_Objective(name="Baron", next_spawn=600.0 + 30)],
+    )
+    assert rule_baron_window(snap) is None
+
+
+# ----------------------------------------------------------------------
+# Regression: KillerName champion-name format in drake stack counting
+# (Bug: _drake_stack_count matched KillerName against summoner_name only;
+#  LCDA historically emits champion display names, so stacks always read 0.)
+# ----------------------------------------------------------------------
+
+def _dragon_kill_event(killer_name: str) -> dict:
+    return {"EventName": "DragonKill", "KillerName": killer_name, "EventTime": 300.0}
+
+
+def test_drake_stack_count_matches_champion_name() -> None:
+    """KillerName = "Kindred" (champion) — player has summoner_name "Player2"."""
+    ally = _Player(summoner_name="Player2", champion_name="Kindred")
+    snap = _Snap(
+        allies=[ally],
+        raw_events=[_dragon_kill_event("Kindred")],
+    )
+    assert _drake_stack_count(snap) == 1
+
+
+def test_drake_stack_count_matches_summoner_name() -> None:
+    """KillerName = "Player2" (summoner) — also works (post-Riot-ID format)."""
+    ally = _Player(summoner_name="Player2", champion_name="Kindred")
+    snap = _Snap(
+        allies=[ally],
+        raw_events=[_dragon_kill_event("Player2")],
+    )
+    assert _drake_stack_count(snap) == 1
+
+
+def test_drake_stack_count_zero_when_enemy_killed() -> None:
+    ally = _Player(summoner_name="Player1", champion_name="Jinx")
+    snap = _Snap(
+        allies=[ally],
+        raw_events=[_dragon_kill_event("Kindred")],  # enemy champion, not in allies
+    )
+    assert _drake_stack_count(snap) == 0
+
+
+def test_drake_stack_count_accumulates_multiple_events() -> None:
+    ally = _Player(summoner_name="P1", champion_name="Kindred")
+    snap = _Snap(
+        allies=[ally],
+        raw_events=[
+            _dragon_kill_event("Kindred"),
+            _dragon_kill_event("Kindred"),
+            _dragon_kill_event("Kindred"),
+        ],
+    )
+    assert _drake_stack_count(snap) == 3
+
+
+# ----------------------------------------------------------------------
+# Regression: _suppress_dominated Rule 4 — fight_bad contradicts obj take
+# (Bug: "Fights meiden" could appear alongside "Baron JETZT".)
+# ----------------------------------------------------------------------
+
+def _rec(kind: str, severity: str = "info") -> Recommendation:
+    return Recommendation(text=kind, severity=severity, category="tempo", kind=kind)
+
+
+def test_suppress_fight_bad_removed_when_dragon_free() -> None:
+    recs = [_rec("dragon_free", "alert"), _rec("fight_bad", "warn")]
+    result = _suppress_dominated(recs)
+    assert all(r.kind != "fight_bad" for r in result)
+    assert any(r.kind == "dragon_free" for r in result)
+
+
+def test_suppress_fight_bad_removed_when_baron_take() -> None:
+    recs = [_rec("baron_take", "alert"), _rec("fight_bad", "warn")]
+    result = _suppress_dominated(recs)
+    assert all(r.kind != "fight_bad" for r in result)
+
+
+def test_suppress_fight_bad_kept_when_no_obj_take() -> None:
+    """fight_bad survives if there's no active objective-take call."""
+    recs = [_rec("gold_lead", "info"), _rec("fight_bad", "warn")]
+    result = _suppress_dominated(recs)
+    assert any(r.kind == "fight_bad" for r in result)
+
+
+def test_suppress_numbers_disadv_removes_all_offensive() -> None:
+    """Rule 1 — numbers_disadv present → drop all offensive kinds."""
+    offensive_kinds = ["fight", "numbers_adv", "gold_lead", "kill_lead",
+                       "dragon_take", "dragon_free", "baron_take", "baron_free"]
+    recs = [_rec("numbers_disadv", "alert")] + [_rec(k) for k in offensive_kinds]
+    result = _suppress_dominated(recs)
+    result_kinds = {r.kind for r in result}
+    assert result_kinds == {"numbers_disadv"}
+
+
+def test_suppress_dragon_free_absorbs_numbers_adv() -> None:
+    """Rule 2 — dragon_free present → standalone numbers_adv removed."""
+    recs = [_rec("dragon_free", "alert"), _rec("numbers_adv", "alert")]
+    result = _suppress_dominated(recs)
+    assert all(r.kind != "numbers_adv" for r in result)
+    assert any(r.kind == "dragon_free" for r in result)
+
+
+def test_suppress_fight_absorbs_gold_and_kill_lead() -> None:
+    """Rule 3 — fight rec present → gold_lead and kill_lead suppressed."""
+    recs = [_rec("fight", "alert"), _rec("gold_lead", "info"), _rec("kill_lead", "info")]
+    result = _suppress_dominated(recs)
+    result_kinds = {r.kind for r in result}
+    assert "fight" in result_kinds
+    assert "gold_lead" not in result_kinds
+    assert "kill_lead" not in result_kinds
+
+
+# ----------------------------------------------------------------------
+# Numbers rules: dead players detected via is_alive + respawn_timer
+# ----------------------------------------------------------------------
+
+def test_numbers_disadvantage_detects_dead_ally() -> None:
+    """Ally with respawn_timer=15, is_alive=False counts as dead."""
+    dead_ally = _Player(is_alive=False, respawn_timer=15.0)
+    alive_allies = [_Player(is_alive=True, respawn_timer=0.0) for _ in range(4)]
+    five_enemies = [_Player(is_alive=True, respawn_timer=0.0) for _ in range(5)]
+    snap = _Snap(allies=[dead_ally] + alive_allies, enemies=five_enemies)
+    rec = rule_numbers_disadvantage(snap)
+    assert rec is not None
+    assert "4v5" in rec.text
+
+
+def test_numbers_advantage_detects_dead_enemy() -> None:
+    """Enemy with is_alive=False counted as dead — we have numbers advantage."""
+    dead_enemy = _Player(is_alive=False, respawn_timer=20.0)
+    alive_enemies = [_Player(is_alive=True, respawn_timer=0.0) for _ in range(4)]
+    five_allies = [_Player(is_alive=True, respawn_timer=0.0) for _ in range(5)]
+    snap = _Snap(allies=five_allies, enemies=[dead_enemy] + alive_enemies)
+    rec = rule_numbers_advantage(snap)
+    assert rec is not None
+    assert "5v4" in rec.text
