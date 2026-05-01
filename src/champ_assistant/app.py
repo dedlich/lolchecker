@@ -578,14 +578,16 @@ class ChampAssistant:
                     return lane_suggestions[:5], gaps
 
         # Fallback: tier-based suggestions when no lane opponent yet OR
-        # we have no counter data for them.
+        # we have no counter data for them. Enrich the counter matrix with
+        # any cached Lolalytics data for revealed enemies before scoring.
+        enriched = self._enriched_counters(enemy_keys, my_role)
         suggestions = suggest_picks(
             my_role,
             my_keys,
             enemy_keys,
             gaps,
             self.tiers,
-            self.counters,
+            enriched,
             self.tags,
             limit=5,
         )
@@ -657,6 +659,32 @@ class ChampAssistant:
         # Already sorted by counter strength in seed/Groq, but stabilize anyway.
         out.sort(key=lambda s: -s.score)
         return out
+
+    def _enriched_counters(
+        self, enemy_keys: list[str], role: "Role"
+    ) -> "CounterMatrix":
+        """Return self.counters merged with any cached Lolalytics data.
+
+        For each revealed enemy, if the runtime store has a cached counter
+        list for that matchup it overwrites the seed-JSON entry. The result
+        is a one-shot CounterMatrix passed to suggest_picks so the fallback
+        path benefits from Lolalytics data fetched in previous sessions —
+        without firing any new network requests.
+        """
+        if self._runtime_counters is None:
+            return self.counters
+        merged: dict[str, dict] = {
+            k: dict(v) for k, v in self.counters.matrix.items()
+        }
+        changed = False
+        for enemy_key in enemy_keys:
+            cached = self._runtime_counters.get_cached(enemy_key, role)
+            if cached:
+                merged.setdefault(enemy_key, {})[role] = cached
+                changed = True
+        if not changed:
+            return self.counters
+        return CounterMatrix(matrix=merged)
 
     def _team_keys(self, team: list[TeamMember]) -> list[str]:
         keys: list[str] = []
