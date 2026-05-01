@@ -2891,6 +2891,11 @@ from champ_assistant.advisor.decision_engine import (  # noqa: E402
 from champ_assistant.lcda.players import LiveSummonerSpell  # noqa: E402 (already imported above)
 
 
+import types as _types  # noqa: E402
+
+from champ_assistant.advisor.decision_engine import _is_jungler  # noqa: E402
+
+
 @dataclass
 class _JunglerEnemy:
     summoner_name: str = "JunglerEnemy"
@@ -2903,6 +2908,48 @@ class _JunglerEnemy:
     )
     is_alive: bool = False
     respawn_timer: float = 20.0
+    position: str = ""  # optional: set to "JUNGLE" to test position-based detection
+
+
+def test_is_jungler_detects_smite() -> None:
+    p = _JunglerEnemy(position="")
+    assert _is_jungler(p)
+
+
+def test_is_jungler_detects_position() -> None:
+    """Position=JUNGLE should detect without Smite (e.g. not yet tracked)."""
+    p = _Player(summoner_name="J", champion_name="Hecarim")  # no spells → no smite
+    # Add position attribute manually (base _Player has no position field)
+    p2 = _types.SimpleNamespace(position="JUNGLE", spell_one=None, spell_two=None)
+    assert _is_jungler(p2)
+
+
+def test_is_jungler_position_beats_smite_check() -> None:
+    """When position=JUNGLE and no spells, still identified as jungler."""
+    p = _types.SimpleNamespace(position="JUNGLE", spell_one=None, spell_two=None)
+    assert _is_jungler(p)
+
+
+def test_is_jungler_false_for_non_jungler() -> None:
+    p = _Player(summoner_name="ADC", champion_name="Jinx")
+    assert not _is_jungler(p)
+
+
+def test_jungler_down_fires_with_position_based_detection() -> None:
+    """Jungler detected via position=JUNGLE (no Smite in spells)."""
+    jungler = _types.SimpleNamespace(
+        position="JUNGLE",
+        champion_name="Hecarim",
+        summoner_name="J1",
+        spell_one=LiveSummonerSpell(name="Flash", cooldown=300.0),
+        spell_two=LiveSummonerSpell(name="Ghost", cooldown=210.0),  # no Smite
+        respawn_timer=20.0,
+        is_alive=False,
+    )
+    snap = _Snap(game_time=900.0, enemies=[jungler])
+    rec = rule_enemy_jungler_down(snap)
+    assert rec is not None
+    assert rec.kind == "jungler_down"
 
 
 def test_jungler_down_silent_when_no_enemies() -> None:

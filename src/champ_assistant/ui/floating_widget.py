@@ -17,7 +17,7 @@ build their internal layout in ``__init__``.
 from __future__ import annotations
 
 from PyQt6.QtCore import QPoint, Qt
-from PyQt6.QtGui import QColor, QGuiApplication, QHideEvent, QMouseEvent, QShowEvent
+from PyQt6.QtGui import QColor, QHideEvent, QMouseEvent, QShowEvent
 from PyQt6.QtWidgets import QFrame, QGraphicsDropShadowEffect
 
 from .. import layout as layout_module

@@ -19,7 +19,7 @@ import logging
 import math
 import threading
 from collections.abc import Callable
-from dataclasses import dataclass, field, replace
+from dataclasses import dataclass, replace
 from typing import Any, Optional
 
 logger = logging.getLogger(__name__)

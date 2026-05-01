@@ -132,3 +132,26 @@ def test_canonical_resolution_for_each_known_spell() -> None:
         p = parse_players(raw)[0]
         assert p.spell_one.name == canonical, internal
         assert p.spell_one.cooldown == cooldown, internal
+
+
+def test_parse_position_field() -> None:
+    """LCDA ``position`` is uppercased and stored on LivePlayer."""
+    for role in ("JUNGLE", "TOP", "MIDDLE", "BOTTOM", "UTILITY"):
+        raw = [{"summonerName": "X", "championName": "Y", "team": "ORDER",
+                "position": role, "summonerSpells": {}}]
+        p = parse_players(raw)[0]
+        assert p.position == role
+
+
+def test_parse_position_lowercased_input_uppercased() -> None:
+    raw = [{"summonerName": "X", "championName": "Y", "team": "ORDER",
+            "position": "jungle", "summonerSpells": {}}]
+    p = parse_players(raw)[0]
+    assert p.position == "JUNGLE"
+
+
+def test_parse_position_defaults_to_empty_string() -> None:
+    raw = [{"summonerName": "X", "championName": "Y", "team": "ORDER",
+            "summonerSpells": {}}]
+    p = parse_players(raw)[0]
+    assert p.position == ""

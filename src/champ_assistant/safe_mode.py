@@ -40,7 +40,7 @@ import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
-from .crash_report import clear_crash_report, crash_report_path, has_crash_report
+from .crash_report import clear_crash_report, crash_report_path
 
 logger = logging.getLogger(__name__)
 

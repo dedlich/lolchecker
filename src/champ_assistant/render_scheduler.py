@@ -13,7 +13,6 @@ from __future__ import annotations
 
 import logging
 import time
-from collections.abc import Callable
 
 from PyQt6.QtCore import QObject, QTimer, pyqtSignal
 

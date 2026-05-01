@@ -80,6 +80,7 @@ class LivePlayer:
     creep_score: int = 0
     items_value: int = 0   # sum of items[].price — proxy for gold spent
     respawn_timer: float = 0.0  # seconds until respawn; 0 = alive
+    position: str = ""    # LCDA role: "JUNGLE", "TOP", "MIDDLE", "BOTTOM", "UTILITY"
 
     @property
     def is_alive(self) -> bool:
@@ -140,6 +141,7 @@ def parse_players(all_players: list[dict]) -> list[LivePlayer]:
                 creep_score=int(scores.get("creepScore") or 0),
                 items_value=items_value,
                 respawn_timer=float(entry.get("respawnTimer") or 0.0),
+                position=str(entry.get("position") or "").upper(),
             )
         )
     return players

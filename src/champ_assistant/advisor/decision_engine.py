@@ -39,10 +39,10 @@ of a game).
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Callable
+from typing import TYPE_CHECKING
+from collections.abc import Callable
 
 if TYPE_CHECKING:
-    from ..lcda.objectives import ObjectiveTimer
     from ..lcda.source import LcdaSnapshot
     from ..lcda.spell_tracker import SpellTracker
 
@@ -456,8 +456,14 @@ def _enemy_grub_count(snapshot: "LcdaSnapshot") -> int:
     )
 
 
-def _has_smite(player: object) -> bool:
-    """Return True if either summoner spell slot is Smite."""
+def _is_jungler(player: object) -> bool:
+    """Return True if the player is the jungler.
+
+    Primary: LCDA position field == "JUNGLE" (available when LCDA exposes it).
+    Fallback: Smite summoner spell (champion-neutral, every patch-stable).
+    Both paths checked so older LCDA versions that omit position still work."""
+    if (getattr(player, "position", "") or "").upper() == "JUNGLE":
+        return True
     for attr in ("spell_one", "spell_two"):
         spell = getattr(player, attr, None)
         if spell is not None and getattr(spell, "name", "") == "Smite":
@@ -2175,7 +2181,7 @@ def rule_enemy_jungler_down(snapshot: "LcdaSnapshot") -> Recommendation | None:
     Suppressed by numbers_disadv (we're short-handed too), ace (already
     acting on full momentum), and ally_inhib_down (defend first)."""
     enemies = list(getattr(snapshot, "enemies", []) or [])
-    jungler = next((p for p in enemies if _has_smite(p)), None)
+    jungler = next((p for p in enemies if _is_jungler(p)), None)
     if jungler is None:
         return None
     respawn = float(getattr(jungler, "respawn_timer", 0.0) or 0.0)
