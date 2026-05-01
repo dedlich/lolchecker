@@ -701,11 +701,13 @@ from champ_assistant.advisor.decision_engine import (
     _kill_streak,
     _enemy_herald_pickup,
     _active_enemy_inhibitors_down,
+    _active_ally_inhibitors_down,
     rule_lane_pressure,
     rule_ace_detected,
     rule_enemy_base_exposed,
     rule_enemy_herald_danger,
     rule_enemy_inhibitor_down,
+    rule_ally_inhib_down,
     rule_game_ended,
     HERALD_USAGE_WINDOW_S,
 )
@@ -1161,6 +1163,87 @@ def test_rule_enemy_inhibitor_down_silent_when_respawned() -> None:
         raw_events=[_inhib_killed_event("Jinx"), _inhib_respawned_event()],
     )
     assert rule_enemy_inhibitor_down(snap) is None
+
+
+# ----------------------------------------------------------------------
+# _active_ally_inhibitors_down + rule_ally_inhib_down (B4 risk signal)
+# ----------------------------------------------------------------------
+
+def test_active_ally_inhibitors_down_counts_enemy_kills() -> None:
+    """Enemy (Draven) killed our inhibitor → count = 1."""
+    enemy = _Player(champion_name="Draven", summoner_name="Draven")
+    snap = _Snap(
+        enemies=[enemy],
+        raw_events=[_inhib_killed_event("Draven")],
+    )
+    assert _active_ally_inhibitors_down(snap) == 1
+
+
+def test_active_ally_inhibitors_down_zero_when_respawned() -> None:
+    enemy = _Player(champion_name="Draven")
+    snap = _Snap(
+        enemies=[enemy],
+        raw_events=[_inhib_killed_event("Draven"), _inhib_respawned_event()],
+    )
+    assert _active_ally_inhibitors_down(snap) == 0
+
+
+def test_active_ally_inhibitors_down_zero_when_ally_killed_it() -> None:
+    """Ally kills enemy inhib → should NOT count as our inhib down."""
+    ally = _Player(champion_name="Jinx")
+    snap = _Snap(
+        allies=[ally],
+        enemies=[_Player(champion_name="Draven")],
+        raw_events=[_inhib_killed_event("Jinx")],
+    )
+    assert _active_ally_inhibitors_down(snap) == 0
+
+
+def test_rule_ally_inhib_down_fires_when_enemy_destroyed_our_inhib() -> None:
+    enemy = _Player(champion_name="Draven", summoner_name="Draven")
+    snap = _Snap(
+        enemies=[enemy],
+        raw_events=[_inhib_killed_event("Draven")],
+    )
+    rec = rule_ally_inhib_down(snap)
+    assert rec is not None
+    assert rec.kind == "ally_inhib_down"
+    assert rec.severity == "warn"
+    assert rec.category == "safety"
+
+
+def test_rule_ally_inhib_down_alert_when_multiple() -> None:
+    enemy = _Player(champion_name="Draven", summoner_name="Draven")
+    snap = _Snap(
+        enemies=[enemy],
+        raw_events=[_inhib_killed_event("Draven"), _inhib_killed_event("Draven")],
+    )
+    rec = rule_ally_inhib_down(snap)
+    assert rec is not None
+    assert rec.severity == "alert"
+
+
+def test_rule_ally_inhib_down_silent_when_none() -> None:
+    snap = _Snap(enemies=[_Player(champion_name="Draven")])
+    assert rule_ally_inhib_down(snap) is None
+
+
+def test_suppress_ally_inhib_down_removes_obj_take() -> None:
+    """When our inhib is down, dragon/baron take and lane_open are suppressed."""
+    recs = [
+        _rec("ally_inhib_down", "warn"),
+        _rec("dragon_take", "alert"),
+        _rec("baron_take", "alert"),
+        _rec("lane_open", "info"),
+        _rec("fight", "alert"),  # fight should survive
+    ]
+    result = _suppress_dominated(recs)
+    kinds = {r.kind for r in result}
+    assert "ally_inhib_down" in kinds
+    assert "dragon_take" not in kinds
+    assert "baron_take" not in kinds
+    assert "lane_open" not in kinds
+    assert "fight" in kinds
 
 
 # ----------------------------------------------------------------------

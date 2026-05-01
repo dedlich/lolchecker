@@ -414,6 +414,29 @@ def _active_enemy_inhibitors_down(snapshot: "LcdaSnapshot") -> int:
     return max(0, killed - respawned)
 
 
+def _active_ally_inhibitors_down(snapshot: "LcdaSnapshot") -> int:
+    """Count OUR inhibitor buildings currently destroyed (enemy killed them).
+
+    Mirror of _active_enemy_inhibitors_down: looks for InhibitorKilled events
+    where the KillerName is in the enemy team — meaning the enemy pushed far
+    enough to destroy our inhibitor. Conservative: subtracts all respawns.
+    """
+    events = getattr(snapshot, "raw_events", []) or []
+    enemies = list(getattr(snapshot, "enemies", []) or [])
+    if not events or not enemies:
+        return 0
+    enemy_ids = _player_ids(enemies)
+    killed = sum(
+        1 for e in events
+        if e.get("EventName") == "InhibitorKilled"
+        and (e.get("KillerName") or "") in enemy_ids
+    )
+    respawned = sum(
+        1 for e in events if e.get("EventName") == "InhibitorRespawned"
+    )
+    return max(0, killed - respawned)
+
+
 def _parse_turret_name(name: str) -> tuple[str, str, str] | None:
     """Parse LCDA turret name into (side, lane, tier), or None on bad format.
 
@@ -1401,6 +1424,34 @@ def rule_enemy_herald_danger(snapshot: "LcdaSnapshot") -> Recommendation | None:
     )
 
 
+def rule_ally_inhib_down(snapshot: "LcdaSnapshot") -> Recommendation | None:
+    """Enemy destroyed one or more of OUR inhibitors — defensive alert (B4).
+
+    Super-minions now spawn for the enemy in our lanes. Risk: enemy can
+    siege our base towers without any effort. Correct play is wave-clear
+    priority over mid-map objectives until the inhibitor respawns.
+    Suppressed when numbers_disadv is also active (already showing safety rec).
+    """
+    count = _active_ally_inhibitors_down(snapshot)
+    if count <= 0:
+        return None
+    label = f"{count}x" if count > 1 else "Dein"
+    return Recommendation(
+        text=f"{label} Inhib DOWN — Wellen clearen! Basis verteidigen!",
+        severity="alert" if count >= 2 else "warn",
+        category="safety",
+        confidence=0.90,
+        risk="HIGH",
+        ttl_s=90.0,
+        kind="ally_inhib_down",
+        reasons=(
+            f"{count} eigener Inhibitor zerstört",
+            "Feind-Super-Minions spawnen in deiner Lane",
+            "Wellen clearen → Nexus-Türme schützen",
+        ),
+    )
+
+
 def rule_enemy_inhibitor_down(snapshot: "LcdaSnapshot") -> Recommendation | None:
     """One or more enemy inhibitor buildings are dead → Super-Minions active.
 
@@ -1554,6 +1605,7 @@ ALL_RULES: tuple[Callable[["LcdaSnapshot"], Recommendation | None], ...] = (
     # Lane/base pressure — structural map-state (turrets + inhibs + herald).
     rule_enemy_herald_danger,
     rule_enemy_inhibitor_down,
+    rule_ally_inhib_down,
     rule_enemy_base_exposed,
     rule_lane_pressure,
 )
@@ -1625,6 +1677,12 @@ def _suppress_dominated(recs: list[Recommendation]) -> list[Recommendation]:
     # (turret just fell). The state has advanced past base_exposed.
     if "inhib_down" in kinds:
         recs = [r for r in recs if r.kind not in {"base_exposed", "lane_open"}]
+
+    # Rule 8 — ally_inhib_down is a defensive alert; suppress mid-map objective
+    # "take" signals (dragon/baron can wait — first clear the super minion waves).
+    if "ally_inhib_down" in kinds:
+        _obj_take_kinds = {"dragon_take", "baron_take", "lane_open"}
+        recs = [r for r in recs if r.kind not in _obj_take_kinds]
 
     return recs
 
