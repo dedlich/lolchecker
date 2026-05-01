@@ -2047,3 +2047,143 @@ def test_flash_down_and_tp_down_both_appear_together() -> None:
     kinds = {r.kind for r in recs}
     assert "flash_down" in kinds
     assert "tp_down" in kinds
+
+
+# ----------------------------------------------------------------------
+# rule_enemy_combat_spell_down (B2 — Exhaust/Heal/Ignite/Barrier/Cleanse)
+# ----------------------------------------------------------------------
+from champ_assistant.advisor.decision_engine import (  # noqa: E402
+    COMBAT_SPELL_ALERT_S,
+    rule_enemy_combat_spell_down,
+)
+
+
+@dataclass
+class _PlayerWithExhaust:
+    summoner_name: str = "Support"
+    champion_name: str = "Thresh"
+    spell_one: LiveSummonerSpell = field(
+        default_factory=lambda: LiveSummonerSpell(name="Exhaust", cooldown=210.0)
+    )
+    spell_two: LiveSummonerSpell = field(
+        default_factory=lambda: LiveSummonerSpell(name="Flash", cooldown=300.0)
+    )
+    is_alive: bool = True
+    respawn_timer: float = 0.0
+
+
+def _tracker_with_combat_spell(
+    summoner: str, spell: str, cooldown: float, game_time: float, remaining: float
+) -> SpellTracker:
+    t = SpellTracker()
+    cast_at = game_time - (cooldown - remaining)
+    t.mark_used(summoner, spell, cooldown, cast_at)
+    return t
+
+
+def test_combat_spell_down_fires_for_exhaust() -> None:
+    snap = _Snap(
+        game_time=600.0,
+        enemies=[_PlayerWithExhaust(summoner_name="Thresh")],
+    )
+    tracker = _tracker_with_combat_spell(
+        "Thresh", "Exhaust", 210.0, 600.0, COMBAT_SPELL_ALERT_S + 30.0
+    )
+    rec = rule_enemy_combat_spell_down(snap, tracker)
+    assert rec is not None
+    assert rec.kind == "combat_spell_down"
+    assert rec.severity == "info"
+    assert "Exhaust" in rec.text
+
+
+def test_combat_spell_down_fires_for_heal() -> None:
+    heal_player = _PlayerWithExhaust(
+        summoner_name="ADC",
+        champion_name="Jinx",
+        spell_one=LiveSummonerSpell(name="Heal", cooldown=240.0),
+        spell_two=LiveSummonerSpell(name="Flash", cooldown=300.0),
+    )
+    snap = _Snap(game_time=600.0, enemies=[heal_player])
+    tracker = _tracker_with_combat_spell(
+        "ADC", "Heal", 240.0, 600.0, COMBAT_SPELL_ALERT_S + 30.0
+    )
+    rec = rule_enemy_combat_spell_down(snap, tracker)
+    assert rec is not None
+    assert "Heal" in rec.text
+
+
+def test_combat_spell_down_fires_for_ignite() -> None:
+    ignite_player = _PlayerWithExhaust(
+        summoner_name="Mid",
+        champion_name="Zed",
+        spell_one=LiveSummonerSpell(name="Ignite", cooldown=180.0),
+        spell_two=LiveSummonerSpell(name="Flash", cooldown=300.0),
+    )
+    snap = _Snap(game_time=600.0, enemies=[ignite_player])
+    tracker = _tracker_with_combat_spell(
+        "Mid", "Ignite", 180.0, 600.0, COMBAT_SPELL_ALERT_S + 30.0
+    )
+    rec = rule_enemy_combat_spell_down(snap, tracker)
+    assert rec is not None
+    assert "Ignite" in rec.text
+
+
+def test_combat_spell_down_silent_when_almost_ready() -> None:
+    snap = _Snap(game_time=600.0, enemies=[_PlayerWithExhaust(summoner_name="Thresh")])
+    tracker = _tracker_with_combat_spell(
+        "Thresh", "Exhaust", 210.0, 600.0, COMBAT_SPELL_ALERT_S - 20.0
+    )
+    assert rule_enemy_combat_spell_down(snap, tracker) is None
+
+
+def test_combat_spell_down_silent_when_tracker_empty() -> None:
+    snap = _Snap(game_time=600.0, enemies=[_PlayerWithExhaust()])
+    assert rule_enemy_combat_spell_down(snap, SpellTracker()) is None
+
+
+def test_combat_spell_down_silent_for_flash_and_tp() -> None:
+    """Flash and TP have their own rules — must NOT appear in combat_spell_down."""
+    flash_player = _PlayerWithSpells(summoner_name="A")  # has Flash
+    tp_player = _PlayerWithTP(summoner_name="B")          # has TP
+    snap = _Snap(game_time=600.0, enemies=[flash_player, tp_player])
+    cast = 600.0 - (300.0 - (FLASH_DOWN_ALERT_S + 30.0))
+    tracker = SpellTracker()
+    tracker.mark_used("A", "Flash", 300.0, cast)
+    tracker.mark_used("B", "Teleport", 210.0, cast)
+    rec = rule_enemy_combat_spell_down(snap, tracker)
+    assert rec is None
+
+
+def test_combat_spell_down_multi_groups_into_one_card() -> None:
+    p1 = _PlayerWithExhaust(summoner_name="S1")
+    p2 = _PlayerWithExhaust(summoner_name="S2",
+                             spell_one=LiveSummonerSpell(name="Ignite", cooldown=180.0))
+    snap = _Snap(game_time=600.0, enemies=[p1, p2])
+    t = SpellTracker()
+    cast = 600.0 - (210.0 - (COMBAT_SPELL_ALERT_S + 30.0))
+    t.mark_used("S1", "Exhaust", 210.0, cast)
+    t.mark_used("S2", "Ignite", 180.0, cast)
+    rec = rule_enemy_combat_spell_down(snap, t)
+    assert rec is not None
+    assert rec.kind == "combat_spell_down"
+
+
+def test_evaluate_includes_combat_spell_down_with_tracker() -> None:
+    snap = _Snap(
+        game_time=600.0,
+        enemies=[_PlayerWithExhaust(summoner_name="Thresh")],
+    )
+    tracker = _tracker_with_combat_spell(
+        "Thresh", "Exhaust", 210.0, 600.0, COMBAT_SPELL_ALERT_S + 60.0
+    )
+    recs = evaluate(snap, spell_tracker=tracker)
+    assert any(r.kind == "combat_spell_down" for r in recs)
+
+
+def test_combat_spell_down_suppressed_by_numbers_disadv() -> None:
+    recs = [
+        _rec("numbers_disadv", "alert"),
+        _rec("combat_spell_down", "info"),
+    ]
+    result = _suppress_dominated(recs)
+    assert not any(r.kind == "combat_spell_down" for r in result)

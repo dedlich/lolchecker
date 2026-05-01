@@ -362,6 +362,13 @@ HERALD_USAGE_WINDOW_S = 180.0   # enemy has ~3 min to place the herald after pic
 FLASH_DOWN_ALERT_S = 60.0
 # Teleport alert: wider window than Flash since TP blocks global rotations.
 TP_DOWN_ALERT_S = 90.0
+# Combat spells (Exhaust, Heal, Ignite, Barrier, Cleanse): alert when ≥60s CD.
+COMBAT_SPELL_ALERT_S = 60.0
+# Spells handled by rule_enemy_combat_spell_down (not Flash/TP — those have
+# their own rules with spell-specific text).
+_COMBAT_SPELLS: frozenset[str] = frozenset({
+    "Exhaust", "Heal", "Ignite", "Barrier", "Cleanse",
+})
 # Baron buff (Hand of Baron) lasts 180s; alert in final 60s to push NOW.
 BARON_BUFF_DURATION_S = 180.0
 BARON_BUFF_EXPIRY_ALERT_S = 60.0
@@ -1919,6 +1926,78 @@ def rule_enemy_tp_down(
     )
 
 
+def rule_enemy_combat_spell_down(
+    snapshot: "LcdaSnapshot",
+    spell_tracker: "SpellTracker",
+) -> Recommendation | None:
+    """Advisory when enemy has a tracked combat summoner spell on CD (B2).
+
+    Covers Exhaust, Heal, Ignite, Barrier, and Cleanse — spells that
+    directly affect trade outcomes. Each has a specific tactical message:
+    - Exhaust down → enemy can't kite/reduce your carry
+    - Heal down → no sustain/movement speed boost for ADC
+    - Ignite down → no kill threat; trades are safer
+    - Barrier/Cleanse down → burst/CC window
+
+    Fires when remaining CD > COMBAT_SPELL_ALERT_S (60s). Groups multiple
+    down-spells into one card to avoid flooding the overlay. Severity is
+    always "info" — these are advisory notes, not urgent signals.
+    """
+    enemies = list(getattr(snapshot, "enemies", []) or [])
+    game_time = float(getattr(snapshot, "game_time", 0.0) or 0.0)
+    if not enemies or not game_time:
+        return None
+
+    _SPELL_HINTS: dict[str, str] = {
+        "Exhaust":  "kein Exhaust — Carry kann all-in gehen",
+        "Heal":     "kein Heal — ADC hat keine Sustain",
+        "Ignite":   "kein Ignite — kein Kill-Threat in Lane",
+        "Barrier":  "kein Barrier — Burst-Fenster!",
+        "Cleanse":  "kein Cleanse — CC trifft sicher",
+    }
+
+    down: list[tuple[str, str, float]] = []  # (name, spell, remaining)
+    for enemy in enemies:
+        for spell in (getattr(enemy, "spell_one", None), getattr(enemy, "spell_two", None)):
+            spell_name = getattr(spell, "name", "") if spell is not None else ""
+            if spell_name not in _COMBAT_SPELLS:
+                continue
+            summoner = getattr(enemy, "summoner_name", "") or getattr(enemy, "champion_name", "")
+            remaining = spell_tracker.remaining(
+                getattr(enemy, "summoner_name", ""), spell_name, game_time,
+            )
+            if remaining > COMBAT_SPELL_ALERT_S:
+                down.append((summoner, spell_name, remaining))
+            break
+
+    if not down:
+        return None
+
+    min_remaining = min(r for _, _, r in down)
+
+    if len(down) == 1:
+        name, spell_name, remaining = down[0]
+        hint = _SPELL_HINTS.get(spell_name, f"kein {spell_name}")
+        text = f"{spell_name} down: {name} ({int(remaining)}s) — {hint}"
+    else:
+        summary = ", ".join(f"{s}({n})" for n, s, _ in down[:3])
+        text = f"Spells down: {summary}"
+
+    return Recommendation(
+        text=text,
+        severity="info",
+        category="tempo",
+        confidence=0.83,
+        risk="LOW",
+        ttl_s=min_remaining,
+        kind="combat_spell_down",
+        reasons=tuple(
+            f"{s} down: {n} — {_SPELL_HINTS.get(s, s)} ({int(r)}s)"
+            for n, s, r in down
+        ),
+    )
+
+
 # Rule registry — extend by appending a function. Order doesn't affect
 # ``evaluate``'s output (caller sorts by severity).
 ALL_RULES: tuple[Callable[["LcdaSnapshot"], Recommendation | None], ...] = (
@@ -1996,6 +2075,7 @@ def _suppress_dominated(recs: list[Recommendation]) -> list[Recommendation]:
                       "dragon_take", "dragon_free", "baron_take", "baron_free",
                       "flash_down",            # engage window irrelevant when short-handed
                       "tp_down",               # side-lane freedom irrelevant when short-handed
+                      "combat_spell_down",     # trade windows irrelevant when short-handed
                       "baron_buff_expiring",   # pushing while outnumbered is still bad
                       "elder_buff_expiring",   # same — don't fight when short-handed
                       "ally_herald"}           # don't split to place herald while down
@@ -2061,7 +2141,11 @@ def evaluate(
         if rec is not None:
             out.append(rec)
     if spell_tracker is not None:
-        for _spell_rule in (rule_enemy_flash_down, rule_enemy_tp_down):
+        for _spell_rule in (
+            rule_enemy_flash_down,
+            rule_enemy_tp_down,
+            rule_enemy_combat_spell_down,
+        ):
             try:
                 rec = _spell_rule(snapshot, spell_tracker)
                 if rec is not None:
