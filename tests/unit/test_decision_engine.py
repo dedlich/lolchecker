@@ -3535,3 +3535,102 @@ def test_power_spike_in_evaluate() -> None:
     snap = _Snap(new_spikes=[_spike("level", 6)])
     recs = evaluate(snap)
     assert any(r.kind == "power_spike" for r in recs)
+
+
+# ----------------------------------------------------------------------
+# Fight window closing rule (B2 contribution — closing signal)
+# ----------------------------------------------------------------------
+from champ_assistant.advisor.decision_engine import (  # noqa: E402
+    FIGHT_WINDOW_CLOSING_S,
+    rule_fight_window_closing,
+)
+
+
+@dataclass
+class _PlayerWithRespawn:
+    summoner_name: str = "X"
+    champion_name: str = "Jinx"
+    is_alive: bool = True
+    respawn_timer: float = 0.0
+
+
+def _dead(champ: str, timer: float) -> _PlayerWithRespawn:
+    return _PlayerWithRespawn(champion_name=champ, is_alive=False, respawn_timer=timer)
+
+
+def _alive_p(champ: str = "Ally") -> _PlayerWithRespawn:
+    return _PlayerWithRespawn(champion_name=champ, is_alive=True, respawn_timer=0.0)
+
+
+def test_window_closing_fires_when_enemy_respawns_soon() -> None:
+    snap = _Snap(
+        allies=[_alive_p(), _alive_p(), _alive_p()],
+        enemies=[_dead("Jinx", 8.0), _alive_p("Thresh")],
+    )
+    rec = rule_fight_window_closing(snap)
+    assert rec is not None
+    assert rec.kind == "window_closing"
+    assert rec.severity == "alert"
+    assert "Jinx" in rec.text
+    assert "8" in rec.text
+
+
+def test_window_closing_silent_when_no_advantage() -> None:
+    snap = _Snap(
+        allies=[_alive_p(), _dead("A", 5.0)],
+        enemies=[_dead("Jinx", 8.0), _alive_p("Thresh")],
+    )
+    assert rule_fight_window_closing(snap) is None
+
+
+def test_window_closing_silent_when_timer_too_long() -> None:
+    snap = _Snap(
+        allies=[_alive_p(), _alive_p()],
+        enemies=[_dead("Jinx", FIGHT_WINDOW_CLOSING_S + 1.0)],
+    )
+    assert rule_fight_window_closing(snap) is None
+
+
+def test_window_closing_silent_when_all_alive() -> None:
+    snap = _Snap(
+        allies=[_alive_p(), _alive_p()],
+        enemies=[_alive_p("Jinx")],
+    )
+    assert rule_fight_window_closing(snap) is None
+
+
+def test_window_closing_picks_soonest_respawn() -> None:
+    snap = _Snap(
+        allies=[_alive_p(), _alive_p(), _alive_p()],
+        enemies=[_dead("Jinx", 10.0), _dead("Thresh", 5.0)],
+    )
+    rec = rule_fight_window_closing(snap)
+    assert rec is not None
+    assert "Thresh" in rec.text  # 5s is sooner than 10s
+
+
+def test_window_closing_suppressed_by_ace() -> None:
+    recs = [
+        _rec("ace", "alert"),
+        _rec("window_closing", "alert"),
+    ]
+    result = _suppress_dominated(recs)
+    assert not any(r.kind == "window_closing" for r in result)
+
+
+def test_window_closing_survives_without_ace() -> None:
+    recs = [
+        _rec("numbers_adv", "warn"),
+        _rec("window_closing", "alert"),
+    ]
+    result = _suppress_dominated(recs)
+    assert any(r.kind == "window_closing" for r in result)
+
+
+def test_window_closing_in_evaluate() -> None:
+    snap = _Snap(
+        allies=[_alive_p(), _alive_p(), _alive_p()],
+        enemies=[_dead("Jinx", 8.0), _alive_p("Thresh")],
+    )
+    recs = evaluate(snap)
+    assert any(r.kind == "window_closing" for r in recs)

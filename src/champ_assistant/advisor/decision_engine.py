@@ -61,6 +61,7 @@ LATE_GAME_S = 30 * 60.0         # past 30:00 every fight is the last fight
 DRAKE_SETUP_WINDOW_S = 60.0     # start grouping this many seconds before drake
 BARON_SETUP_WINDOW_S = 120.0    # baron needs more prep (vision sweep + waves)
 FIGHT_SCORE_THRESHOLD = 0.30    # minimum |fight_score| to generate a fight rec
+FIGHT_WINDOW_CLOSING_S = 12.0   # warn when enemy respawns within this many seconds
 
 # --------------------------------------------------------------------------
 # Champion focus-target database
@@ -2748,6 +2749,64 @@ def rule_enemy_combat_spell_down(
     )
 
 
+def rule_fight_window_closing(snapshot: "LcdaSnapshot") -> Recommendation | None:
+    """Numbers advantage that is about to disappear because a dead enemy
+    respawns within FIGHT_WINDOW_CLOSING_S seconds.
+
+    Complements rule_ace_detected (fires while all are dead) and
+    rule_numbers_advantage (fires on a sustained lead). This rule fires
+    during the transition: we're still ahead, but the clock is running.
+    Suppressed by ace (which is already urging the push).
+    """
+    allies = list(getattr(snapshot, "allies", []) or [])
+    enemies = list(getattr(snapshot, "enemies", []) or [])
+    if not allies or not enemies:
+        return None
+
+    # Require live respawn data — fall back gracefully if LCDA omits it.
+    has_enemy_respawn = any(
+        getattr(e, "respawn_timer", None) is not None for e in enemies
+    )
+    if not has_enemy_respawn:
+        return None
+
+    allies_alive = _alive_count(allies, default_to_full_team=False)
+    enemies_alive = _alive_count(enemies, default_to_full_team=False)
+    if allies_alive <= enemies_alive:
+        return None
+
+    # Find the enemy whose respawn is most imminent (but not yet alive).
+    imminent = [
+        e for e in enemies
+        if not getattr(e, "is_alive", True)
+        and 0 < getattr(e, "respawn_timer", 0.0) <= FIGHT_WINDOW_CLOSING_S
+    ]
+    if not imminent:
+        return None
+
+    soonest = min(imminent, key=lambda e: getattr(e, "respawn_timer", 99.0))
+    timer = int(getattr(soonest, "respawn_timer", 1.0))
+    name = (
+        getattr(soonest, "champion_name", "")
+        or getattr(soonest, "summoner_name", "")
+        or "?"
+    )
+
+    return Recommendation(
+        text=f"Jetzt pushen — {name} zurück in {timer}s!",
+        severity="alert",
+        category="tempo",
+        confidence=0.90,
+        risk="LOW",
+        ttl_s=float(timer + 3),
+        kind="window_closing",
+        reasons=(
+            f"{allies_alive}v{enemies_alive} alive",
+            f"{name} respawnt in {timer}s — Fenster schließt sich",
+        ),
+    )
+
+
 def rule_power_spike(snapshot: "LcdaSnapshot") -> Recommendation | None:
     """Alert when the active player just crossed a power-spike threshold
     (level 6/11/16 or first/second/third legendary item).
@@ -2797,6 +2856,8 @@ ALL_RULES: tuple[Callable[["LcdaSnapshot"], Recommendation | None], ...] = (
     rule_game_ended,
     # Ace detection — highest-priority window, overrides most other calls.
     rule_ace_detected,
+    # Closing window — enemy about to respawn, finish the push.
+    rule_fight_window_closing,
     # Power spike — ult ready / item completed; brief action window.
     rule_power_spike,
     # Numbers-asymmetry — safety overrides objective calls.
@@ -2872,7 +2933,11 @@ def _suppress_dominated(recs: list[Recommendation]) -> list[Recommendation]:
 
     # Rule 1 — ace absorbs redundant offensive signals
     if "ace" in kinds:
-        _ace_drop = {"fight", "fight_bad", "numbers_adv", "gold_lead", "kill_lead", "jungler_down"}
+        _ace_drop = {
+            "fight", "fight_bad", "numbers_adv", "gold_lead", "kill_lead",
+            "jungler_down",
+            "window_closing",  # ace already urges the push — closing window is redundant
+        }
         recs = [r for r in recs if r.kind not in _ace_drop]
         kinds = {r.kind for r in recs}
 
