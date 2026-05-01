@@ -30,10 +30,26 @@ from typing import Any
 
 from ..data.perks_data import (
     PERK_IDS,
+    STYLE_DOMINATION,
+    STYLE_INSPIRATION,
+    STYLE_PRECISION,
+    STYLE_RESOLVE,
+    STYLE_SORCERY,
     perk_ids_for,
     resolve_keystone,
 )
 from .client import LcuClient, LcuClientError
+
+# Per-tree fallback perk IDs used when the build doesn't provide enough
+# perks to fill all required slots. IDs chosen from bottom-row generics
+# that are safe to slot in any position within their tree.
+_TREE_FALLBACKS: dict[int, list[int]] = {
+    STYLE_PRECISION:   [8014, 8017, 8299],   # Coup de Grace / Cut Down / Last Stand
+    STYLE_DOMINATION:  [8105, 8106, 8134],   # Relentless / Ultimate / Ingenious Hunter
+    STYLE_SORCERY:     [8232, 8236, 8237],   # Waterwalking / Gathering Storm / Scorch
+    STYLE_RESOLVE:     [8444, 8453, 8242],   # Second Wind / Revitalize / Unflinching
+    STYLE_INSPIRATION: [8345, 8347, 8410],   # Biscuit Delivery / Cosmic Insight / Approach Velocity
+}
 
 logger = logging.getLogger(__name__)
 
@@ -73,13 +89,6 @@ def build_page_payload(
         primary = [PERK_IDS[keystone_name]]
 
     # Pick the sub-style by mapping the first sub-rune back to its tree.
-    from ..data.perks_data import (
-        STYLE_DOMINATION,
-        STYLE_INSPIRATION,
-        STYLE_PRECISION,
-        STYLE_RESOLVE,
-        STYLE_SORCERY,
-    )
     perk_to_style = {
         # rough heuristic: first digit of the perk id maps to its tree
         81: STYLE_PRECISION,    # 8005..
@@ -112,13 +121,27 @@ def build_page_payload(
         }[primary_style]
 
     # The selectedPerkIds array is 9 entries: 4 primary, 2 sub, 3 shards.
-    # Pad sub to 2 with sensible defaults if needed.
+    # LCU rejects any entry with ID 0 — pad missing slots with known-valid
+    # fallback perks from the appropriate tree instead.
+    primary_fallbacks = [p for p in _TREE_FALLBACKS.get(primary_style, [])
+                         if p not in primary]
+    sub_fallbacks = [p for p in _TREE_FALLBACKS.get(sub_style, [])
+                     if p not in sub]
+
     selected = primary[:4]
-    while len(selected) < 4:
-        selected.append(0)
+    while len(selected) < 4 and primary_fallbacks:
+        selected.append(primary_fallbacks.pop(0))
+
     selected += sub[:2]
-    while len(selected) < 6:
-        selected.append(0)
+    while len(selected) < 6 and sub_fallbacks:
+        selected.append(sub_fallbacks.pop(0))
+
+    if len(selected) < 6:
+        logger.warning(
+            "build_page_payload: not enough valid runes (got %d/6) — "
+            "page may be rejected by LCU",
+            len(selected),
+        )
 
     # Sensible balanced shards: Adaptive / Adaptive / Health
     selected += [PERK_IDS["Adaptive Force"], PERK_IDS["Adaptive Force"],
@@ -163,7 +186,13 @@ async def apply_rune_page(
 
     # Create the fresh page; LCU activates it on creation when ``current``
     # is true.
+    logger.debug("apply_rune_page: POST payload=%r", payload)
     response = await client.post("/lol-perks/v1/pages", json=payload)
+    if response.is_error:
+        logger.error(
+            "apply_rune_page: LCU returned %d — body: %s",
+            response.status_code, response.text,
+        )
     response.raise_for_status()
     created = response.json()
     logger.info(
