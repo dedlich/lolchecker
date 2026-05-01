@@ -331,58 +331,79 @@ class RecommendationPanel(FloatingWidget):
         rec carries a representative confidence value so the new
         bottom confidence-bar reads visually on first paint."""
         demo = [
+            # Dragon window — free-take window (5v3)
             Recommendation(
-                text="Baron in 35s — Vision-Pinks setzen, "
-                     "Side-Wellen prep, Ults checken",
+                text="Infernal-Drache — SOUL POINT! in 18s — JETZT forcen — Vision + Group",
                 severity="alert", category="objective",
-                confidence=0.92, risk="MEDIUM", ttl_s=35.0,
+                confidence=0.95, risk="LOW", ttl_s=18.0,
+                reasons=(
+                    "FREE TAKE — Jinx + Lux tot (2 man up)",
+                    "Stacks: Wir 3 — Gegner 1",
+                    "Gold-Diff: +4200 | 5v3 alive",
+                ),
             ),
+            # Baron window — numbers advantage
             Recommendation(
-                text="Drache spawnt in 25s — Vision setzen, Side gruppieren",
+                text="Baron in 25s — JETZT Group + Pit-Control",
                 severity="alert", category="objective",
+                confidence=0.88, risk="MEDIUM", ttl_s=25.0,
+                reasons=(
+                    "Baron spawnt in 25s",
+                    "Numbers-Vorteil 5v4",
+                    "Gold-Diff: +3800 | Level: +1.2",
+                ),
             ),
+            # Fight recommendation with focus target + AoE warning
             Recommendation(
-                text="Herald in 18s — top-side prio, Plates abholen",
-                severity="alert", category="objective",
+                text="Fight forcen — 74%. Fokus Jinx. ACHTUNG: Orianna — Ball-Shockwave — NICHT CLUSTERN!",
+                severity="alert", category="tempo",
+                confidence=0.84, risk="MEDIUM", ttl_s=15.0,
+                reasons=(
+                    "Fight-Chance: 74% (Score +0.48)",
+                    "Numbers: 5v5 alive",
+                    "Gold-Diff: +4500",
+                    "Fokus: Jinx — 9/1 — extrem fed, primäres Carry",
+                    "AoE-Warnung: Orianna — Ball-Shockwave — NICHT CLUSTERN!",
+                ),
             ),
+            # Baron give-up
             Recommendation(
-                text="Baron (20s) abgeben — defensiv warten, "
-                     "Konter-Engage suchen",
+                text="Baron (30s) abgeben — defensiv warten, Konter suchen",
                 severity="warn", category="objective",
+                confidence=0.85, risk="HIGH", ttl_s=30.0,
+                reasons=(
+                    "Baron in 30s",
+                    "Gold-Diff: -7200 (deutlich hinten)",
+                    "Numbers: 4v5",
+                    "Baron-Throw = sofortiges GG",
+                ),
             ),
+            # Avoid fights
             Recommendation(
-                text="Drache (28s) abgeben — Side-Wellen pushen, "
-                     "Gold-Diff aufholen",
-                severity="warn", category="objective",
+                text="MEIDE Fights — 32% Chance. Items + Vision farmen.",
+                severity="warn", category="safety",
+                confidence=0.78, risk="HIGH", ttl_s=20.0,
+                reasons=(
+                    "Fight-Chance: 32% (Score -0.42)",
+                    "Numbers: 4v5",
+                    "Gold-Diff: -5800",
+                    "Fokus: Jinx — primäres Carry",
+                ),
             ),
             Recommendation(
                 text="-6200 Gold — Safe spielen, Wellen abräumen, keine Fights",
                 severity="warn", category="safety",
+                confidence=0.80, risk="HIGH", ttl_s=30.0,
             ),
             Recommendation(
-                text="-9 Kills — Bunker am Inhib, kein Überfarmen, "
-                     "auf koordinierten Reset warten",
-                severity="warn", category="safety",
-            ),
-            Recommendation(
-                text="Level-Nachteil (-2.0) — XP-Wellen sichern, "
-                     "keine Skirmishes",
-                severity="warn", category="safety",
-            ),
-            Recommendation(
-                text="+4500 Gold — Vision pushen, Wellen kontrollieren, "
-                     "nächstes Objective vorbereiten",
+                text="+4500 Gold — Vision pushen, nächstes Objective vorbereiten",
                 severity="info", category="tempo",
+                confidence=0.75, risk="LOW", ttl_s=20.0,
             ),
             Recommendation(
-                text="+7 Kills — Vision deep pushen, dive-Comp hinten "
-                     "einrichten",
+                text="Late game — group 5, kein Splitpush ohne TP, jeder Death = 50s+",
                 severity="info", category="tempo",
-            ),
-            Recommendation(
-                text="Late game — group 5, kein Splitpush ohne TP, "
-                     "jeder Death = 50s+",
-                severity="info", category="tempo",
+                confidence=0.85, risk="MEDIUM", ttl_s=60.0,
             ),
         ]
         self.set_recommendations(demo)

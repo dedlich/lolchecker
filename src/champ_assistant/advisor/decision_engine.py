@@ -56,6 +56,102 @@ KILL_LEAD_THRESHOLD = 5         # kills ahead → real momentum, press it
 KILL_DEFICIT_THRESHOLD = 7      # kills behind → real deficit, bunker
 LATE_GAME_S = 30 * 60.0         # past 30:00 every fight is the last fight
 
+# Window rule constants (pro-level window functions)
+DRAKE_SETUP_WINDOW_S = 60.0     # start grouping this many seconds before drake
+BARON_SETUP_WINDOW_S = 120.0    # baron needs more prep (vision sweep + waves)
+FIGHT_SCORE_THRESHOLD = 0.30    # minimum |fight_score| to generate a fight rec
+
+# --------------------------------------------------------------------------
+# Champion focus-target database
+# priority 1-5 (5 = kill first in a teamfight); tags = short warning strings;
+# aoe_cc = True when the champion has a game-changing AoE CC that punishes
+# clustering — generates "NICHT CLUSTERN" warnings.
+# --------------------------------------------------------------------------
+_CHAMP_DATA: dict[str, dict] = {
+    # ---- ADC / Primary damage carries (kill first) ----
+    "Jinx":         {"priority": 5, "tags": ["Hypercarry-Resets"], "aoe_cc": False},
+    "Caitlyn":      {"priority": 5, "tags": ["Trap-CC"],           "aoe_cc": False},
+    "Jhin":         {"priority": 5, "tags": ["Root-Grenade"],      "aoe_cc": False},
+    "Miss Fortune": {"priority": 5, "tags": ["Bullet-Time-AoE — NICHT CLUSTERN!"], "aoe_cc": True},
+    "Kog'Maw":      {"priority": 5, "tags": ["Hypercarry"],        "aoe_cc": False},
+    "Samira":       {"priority": 5, "tags": ["CC-immune-Ult"],     "aoe_cc": False},
+    "Draven":       {"priority": 5, "tags": ["Early-Burst"],       "aoe_cc": False},
+    "Tristana":     {"priority": 5, "tags": ["Dive-Resets"],       "aoe_cc": False},
+    "Twitch":       {"priority": 5, "tags": ["Invisible — Ward Pit!"], "aoe_cc": False},
+    "Aphelios":     {"priority": 5, "tags": ["Moonlight-AoE — NICHT CLUSTERN!"], "aoe_cc": True},
+    "Vayne":        {"priority": 4, "tags": ["Invisible-Tumble"],  "aoe_cc": False},
+    "Ezreal":       {"priority": 4, "tags": ["Kiting"],            "aoe_cc": False},
+    "Ashe":         {"priority": 4, "tags": ["Global-CC-Ult"],     "aoe_cc": False},
+    "Zeri":         {"priority": 4, "tags": ["Stack-Hypercarry"],  "aoe_cc": False},
+    "Xayah":        {"priority": 4, "tags": ["CC-immune-Ult"],     "aoe_cc": False},
+    "Sivir":        {"priority": 4, "tags": ["Spell-Block-Shield"], "aoe_cc": False},
+    # ---- AP Mid carries ----
+    "Syndra":       {"priority": 5, "tags": ["One-Shot-Ult"],      "aoe_cc": False},
+    "Zed":          {"priority": 5, "tags": ["Assassination"],     "aoe_cc": False},
+    "LeBlanc":      {"priority": 5, "tags": ["Burst-Dash-Chain"],  "aoe_cc": False},
+    "Akali":        {"priority": 5, "tags": ["Invisible"],         "aoe_cc": False},
+    "Katarina":     {"priority": 5, "tags": ["Resets — CC=Counter!"], "aoe_cc": True},
+    "Talon":        {"priority": 5, "tags": ["Roam-Burst"],        "aoe_cc": False},
+    "Kha'Zix":      {"priority": 5, "tags": ["Isolation-Kill — NICHT ALLEIN!"], "aoe_cc": False},
+    "Rengar":       {"priority": 5, "tags": ["One-Shot-Invisible — Ward Pit!"], "aoe_cc": False},
+    "Evelynn":      {"priority": 5, "tags": ["Invisible nach 6 — Ward!"], "aoe_cc": False},
+    "Orianna":      {"priority": 4, "tags": ["Ball-Shockwave — NICHT CLUSTERN!"], "aoe_cc": True},
+    "Annie":        {"priority": 4, "tags": ["Tibbers-Stun — NICHT CLUSTERN!"], "aoe_cc": True},
+    "Veigar":       {"priority": 4, "tags": ["Event-Horizon-Cage — NICHT REINGEHEN!"], "aoe_cc": True},
+    "Viktor":       {"priority": 4, "tags": ["Gravity-Field — RAUS!"], "aoe_cc": True},
+    "Lux":          {"priority": 4, "tags": ["Long-Range-CC"],     "aoe_cc": True},
+    "Cassiopeia":   {"priority": 4, "tags": ["NICHT FRONTAL — Petrify-Ult!"], "aoe_cc": True},
+    "Seraphine":    {"priority": 4, "tags": ["AoE-CC-Chain — NICHT CLUSTERN!"], "aoe_cc": True},
+    "Xerath":       {"priority": 4, "tags": ["Long-Range-Snipe"],  "aoe_cc": True},
+    "Ryze":         {"priority": 4, "tags": ["Hypercarry 3+ Items"], "aoe_cc": False},
+    "Azir":         {"priority": 4, "tags": ["Soldiers-AoE"],      "aoe_cc": True},
+    "Ekko":         {"priority": 4, "tags": ["AoE-Zone-Stun"],     "aoe_cc": True},
+    "Shaco":        {"priority": 4, "tags": ["Clone — kill richtige Kopie!"], "aoe_cc": False},
+    "Nidalee":      {"priority": 4, "tags": ["High-Poke-Dive"],    "aoe_cc": False},
+    # ---- Jungle ----
+    "Lee Sin":      {"priority": 3, "tags": ["Kick-Displacement"], "aoe_cc": False},
+    # ---- Top tanks / fighters (lower kill priority) ----
+    "Malphite":     {"priority": 2, "tags": ["Unstoppable-Force — NICHT CLUSTERN!"], "aoe_cc": True},
+    "Amumu":        {"priority": 2, "tags": ["Sad-Mummy-AoE — NICHT CLUSTERN!"], "aoe_cc": True},
+    "Sett":         {"priority": 3, "tags": ["Show-Stopper-Slam-AoE"], "aoe_cc": True},
+    "Darius":       {"priority": 3, "tags": ["Execute-Resets!"],   "aoe_cc": False},
+    "Garen":        {"priority": 3, "tags": ["True-Damage-Execute"], "aoe_cc": False},
+    "Mordekaiser":  {"priority": 3, "tags": ["Death-Realm-Isolation"], "aoe_cc": False},
+    "Nasus":        {"priority": 4, "tags": ["Hypercarry-Stacks — früh töten!"], "aoe_cc": True},
+    "Ornn":         {"priority": 2, "tags": ["Stampede-AoE — NICHT CLUSTERN!"], "aoe_cc": True},
+    "Jarvan IV":    {"priority": 2, "tags": ["Cataclysm-Arena — RAUS vor Ult!"], "aoe_cc": True},
+    "Zac":          {"priority": 2, "tags": ["Bounce-AoE — NICHT CLUSTERN!"], "aoe_cc": True},
+    "Cho'Gath":     {"priority": 2, "tags": ["Rupture-Knockup + Silence"], "aoe_cc": True},
+    "Aatrox":       {"priority": 3, "tags": ["World-Ender-Revive beachten!"], "aoe_cc": True},
+    "Volibear":     {"priority": 2, "tags": ["AoE-Thunderclap"],   "aoe_cc": True},
+    "Renekton":     {"priority": 3, "tags": ["Dash-Stun-Combo"],   "aoe_cc": False},
+    # ---- Supports ----
+    "Soraka":       {"priority": 5, "tags": ["ZUERST TÖTEN — heilt alles!"], "aoe_cc": True},
+    "Yuumi":        {"priority": 5, "tags": ["Host töten — Yuumi attached!"], "aoe_cc": False},
+    "Sona":         {"priority": 5, "tags": ["Crescendo-AoE-Stun — NICHT CLUSTERN!"], "aoe_cc": True},
+    "Leona":        {"priority": 2, "tags": ["Solar-Flare-AoE — NICHT CLUSTERN!"], "aoe_cc": True},
+    "Nautilus":     {"priority": 2, "tags": ["Hook + Chain-CC"],   "aoe_cc": False},
+    "Blitzcrank":   {"priority": 2, "tags": ["Hook = sofortiger Kill!"], "aoe_cc": False},
+    "Thresh":       {"priority": 3, "tags": ["Hook-CC"],           "aoe_cc": False},
+    "Morgana":      {"priority": 3, "tags": ["Soul-Shackles-AoE — NICHT CLUSTERN!"], "aoe_cc": True},
+    "Lulu":         {"priority": 3, "tags": ["Wildgrowth-Hypercarry-Buff"], "aoe_cc": True},
+    "Zyra":         {"priority": 3, "tags": ["Stranglethorns-AoE — NICHT CLUSTERN!"], "aoe_cc": True},
+    "Janna":        {"priority": 3, "tags": ["Monsoon-Knockback — Engage-Interrupt!"], "aoe_cc": True},
+    "Alistar":      {"priority": 2, "tags": ["Headbutt-Pulverize-Combo"], "aoe_cc": True},
+    "Braum":        {"priority": 2, "tags": ["Glacial-Fissure-AoE — NICHT CLUSTERN!"], "aoe_cc": True},
+}
+
+# Drake type localised names + strategic value (1=low, 5=high).
+_DRAKE_DISPLAY: dict[str, str] = {
+    "Fire":     "Infernal-Drache",
+    "Earth":    "Berg-Drache",
+    "Water":    "Ozean-Drache",
+    "Air":      "Wolken-Drache",
+    "Hextech":  "Hextech-Drache",
+    "Chemtech": "Chemtech-Drache",
+    "Elder":    "Elder-Drache",
+}
+
 
 @dataclass(frozen=True)
 class Recommendation:
@@ -167,6 +263,89 @@ def _objective_remaining(
             except Exception:  # noqa: BLE001
                 return None
     return None
+
+
+def _drake_stack_count(snapshot: "LcdaSnapshot") -> int:
+    """Count drakes the allied team has taken (from raw_events)."""
+    events = getattr(snapshot, "raw_events", []) or []
+    ally_names = {
+        p.summoner_name
+        for p in (getattr(snapshot, "allies", []) or [])
+    }
+    return sum(
+        1 for e in events
+        if e.get("EventName") == "DragonKill" and e.get("KillerName") in ally_names
+    )
+
+
+def _enemy_drake_stack_count(snapshot: "LcdaSnapshot") -> int:
+    """Count drakes the enemy team has taken (from raw_events)."""
+    events = getattr(snapshot, "raw_events", []) or []
+    enemy_names = {
+        p.summoner_name
+        for p in (getattr(snapshot, "enemies", []) or [])
+    }
+    return sum(
+        1 for e in events
+        if e.get("EventName") == "DragonKill" and e.get("KillerName") in enemy_names
+    )
+
+
+def _fed_score(player: object, game_time: float) -> float:
+    """Kills-per-5-minutes for ``player``. 1.0 = normal pace; 2.0+ = fed."""
+    kills = getattr(player, "kills", 0)
+    if not kills or game_time <= 0:
+        return 0.0
+    return kills / max(1.0, game_time / 60.0) * 5.0
+
+
+def _focus_target(enemies: list, game_time: float) -> tuple[str, str] | None:
+    """Return (champion_name, reason) for the highest-priority alive enemy.
+    Factors: base kill priority from _CHAMP_DATA, multiplied by fed-score."""
+    if not enemies:
+        return None
+
+    def _score(p: object) -> float:
+        if not getattr(p, "is_alive", True):
+            return -1.0
+        champ = getattr(p, "champion_name", "") or ""
+        base = float(_CHAMP_DATA.get(champ, {}).get("priority", 3))
+        fed = _fed_score(p, game_time)
+        return base * max(1.0, fed)
+
+    ranked = sorted(enemies, key=_score, reverse=True)
+    best = ranked[0]
+    champ = getattr(best, "champion_name", "") or ""
+    if not champ:
+        return None
+
+    kills = getattr(best, "kills", 0)
+    deaths = max(1, getattr(best, "deaths", 1) or 1)
+    fed = _fed_score(best, game_time)
+    priority = _CHAMP_DATA.get(champ, {}).get("priority", 3)
+
+    parts: list[str] = []
+    if fed >= 2.0:
+        parts.append(f"{kills}/{deaths} — extrem fed")
+    elif fed >= 1.3:
+        parts.append(f"{kills}/{deaths} — fed")
+    if priority >= 5:
+        parts.append("primäres Carry")
+    return (champ, ", ".join(parts) if parts else "höchste Kill-Prio")
+
+
+def _aoe_cc_warnings(enemies: list) -> list[str]:
+    """One-line warning for each enemy whose AoE CC punishes clustering."""
+    warnings: list[str] = []
+    for p in enemies:
+        champ = getattr(p, "champion_name", "") or ""
+        data = _CHAMP_DATA.get(champ, {})
+        if not data.get("aoe_cc"):
+            continue
+        tags = data.get("tags", [])
+        tip = tags[0] if tags else "AoE CC"
+        warnings.append(f"{champ} — {tip}")
+    return warnings
 
 
 def _alive_count(players: list, default_to_full_team: bool = True) -> int:
@@ -531,18 +710,286 @@ def rule_late_game_group(snapshot: "LcdaSnapshot") -> Recommendation | None:
     )
 
 
+# --------------------------------------------------------------------------
+# Window rules — pro-level objective + fight decision trees
+# --------------------------------------------------------------------------
+
+def rule_dragon_window(snapshot: "LcdaSnapshot") -> Recommendation | None:
+    """Pro-level Dragon call. Factors: timer, stack count + soul-point,
+    drake type, dead-enemy free-window, gold/numbers. Replaces the
+    simpler rule_drake_priority + rule_drake_give_up in ALL_RULES."""
+    remaining = _objective_remaining(snapshot, "Dragon")
+    if remaining is None or remaining > DRAKE_SETUP_WINDOW_S:
+        return None
+
+    game_time = getattr(snapshot, "game_time", 0.0)
+    allies = list(getattr(snapshot, "allies", []) or [])
+    enemies = list(getattr(snapshot, "enemies", []) or [])
+    allies_alive = _alive_count(allies)
+    enemies_alive = _alive_count(enemies)
+    numbers_diff = allies_alive - enemies_alive
+    gold = _team_gold_diff(snapshot)
+
+    ally_stacks = _drake_stack_count(snapshot)
+    enemy_stacks = _enemy_drake_stack_count(snapshot)
+    soul_point = ally_stacks >= 3          # taking this = OUR soul
+    enemy_soul_point = enemy_stacks >= 3   # must deny their soul
+
+    drake_obj = next(
+        (o for o in (getattr(snapshot, "objectives", []) or [])
+         if getattr(o, "name", "") == "Dragon"),
+        None,
+    )
+    drake_name = _DRAKE_DISPLAY.get(
+        getattr(drake_obj, "detail", None) or "", "Drache"
+    )
+
+    dead_enemies = [e for e in enemies if not getattr(e, "is_alive", True)]
+    free_window = numbers_diff > 0 and len(dead_enemies) > 0
+
+    # Hard give-up: significantly behind + no edge
+    if gold < -GOLD_DEFICIT_THRESHOLD and numbers_diff <= 0 and not soul_point and not free_window:
+        return Recommendation(
+            text=f"{drake_name} ({int(remaining)}s) abgeben — Side pushen, Def halten",
+            severity="warn",
+            category="objective",
+            confidence=0.83,
+            risk="HIGH",
+            ttl_s=remaining,
+            reasons=(
+                f"Drache in {int(remaining)}s",
+                f"Gold-Diff: {gold:+d} (unter -{GOLD_DEFICIT_THRESHOLD})",
+                f"Numbers: {allies_alive}v{enemies_alive}",
+                "Contest = negatives Expected Value",
+            ),
+        )
+
+    reasons: list[str] = []
+    severity = "warn"
+    confidence = 0.80
+    risk = "MEDIUM"
+
+    if free_window:
+        dead_names = " + ".join(
+            getattr(e, "champion_name", "?") for e in dead_enemies[:2]
+        )
+        reasons.append(f"FREE TAKE — {dead_names} tot ({numbers_diff} man up)")
+        severity = "alert"
+        confidence = 0.95
+        risk = "LOW"
+    elif soul_point:
+        reasons.append(f"SOUL POINT — Wir bei {ally_stacks}/4 Stacks!")
+        severity = "alert"
+        confidence = 0.92
+    elif enemy_soul_point:
+        reasons.append(f"GEGNER Soul Point ({enemy_stacks}/4 Stacks) — VERHINDERN!")
+        severity = "alert"
+        confidence = 0.90
+        risk = "HIGH"
+    elif remaining <= DRAKE_PRIORITY_WINDOW_S and gold >= -GOLD_LEAD_THRESHOLD:
+        severity = "alert"
+        confidence = 0.84
+
+    if not free_window:
+        reasons.append(f"{drake_name} spawnt in {int(remaining)}s")
+    if ally_stacks > 0 or enemy_stacks > 0:
+        reasons.append(f"Stacks: Wir {ally_stacks} — Gegner {enemy_stacks}")
+    reasons.append(f"Gold-Diff: {gold:+d} | {allies_alive}v{enemies_alive} alive")
+
+    if remaining <= DRAKE_PRIORITY_WINDOW_S or free_window:
+        action = "JETZT forcen — Vision + Group"
+    else:
+        action = f"Setup — Vision Drake-Pit ({int(remaining)}s)"
+
+    if soul_point:
+        suffix = " — SOUL POINT!"
+    elif enemy_soul_point:
+        suffix = " — Gegner-Soul STOPPEN!"
+    elif ally_stacks > 0:
+        suffix = f" ({ally_stacks}/4)"
+    else:
+        suffix = ""
+
+    return Recommendation(
+        text=f"{drake_name}{suffix} in {int(remaining)}s — {action}",
+        severity=severity,
+        category="objective",
+        confidence=confidence,
+        risk=risk,
+        ttl_s=remaining,
+        reasons=tuple(reasons),
+    )
+
+
+def rule_baron_window(snapshot: "LcdaSnapshot") -> Recommendation | None:
+    """Pro-level Baron call. 120s setup window (vision + waves), 45s
+    fight window. Higher stakes than Drake — one throw = potential GG.
+    Replaces rule_baron_priority + rule_baron_give_up in ALL_RULES."""
+    remaining = _objective_remaining(snapshot, "Baron")
+    if remaining is None or remaining > BARON_SETUP_WINDOW_S:
+        return None
+
+    game_time = getattr(snapshot, "game_time", 0.0)
+    allies = list(getattr(snapshot, "allies", []) or [])
+    enemies = list(getattr(snapshot, "enemies", []) or [])
+    allies_alive = _alive_count(allies)
+    enemies_alive = _alive_count(enemies)
+    numbers_diff = allies_alive - enemies_alive
+    gold = _team_gold_diff(snapshot)
+    levels = _avg_level_diff(snapshot)
+    is_late = game_time >= LATE_GAME_S
+
+    dead_enemies = [e for e in enemies if not getattr(e, "is_alive", True)]
+    free_window = numbers_diff > 0 and len(dead_enemies) > 0
+
+    # Hard no-go: behind + no edge
+    if gold < -GOLD_DEFICIT_THRESHOLD and numbers_diff <= 0 and not free_window:
+        return Recommendation(
+            text=f"Baron ({int(remaining)}s) abgeben — defensiv warten, Konter suchen",
+            severity="warn",
+            category="objective",
+            confidence=0.85,
+            risk="HIGH",
+            ttl_s=remaining,
+            reasons=(
+                f"Baron in {int(remaining)}s",
+                f"Gold-Diff: {gold:+d} (deutlich hinten)",
+                f"Numbers: {allies_alive}v{enemies_alive}",
+                "Baron-Throw = sofortiges GG",
+            ),
+        )
+
+    reasons: list[str] = []
+    severity = "warn"
+    confidence = 0.78
+    risk = "MEDIUM"
+
+    if free_window:
+        dead_names = " + ".join(
+            getattr(e, "champion_name", "?") for e in dead_enemies[:2]
+        )
+        reasons.append(f"FREE BARON — {dead_names} tot ({numbers_diff} man up)")
+        severity = "alert"
+        confidence = 0.96
+        risk = "LOW"
+    elif remaining <= BARON_PRIORITY_WINDOW_S:
+        severity = "alert"
+        confidence = 0.88
+        if gold >= GOLD_LEAD_THRESHOLD:
+            reasons.append(f"Gold-Vorteil +{gold} — Baron-Fight gewinnbar")
+        elif numbers_diff > 0:
+            reasons.append(f"Numbers-Vorteil {allies_alive}v{enemies_alive}")
+
+    if not free_window:
+        reasons.append(f"Baron spawnt in {int(remaining)}s")
+    if is_late:
+        reasons.append("Late Game — Baron-Buff = potenzieller Game-Winner")
+        confidence = min(0.92, confidence + 0.05)
+    reasons.append(f"Gold-Diff: {gold:+d} | Level: {levels:+.1f}")
+    reasons.append(f"Numbers: {allies_alive}v{enemies_alive} alive")
+
+    if remaining <= BARON_PRIORITY_WINDOW_S or free_window:
+        action = "JETZT Group + Pit-Control"
+    elif remaining <= 90:
+        action = "Wave-Clear + Vision (Tri-Bush, River)"
+    else:
+        action = f"Setup Phase ({int(remaining)}s) — Waves claren, Pinks kaufen"
+
+    return Recommendation(
+        text=f"Baron in {int(remaining)}s — {action}",
+        severity=severity,
+        category="objective",
+        confidence=confidence,
+        risk=risk,
+        ttl_s=remaining,
+        reasons=tuple(reasons),
+    )
+
+
+def rule_fight_opportunity(snapshot: "LcdaSnapshot") -> Recommendation | None:
+    """Pro-level fight recommendation. Fires on a clearly favorable OR
+    clearly unfavorable fight score. Surfaces:
+    - Overall fight-chance percentage
+    - Focus target (champion to kill first + reason)
+    - AoE CC warnings ("NICHT CLUSTERN")
+    """
+    allies = list(getattr(snapshot, "allies", []) or [])
+    enemies = list(getattr(snapshot, "enemies", []) or [])
+    if not allies or not enemies:
+        return None
+
+    game_time = getattr(snapshot, "game_time", 0.0)
+    score = fight_score(snapshot)
+    win_pct = int(win_probability(snapshot) * 100)
+    allies_alive = _alive_count(allies)
+    enemies_alive = _alive_count(enemies)
+    numbers_diff = allies_alive - enemies_alive
+    gold = _team_gold_diff(snapshot)
+
+    # Only fire when there's a clear directional signal
+    if -FIGHT_SCORE_THRESHOLD < score < FIGHT_SCORE_THRESHOLD:
+        return None
+
+    focus = _focus_target(enemies, game_time)
+    aoe_warnings = _aoe_cc_warnings(enemies)[:2]
+
+    reasons: list[str] = [
+        f"Fight-Chance: {win_pct}% (Score {score:+.2f})",
+        f"Numbers: {allies_alive}v{enemies_alive} alive",
+        f"Gold-Diff: {gold:+d}",
+    ]
+    if focus:
+        reasons.append(f"Fokus: {focus[0]} — {focus[1]}")
+    for w in aoe_warnings:
+        reasons.append(f"AoE-Warnung: {w}")
+
+    if score >= FIGHT_SCORE_THRESHOLD:
+        # Don't recommend engaging when we're down in numbers
+        if numbers_diff < 0:
+            return None
+        severity = "alert" if score >= 0.55 or numbers_diff >= 2 else "warn"
+        confidence = min(0.95, 0.60 + score * 0.35)
+        risk = "LOW" if gold >= GOLD_LEAD_THRESHOLD else "MEDIUM"
+
+        focus_part = f" Fokus {focus[0]}." if focus else ""
+        aoe_part = f" ACHTUNG: {aoe_warnings[0].split(' — ')[1]}" if aoe_warnings else ""
+        numbers_part = f" {numbers_diff} man up —" if numbers_diff >= 1 else ""
+
+        return Recommendation(
+            text=f"Fight forcen — {win_pct}%.{numbers_part}{focus_part}{aoe_part}".strip(),
+            severity=severity,
+            category="tempo",
+            confidence=confidence,
+            risk=risk,
+            ttl_s=15.0,
+            reasons=tuple(reasons),
+        )
+    else:
+        # Unfavorable fight
+        confidence = min(0.90, 0.60 + abs(score) * 0.30)
+        return Recommendation(
+            text=f"MEIDE Fights — {win_pct}% Chance. Items + Vision farmen.",
+            severity="warn",
+            category="safety",
+            confidence=confidence,
+            risk="HIGH",
+            ttl_s=20.0,
+            reasons=tuple(reasons),
+        )
+
+
 # Rule registry — extend by appending a function. Order doesn't affect
 # ``evaluate``'s output (caller sorts by severity).
 ALL_RULES: tuple[Callable[["LcdaSnapshot"], Recommendation | None], ...] = (
-    # Numbers-asymmetry rules first — if a teammate is dead we want
-    # the SAFETY call to dominate over any objective-priority rule.
+    # Numbers-asymmetry first — safety overrides objective calls.
     rule_numbers_disadvantage,
     rule_numbers_advantage,
-    rule_drake_priority,
-    rule_drake_give_up,
-    rule_baron_priority,
-    rule_baron_give_up,
+    # Pro-level window rules (replace the simpler drake/baron 4-pack).
+    rule_dragon_window,
+    rule_baron_window,
     rule_herald_priority,
+    rule_fight_opportunity,
+    # General tempo + safety rules.
     rule_gold_lead_push,
     rule_far_behind_safe,
     rule_level_deficit,
