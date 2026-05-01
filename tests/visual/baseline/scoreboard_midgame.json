@@ -47,7 +47,7 @@
       "layout": null,
       "objectName": "",
       "stylesheet": "color: #717A86; font-family: SF Mono, Menlo, Consolas, monospace; font-size: 11px;",
-      "text": "27:00",
+      "text": "<span style='color:#717A86'>27:00</span>  <span style='color:#717A86'>\u00b7</span>  <span style='color:#717A86'>50%</span>",
       "visible": true
     },
     {

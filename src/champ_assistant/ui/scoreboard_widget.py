@@ -17,6 +17,7 @@ from __future__ import annotations
 from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import QHBoxLayout, QLabel, QVBoxLayout
 
+from ..advisor.decision_engine import win_probability
 from ..lcda.players import TeamAggregate
 from ..lcda.source import LcdaSnapshot
 from . import styles
@@ -97,6 +98,7 @@ class ScoreboardWidget(FloatingWidget):
             f"color: {styles.TEXT_MUTED};"
             f" font-family: {styles.FONT_MONO}; font-size: {styles.FS_LABEL}px;"
         )
+        self._game_time.setTextFormat(Qt.TextFormat.RichText)
         bottom.addWidget(self._game_time)
 
         self._enemy_objectives = QLabel("")
@@ -141,7 +143,19 @@ class ScoreboardWidget(FloatingWidget):
 
         gt = snapshot.game_time
         mm, ss = divmod(int(gt), 60)
-        self._game_time.setText(f"{mm:d}:{ss:02d}")
+        win_pct = int(win_probability(snapshot) * 100)
+        if win_pct >= 60:
+            pct_color = styles.SUCCESS
+        elif win_pct <= 40:
+            pct_color = styles.DANGER
+        else:
+            pct_color = styles.TEXT_MUTED
+        muted = styles.TEXT_MUTED
+        self._game_time.setText(
+            f"<span style='color:{muted}'>{mm:d}:{ss:02d}</span>"
+            f"  <span style='color:{muted}'>·</span>"
+            f"  <span style='color:{pct_color}'>{win_pct}%</span>"
+        )
 
     @staticmethod
     def _objectives_line(agg: TeamAggregate) -> str:
