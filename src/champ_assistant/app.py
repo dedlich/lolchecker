@@ -296,6 +296,27 @@ class ChampAssistant:
 
         picks_counter, picks_synergy = self._compute_picks_categorized(session)
 
+        # My champion build — shown after the local player locks their pick.
+        my_champion_key = ""
+        my_champion_build = None
+        me = session.me
+        if me is not None and me.champion_id and me.champion_id in self.champions:
+            locked_champ = self.champions[me.champion_id]
+            my_champion_key = locked_champ.key
+            if my_role is not None:
+                from .advisor.build_adapter import adapt_build
+                enemy_keys_list = list(self._team_keys(session.their_team))
+                base = self.builds.build_for(locked_champ.key, my_role)
+                adapted = adapt_build(
+                    base, role=my_role,
+                    enemy_team_keys=enemy_keys_list,
+                    tags=self.tags,
+                )
+                if adapted is not None:
+                    my_champion_build = adapted.build
+                elif base is not None:
+                    my_champion_build = base
+
         return SessionView(
             connection_state=self._connection_state,
             session=session,
@@ -324,6 +345,9 @@ class ChampAssistant:
             ban_suggestions_allround=ban_suggestions_allround,
             picks_counter=picks_counter,
             picks_synergy=picks_synergy,
+            my_champion_key=my_champion_key,
+            my_champion_role=my_role,
+            my_champion_build=my_champion_build,
         )
 
     def _maybe_fetch_profiles(self, session: ChampSelectSession) -> None:

@@ -197,6 +197,36 @@ class MainOverlay(QMainWindow):
 
         body_layout.addWidget(self._picks_row)
 
+        # My champion build panel — appears after the local player locks their pick.
+        self._my_build_panel = QFrame()
+        self._my_build_panel.setProperty("panel", True)
+        my_build_outer = QVBoxLayout(self._my_build_panel)
+        my_build_outer.setContentsMargins(10, 8, 10, 8)
+        my_build_outer.setSpacing(6)
+
+        my_build_header = QHBoxLayout()
+        my_build_header.setSpacing(styles.SPACING_GRID)
+        self._my_build_champ_icon = QLabel()
+        self._my_build_champ_icon.setFixedSize(28, 28)
+        self._my_build_champ_icon.setScaledContents(True)
+        self._my_build_champ_icon.setStyleSheet(
+            f"background-color: {styles.BG_PRIMARY};"
+            f" border-radius: {styles.RADIUS_SMALL}px;"
+            f" border: 1px solid {styles.BORDER_FAINT};"
+        )
+        my_build_header.addWidget(self._my_build_champ_icon)
+        self._my_build_champ_label = QLabel("Your Build")
+        self._my_build_champ_label.setObjectName("sectionTitle")
+        my_build_header.addWidget(self._my_build_champ_label, 1)
+        my_build_outer.addLayout(my_build_header)
+
+        self._my_build_rows = QVBoxLayout()
+        self._my_build_rows.setSpacing(2)
+        my_build_outer.addLayout(self._my_build_rows)
+
+        body_layout.addWidget(self._my_build_panel)
+        self._my_build_panel.hide()
+
         self._power_spike_panel = PowerSpikePanel()
         body_layout.addWidget(self._power_spike_panel)
 
@@ -298,6 +328,7 @@ class MainOverlay(QMainWindow):
         self._status_bar.set_state(view.connection_state)
         self._update_enemies(view)
         self._update_picks(view)
+        self._update_my_build(view)
         self._ban_panel.update_suggestions_categorized(
             view.ban_suggestions_lane,
             view.ban_suggestions_allround,
@@ -424,6 +455,83 @@ class MainOverlay(QMainWindow):
         )
         score_lbl.setFixedWidth(36)
         h.addWidget(score_lbl)
+        return row
+
+    def _update_my_build(self, view: SessionView) -> None:
+        """Render the local player's build panel after they lock their champion."""
+        while self._my_build_rows.count():
+            item = self._my_build_rows.takeAt(0)
+            w = item.widget() if item is not None else None
+            if w is not None:
+                w.deleteLater()
+
+        build = view.my_champion_build
+        champ_key = view.my_champion_key
+        if not champ_key or build is None:
+            self._my_build_panel.hide()
+            return
+
+        self._my_build_panel.show()
+
+        # Update header icon + champion name
+        role_label = (view.my_champion_role or "").replace("BOT", "ADC")
+        header_text = f"{champ_key}" + (f"  ·  {role_label}" if role_label else "")
+        self._my_build_champ_label.setText(header_text)
+        pix = self._icon_for_key(champ_key)
+        if pix is not None and not pix.isNull():
+            self._my_build_champ_icon.setPixmap(pix)
+
+        # Summoner spells row
+        if build.summoners:
+            self._my_build_rows.addWidget(
+                self._build_info_row("Spells", "  ·  ".join(build.summoners), styles.SUCCESS)
+            )
+
+        # Skill order row
+        if build.skill_order:
+            order_text = " > ".join(build.skill_order)
+            self._my_build_rows.addWidget(
+                self._build_info_row("Skill Max", order_text, styles.ACCENT)
+            )
+
+        # Runes row
+        if build.runes:
+            keystone = build.runes[0]
+            secondary = "  ·  ".join(build.runes[1:4]) if len(build.runes) > 1 else ""
+            self._my_build_rows.addWidget(
+                self._build_info_row("Keystone", keystone, styles.TIER_S)
+            )
+            if secondary:
+                self._my_build_rows.addWidget(
+                    self._build_info_row("Runes", secondary, styles.TEXT_SECONDARY)
+                )
+
+        # Items row
+        if build.items:
+            self._my_build_rows.addWidget(
+                self._build_info_row("Items", "  ·  ".join(build.items[:4]), styles.WARNING)
+            )
+
+    def _build_info_row(self, label: str, value: str, value_color: str) -> QFrame:
+        from PyQt6.QtWidgets import QFrame, QHBoxLayout, QLabel
+        row = QFrame()
+        h = QHBoxLayout(row)
+        h.setContentsMargins(0, 1, 0, 1)
+        h.setSpacing(6)
+
+        lbl = QLabel(label)
+        lbl.setFixedWidth(60)
+        lbl.setStyleSheet(
+            f"color: {styles.TEXT_MUTED}; font-size: {styles.FS_CAPTION}px; font-weight: 600;"
+        )
+        h.addWidget(lbl)
+
+        val = QLabel(value)
+        val.setStyleSheet(
+            f"color: {value_color}; font-size: {styles.FS_CAPTION}px;"
+        )
+        val.setWordWrap(True)
+        h.addWidget(val, 1)
         return row
 
     # -- in-game panels visibility ---------------------------------------

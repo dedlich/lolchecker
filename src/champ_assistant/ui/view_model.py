@@ -13,7 +13,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from ..advisor.ban_suggestions import BanSuggestion
 from ..advisor.composition import CompositionGap
 from ..advisor.picks import PickSuggestion
-from ..data.models import ChampionBuild, ChampSelectSession, CounterEntry
+from ..data.models import ChampionBuild, ChampSelectSession, CounterEntry, Role
 from ..profiling.profile import EnemyProfile
 
 ConnectionState = Literal["disconnected", "waiting", "connected", "reconnecting"]
@@ -89,3 +89,13 @@ class SessionView(BaseModel):
 
     picks_synergy: list[PickSuggestion] = Field(default_factory=list)
     """Picks that fill team composition gaps (tier + gap-fill, no counter focus)."""
+
+    my_champion_key: str = ""
+    """Key of the local player's locked champion (e.g. 'Ahri'). Empty before lock-in."""
+
+    my_champion_role: Role | None = None
+    """Assigned role for the local player. None before role is set."""
+
+    my_champion_build: ChampionBuild | None = None
+    """Recommended build (runes/items/summoners/skill_order) for the locked champion.
+    None when champion not yet locked or no build data available."""

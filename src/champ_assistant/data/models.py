@@ -128,6 +128,7 @@ class ChampionBuild(BaseModel):
     runes: list[str] = Field(default_factory=list)
     items: list[str] = Field(default_factory=list)
     summoners: list[str] = Field(default_factory=list)
+    skill_order: list[str] = Field(default_factory=list)
     name: str = "Default"
     variants: list["ChampionBuild"] = Field(default_factory=list)
 
