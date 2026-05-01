@@ -179,6 +179,10 @@ class Recommendation:
     # tuple is the safe default — legacy rules without explicit
     # reasons just don't expand.
     reasons: tuple[str, ...] = ()
+    # Machine-readable tag used by _suppress_dominated() to de-duplicate
+    # recommendations that cover the same signal. Default "" = no
+    # suppression relationship. Never shown to the user.
+    kind: str = ""
 
 
 # --------------------------------------------------------------------------
@@ -453,13 +457,13 @@ def rule_gold_lead_push(snapshot: "LcdaSnapshot") -> Recommendation | None:
     if gold < GOLD_LEAD_THRESHOLD:
         return None
     return Recommendation(
-        text=f"+{gold} Gold — Vision pushen, Wellen kontrollieren, "
-             f"nächstes Objective vorbereiten",
+        text=f"+{gold} Gold — Vision + Objective pushen",
         severity="info",
         category="tempo",
         confidence=0.75,
         risk="LOW",
         ttl_s=20.0,
+        kind="gold_lead",
         reasons=(
             f"Team-Gold-Vorsprung: +{gold}",
             "Über Schwelle für aktiven Tempo-Push",
@@ -598,13 +602,13 @@ def rule_kill_lead_snowball(snapshot: "LcdaSnapshot") -> Recommendation | None:
     if diff < KILL_LEAD_THRESHOLD:
         return None
     return Recommendation(
-        text=f"+{diff} Kills — Vision deep pushen, dive-Comp hinten "
-             f"einrichten",
+        text=f"+{diff} Kills — aggressiv Vision pushen",
         severity="info",
         category="tempo",
         confidence=0.78,
         risk="LOW",
         ttl_s=25.0,
+        kind="kill_lead",
         reasons=(
             f"Team-Kill-Diff: +{diff}",
             "Momentum-Signal — Vision sollte aggressiv vorgeschoben werden",
@@ -647,17 +651,17 @@ def rule_numbers_disadvantage(snapshot: "LcdaSnapshot") -> Recommendation | None
     if deficit <= 0:
         return None
     return Recommendation(
-        text=f"{deficit} Mate(s) tot — KEINE Fights, "
-             f"defensiv positionieren bis Respawn",
+        text=f"Wir {allies_alive}v{enemies_alive} — KEINE Fights bis Respawn",
         severity="alert",
         category="safety",
         confidence=0.92,
         risk="HIGH",
         ttl_s=8.0,
+        kind="numbers_disadv",
         reasons=(
             f"Allies alive: {allies_alive}/5",
             f"Enemies alive: {enemies_alive}/5",
-            "Numbers-Disadvantage = Death-Risk × 5",
+            "Numbers-Disadvantage — jeder Fight = sicherer Tod",
         ),
     )
 
@@ -673,13 +677,13 @@ def rule_numbers_advantage(snapshot: "LcdaSnapshot") -> Recommendation | None:
     if advantage <= 0:
         return None
     return Recommendation(
-        text=f"{advantage} Gegner tot — Pressure machen, "
-             f"Objective forcen oder Wave-Crash",
+        text=f"{allies_alive}v{enemies_alive} — JETZT Pressure, Obj forcen!",
         severity="alert",
         category="tempo",
         confidence=0.90,
         risk="LOW",
         ttl_s=12.0,
+        kind="numbers_adv",
         reasons=(
             f"Allies alive: {allies_alive}/5",
             f"Enemies alive: {enemies_alive}/5",
@@ -750,12 +754,13 @@ def rule_dragon_window(snapshot: "LcdaSnapshot") -> Recommendation | None:
     # Hard give-up: significantly behind + no edge
     if gold < -GOLD_DEFICIT_THRESHOLD and numbers_diff <= 0 and not soul_point and not free_window:
         return Recommendation(
-            text=f"{drake_name} ({int(remaining)}s) abgeben — Side pushen, Def halten",
+            text=f"Drache ({int(remaining)}s) abgeben — Side pushen",
             severity="warn",
             category="objective",
             confidence=0.83,
             risk="HIGH",
             ttl_s=remaining,
+            kind="dragon_give",
             reasons=(
                 f"Drache in {int(remaining)}s",
                 f"Gold-Diff: {gold:+d} (unter -{GOLD_DEFICIT_THRESHOLD})",
@@ -764,60 +769,80 @@ def rule_dragon_window(snapshot: "LcdaSnapshot") -> Recommendation | None:
             ),
         )
 
-    reasons: list[str] = []
-    severity = "warn"
-    confidence = 0.80
-    risk = "MEDIUM"
-
+    # Free-take window: enemies dead, we have numbers advantage
     if free_window:
         dead_names = " + ".join(
             getattr(e, "champion_name", "?") for e in dead_enemies[:2]
         )
-        reasons.append(f"FREE TAKE — {dead_names} tot ({numbers_diff} man up)")
-        severity = "alert"
-        confidence = 0.95
-        risk = "LOW"
-    elif soul_point:
-        reasons.append(f"SOUL POINT — Wir bei {ally_stacks}/4 Stacks!")
-        severity = "alert"
-        confidence = 0.92
-    elif enemy_soul_point:
-        reasons.append(f"GEGNER Soul Point ({enemy_stacks}/4 Stacks) — VERHINDERN!")
-        severity = "alert"
-        confidence = 0.90
-        risk = "HIGH"
-    elif remaining <= DRAKE_PRIORITY_WINDOW_S and gold >= -GOLD_LEAD_THRESHOLD:
-        severity = "alert"
-        confidence = 0.84
+        return Recommendation(
+            text=f"Drache JETZT {allies_alive}v{enemies_alive} — {dead_names} tot!",
+            severity="alert",
+            category="objective",
+            confidence=0.95,
+            risk="LOW",
+            ttl_s=remaining,
+            kind="dragon_free",
+            reasons=(
+                f"FREE TAKE — {dead_names} tot ({numbers_diff} man up)",
+                f"{drake_name} spawnt in {int(remaining)}s",
+                f"Stacks: Wir {ally_stacks} — Gegner {enemy_stacks}",
+                f"Gold-Diff: {gold:+d}",
+            ),
+        )
 
-    if not free_window:
-        reasons.append(f"{drake_name} spawnt in {int(remaining)}s")
-    if ally_stacks > 0 or enemy_stacks > 0:
-        reasons.append(f"Stacks: Wir {ally_stacks} — Gegner {enemy_stacks}")
-    reasons.append(f"Gold-Diff: {gold:+d} | {allies_alive}v{enemies_alive} alive")
-
-    if remaining <= DRAKE_PRIORITY_WINDOW_S or free_window:
-        action = "JETZT forcen — Vision + Group"
-    else:
-        action = f"Setup — Vision Drake-Pit ({int(remaining)}s)"
-
+    # Soul-point urgency
     if soul_point:
-        suffix = " — SOUL POINT!"
-    elif enemy_soul_point:
-        suffix = " — Gegner-Soul STOPPEN!"
-    elif ally_stacks > 0:
-        suffix = f" ({ally_stacks}/4)"
-    else:
-        suffix = ""
+        return Recommendation(
+            text=f"{drake_name} in {int(remaining)}s — SOUL POINT! JETZT gehen",
+            severity="alert",
+            category="objective",
+            confidence=0.92,
+            risk="MEDIUM",
+            ttl_s=remaining,
+            kind="dragon_take",
+            reasons=(
+                f"SOUL POINT — Wir bei {ally_stacks}/4 Stacks!",
+                f"Gold-Diff: {gold:+d} | {allies_alive}v{enemies_alive} alive",
+            ),
+        )
+    if enemy_soul_point:
+        return Recommendation(
+            text=f"Drache in {int(remaining)}s — Gegner-Soul STOPPEN!",
+            severity="alert",
+            category="objective",
+            confidence=0.90,
+            risk="HIGH",
+            ttl_s=remaining,
+            kind="dragon_take",
+            reasons=(
+                f"GEGNER Soul Point ({enemy_stacks}/4 Stacks) — VERHINDERN!",
+                f"Gold-Diff: {gold:+d} | {allies_alive}v{enemies_alive} alive",
+            ),
+        )
+
+    # Active fight window (≤30s) or setup phase
+    active = remaining <= DRAKE_PRIORITY_WINDOW_S and gold >= -GOLD_LEAD_THRESHOLD
+    severity = "alert" if active else "warn"
+    confidence = 0.84 if active else 0.78
+    stack_suffix = f" ({ally_stacks}/4)" if ally_stacks > 0 else ""
+    action = "JETZT Vision + Group" if active else "Vision + Group starten"
 
     return Recommendation(
-        text=f"{drake_name}{suffix} in {int(remaining)}s — {action}",
+        text=f"{drake_name}{stack_suffix} in {int(remaining)}s — {action}",
         severity=severity,
         category="objective",
         confidence=confidence,
-        risk=risk,
+        risk="MEDIUM",
         ttl_s=remaining,
-        reasons=tuple(reasons),
+        kind="dragon_take",
+        reasons=(
+            f"{drake_name} spawnt in {int(remaining)}s",
+            *(
+                (f"Stacks: Wir {ally_stacks} — Gegner {enemy_stacks}",)
+                if ally_stacks > 0 or enemy_stacks > 0 else ()
+            ),
+            f"Gold-Diff: {gold:+d} | {allies_alive}v{enemies_alive} alive",
+        ),
     )
 
 
@@ -845,12 +870,13 @@ def rule_baron_window(snapshot: "LcdaSnapshot") -> Recommendation | None:
     # Hard no-go: behind + no edge
     if gold < -GOLD_DEFICIT_THRESHOLD and numbers_diff <= 0 and not free_window:
         return Recommendation(
-            text=f"Baron ({int(remaining)}s) abgeben — defensiv warten, Konter suchen",
+            text=f"Baron ({int(remaining)}s) abgeben — Konter suchen",
             severity="warn",
             category="objective",
             confidence=0.85,
             risk="HIGH",
             ttl_s=remaining,
+            kind="baron_give",
             reasons=(
                 f"Baron in {int(remaining)}s",
                 f"Gold-Diff: {gold:+d} (deutlich hinten)",
@@ -859,50 +885,69 @@ def rule_baron_window(snapshot: "LcdaSnapshot") -> Recommendation | None:
             ),
         )
 
-    reasons: list[str] = []
-    severity = "warn"
-    confidence = 0.78
-    risk = "MEDIUM"
-
+    # Free-take window: enemies dead, numbers advantage
     if free_window:
         dead_names = " + ".join(
             getattr(e, "champion_name", "?") for e in dead_enemies[:2]
         )
-        reasons.append(f"FREE BARON — {dead_names} tot ({numbers_diff} man up)")
-        severity = "alert"
-        confidence = 0.96
-        risk = "LOW"
-    elif remaining <= BARON_PRIORITY_WINDOW_S:
-        severity = "alert"
-        confidence = 0.88
-        if gold >= GOLD_LEAD_THRESHOLD:
-            reasons.append(f"Gold-Vorteil +{gold} — Baron-Fight gewinnbar")
-        elif numbers_diff > 0:
-            reasons.append(f"Numbers-Vorteil {allies_alive}v{enemies_alive}")
+        confidence = min(0.97, 0.96 + (0.02 if is_late else 0.0))
+        return Recommendation(
+            text=f"Baron JETZT {allies_alive}v{enemies_alive} — {dead_names} tot!",
+            severity="alert",
+            category="objective",
+            confidence=confidence,
+            risk="LOW",
+            ttl_s=remaining,
+            kind="baron_free",
+            reasons=(
+                f"FREE BARON — {dead_names} tot ({numbers_diff} man up)",
+                f"Baron spawnt in {int(remaining)}s",
+                f"Gold-Diff: {gold:+d} | Level: {levels:+.1f}",
+                *(("Late Game — Baron = potenzieller Game-Winner",) if is_late else ()),
+            ),
+        )
 
-    if not free_window:
-        reasons.append(f"Baron spawnt in {int(remaining)}s")
-    if is_late:
-        reasons.append("Late Game — Baron-Buff = potenzieller Game-Winner")
-        confidence = min(0.92, confidence + 0.05)
-    reasons.append(f"Gold-Diff: {gold:+d} | Level: {levels:+.1f}")
-    reasons.append(f"Numbers: {allies_alive}v{enemies_alive} alive")
+    # Active fight window (≤45s)
+    if remaining <= BARON_PRIORITY_WINDOW_S:
+        confidence = min(0.92, 0.88 + (0.03 if is_late else 0.0))
+        context = f"+{gold}" if gold >= GOLD_LEAD_THRESHOLD else f"{allies_alive}v{enemies_alive}"
+        return Recommendation(
+            text=f"Baron in {int(remaining)}s ({context}) — Pit-Control forcen",
+            severity="alert",
+            category="objective",
+            confidence=confidence,
+            risk="MEDIUM",
+            ttl_s=remaining,
+            kind="baron_take",
+            reasons=(
+                f"Baron spawnt in {int(remaining)}s",
+                f"Gold-Diff: {gold:+d} | Level: {levels:+.1f}",
+                f"Numbers: {allies_alive}v{enemies_alive} alive",
+                *(("Late Game — Baron-Buff = potenzieller Game-Winner",) if is_late else ()),
+            ),
+        )
 
-    if remaining <= BARON_PRIORITY_WINDOW_S or free_window:
-        action = "JETZT Group + Pit-Control"
-    elif remaining <= 90:
-        action = "Wave-Clear + Vision (Tri-Bush, River)"
+    # Setup phase — vision + wave clear
+    confidence = min(0.85, 0.78 + (0.05 if is_late else 0.0))
+    if remaining <= 90:
+        action = "Waves + Vision (Tri-Bush, River)"
     else:
-        action = f"Setup Phase ({int(remaining)}s) — Waves claren, Pinks kaufen"
+        action = f"Waves claren, Pinks kaufen ({int(remaining)}s)"
 
     return Recommendation(
         text=f"Baron in {int(remaining)}s — {action}",
-        severity=severity,
+        severity="warn",
         category="objective",
         confidence=confidence,
-        risk=risk,
+        risk="MEDIUM",
         ttl_s=remaining,
-        reasons=tuple(reasons),
+        kind="baron_take",
+        reasons=(
+            f"Baron spawnt in {int(remaining)}s",
+            f"Gold-Diff: {gold:+d} | Level: {levels:+.1f}",
+            f"Numbers: {allies_alive}v{enemies_alive} alive",
+            *(("Late Game — Setup ist kritisch",) if is_late else ()),
+        ),
     )
 
 
@@ -951,29 +996,40 @@ def rule_fight_opportunity(snapshot: "LcdaSnapshot") -> Recommendation | None:
         confidence = min(0.95, 0.60 + score * 0.35)
         risk = "LOW" if gold >= GOLD_LEAD_THRESHOLD else "MEDIUM"
 
-        focus_part = f" Fokus {focus[0]}." if focus else ""
-        aoe_part = f" ACHTUNG: {aoe_warnings[0].split(' — ')[1]}" if aoe_warnings else ""
-        numbers_part = f" {numbers_diff} man up —" if numbers_diff >= 1 else ""
+        # Build natural-sounding main text: "Fight 74% — 5v3. Fokus Jinx. Nicht clustern (Ori)!"
+        parts: list[str] = []
+        if numbers_diff >= 1:
+            parts.append(f"Fight {allies_alive}v{enemies_alive} ({win_pct}%)")
+        else:
+            parts.append(f"Fight JETZT ({win_pct}%)")
+        if focus:
+            parts.append(f"Fokus {focus[0]}")
+        if aoe_warnings:
+            # Extract champion name from "ChampName — Tag text"
+            aoe_champ = aoe_warnings[0].split(" — ")[0]
+            parts.append(f"Nicht clustern ({aoe_champ})!")
 
         return Recommendation(
-            text=f"Fight forcen — {win_pct}%.{numbers_part}{focus_part}{aoe_part}".strip(),
+            text=" — ".join(parts),
             severity=severity,
             category="tempo",
             confidence=confidence,
             risk=risk,
             ttl_s=15.0,
+            kind="fight",
             reasons=tuple(reasons),
         )
     else:
         # Unfavorable fight
         confidence = min(0.90, 0.60 + abs(score) * 0.30)
         return Recommendation(
-            text=f"MEIDE Fights — {win_pct}% Chance. Items + Vision farmen.",
+            text=f"Fights meiden ({win_pct}%) — farmen + Vision",
             severity="warn",
             category="safety",
             confidence=confidence,
             risk="HIGH",
             ttl_s=20.0,
+            kind="fight_bad",
             reasons=tuple(reasons),
         )
 
@@ -1002,6 +1058,40 @@ ALL_RULES: tuple[Callable[["LcdaSnapshot"], Recommendation | None], ...] = (
 _SEVERITY_RANK = {"alert": 0, "warn": 1, "info": 2}
 
 
+def _suppress_dominated(recs: list[Recommendation]) -> list[Recommendation]:
+    """Remove recommendations made redundant by more specific ones.
+
+    Three suppression rules (applied in order):
+
+    1. numbers_disadv present → drop ALL offensive calls (fight, push,
+       numbers_adv, and objective "take" recs). Keep give-up and safety.
+       A teammate is dead — no aggressive rec should reach the user.
+
+    2. dragon_free / baron_free already embeds the numbers-advantage
+       signal in richer context → remove the standalone numbers_adv card.
+
+    3. fight rec present → remove gold_lead and kill_lead (they are
+       sub-signals of the same "you're ahead, press it" message).
+    """
+    kinds = {r.kind for r in recs}
+
+    # Rule 1 — safety first
+    if "numbers_disadv" in kinds:
+        _offensive = {"fight", "numbers_adv", "gold_lead", "kill_lead",
+                      "dragon_take", "dragon_free", "baron_take", "baron_free"}
+        return [r for r in recs if r.kind not in _offensive]
+
+    # Rule 2 — free-window objective absorbs standalone numbers_adv
+    if "dragon_free" in kinds or "baron_free" in kinds:
+        recs = [r for r in recs if r.kind != "numbers_adv"]
+
+    # Rule 3 — fight rec subsumes generic lead signals
+    if "fight" in kinds:
+        recs = [r for r in recs if r.kind not in {"gold_lead", "kill_lead"}]
+
+    return recs
+
+
 def evaluate(
     snapshot: "LcdaSnapshot | None",
     *,
@@ -1025,4 +1115,4 @@ def evaluate(
         if rec is not None:
             out.append(rec)
     out.sort(key=lambda r: _SEVERITY_RANK.get(r.severity, 99))
-    return out
+    return _suppress_dominated(out)
