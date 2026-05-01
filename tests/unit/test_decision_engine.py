@@ -220,8 +220,9 @@ def test_evaluate_returns_empty_for_none_snapshot() -> None:
 
 def test_evaluate_returns_empty_for_neutral_state() -> None:
     """Even game, no drake imminent — engine has nothing to say.
-    Better silence than spam."""
+    Better silence than spam. game_time=900 is past the void-grub window (14:00)."""
     snap = _Snap(
+        game_time=900.0,
         ally_aggregate=_Aggregate(items_value=15000),
         enemy_aggregate=_Aggregate(items_value=15000),
         allies=[_Player(level=10)],
@@ -2656,4 +2657,224 @@ def test_ally_turret_lost_suppressed_by_ally_inhib_down() -> None:
     ]
     result = _suppress_dominated(recs)
     assert not any(r.kind == "ally_turret_lost" for r in result)
+    assert any(r.kind == "ally_inhib_down" for r in result)
+
+
+# ----------------------------------------------------------------------
+# rule_dragon_soul_pressure (B1 — Dragon Soul momentum signal)
+# ----------------------------------------------------------------------
+from champ_assistant.advisor.decision_engine import (  # noqa: E402
+    DRAGON_SOUL_SIGNAL_S,
+    rule_dragon_soul_pressure,
+)
+
+
+def _soul_dragon_kill(killer: str, event_time: float) -> dict:
+    return {"EventName": "DragonKill", "KillerName": killer, "EventTime": event_time}
+
+
+def _ally_with_name(name: str = "P1") -> _Player:
+    return _Player(summoner_name=name, champion_name="Jinx")
+
+
+def test_dragon_soul_pressure_silent_when_fewer_than_4_drakes() -> None:
+    ally = _ally_with_name("P1")
+    events = [_soul_dragon_kill("P1", t) for t in [100.0, 200.0, 300.0]]
+    snap = _Snap(game_time=320.0, allies=[ally], raw_events=events, active_team="ORDER")
+    assert rule_dragon_soul_pressure(snap) is None
+
+
+def test_dragon_soul_pressure_silent_when_window_expired() -> None:
+    ally = _ally_with_name("P1")
+    events = [_soul_dragon_kill("P1", t) for t in [100.0, 200.0, 300.0, 400.0]]
+    snap = _Snap(
+        game_time=400.0 + DRAGON_SOUL_SIGNAL_S + 1.0,
+        allies=[ally], raw_events=events, active_team="ORDER",
+    )
+    assert rule_dragon_soul_pressure(snap) is None
+
+
+def test_dragon_soul_pressure_silent_with_no_allies() -> None:
+    events = [_soul_dragon_kill("P1", t) for t in [100.0, 200.0, 300.0, 400.0]]
+    snap = _Snap(game_time=410.0, allies=[], raw_events=events, active_team="ORDER")
+    assert rule_dragon_soul_pressure(snap) is None
+
+
+def test_dragon_soul_pressure_fires_within_window() -> None:
+    ally = _ally_with_name("P1")
+    soul_time = 400.0
+    events = [_soul_dragon_kill("P1", t) for t in [100.0, 200.0, 300.0, soul_time]]
+    snap = _Snap(
+        game_time=soul_time + 30.0,
+        allies=[ally], raw_events=events, active_team="ORDER",
+    )
+    rec = rule_dragon_soul_pressure(snap)
+    assert rec is not None
+    assert rec.kind == "dragon_soul"
+    assert rec.severity == "info"
+    assert rec.ttl_s == pytest.approx(DRAGON_SOUL_SIGNAL_S - 30.0)
+
+
+def test_dragon_soul_pressure_ttl_decreases_with_age() -> None:
+    ally = _ally_with_name("P1")
+    soul_time = 500.0
+    events = [_soul_dragon_kill("P1", t) for t in [100.0, 200.0, 300.0, soul_time]]
+    snap = _Snap(
+        game_time=soul_time + DRAGON_SOUL_SIGNAL_S - 10.0,
+        allies=[ally], raw_events=events, active_team="ORDER",
+    )
+    rec = rule_dragon_soul_pressure(snap)
+    assert rec is not None
+    assert rec.ttl_s == pytest.approx(10.0)
+
+
+def test_dragon_soul_pressure_in_evaluate() -> None:
+    ally = _ally_with_name("P1")
+    soul_time = 600.0
+    events = [_soul_dragon_kill("P1", t) for t in [100.0, 200.0, 300.0, soul_time]]
+    snap = _Snap(
+        game_time=soul_time + 10.0,
+        allies=[ally], raw_events=events, active_team="ORDER",
+    )
+    recs = evaluate(snap)
+    assert any(r.kind == "dragon_soul" for r in recs)
+
+
+def test_dragon_soul_pressure_suppressed_by_numbers_disadv() -> None:
+    recs = [
+        _rec("numbers_disadv", "alert"),
+        _rec("dragon_soul", "info"),
+    ]
+    result = _suppress_dominated(recs)
+    assert not any(r.kind == "dragon_soul" for r in result)
+    assert any(r.kind == "numbers_disadv" for r in result)
+
+
+def test_dragon_soul_pressure_suppressed_by_ally_inhib_down() -> None:
+    recs = [
+        _rec("ally_inhib_down", "warn"),
+        _rec("dragon_soul", "info"),
+    ]
+    result = _suppress_dominated(recs)
+    assert not any(r.kind == "dragon_soul" for r in result)
+    assert any(r.kind == "ally_inhib_down" for r in result)
+
+
+# ----------------------------------------------------------------------
+# rule_void_grubs (B1 — early-game Void Grub objective)
+# ----------------------------------------------------------------------
+from champ_assistant.advisor.decision_engine import (  # noqa: E402
+    VOID_GRUB_HORNGUARD,
+    VOID_GRUB_WINDOW_END_S,
+    VOID_GRUB_WINDOW_START_S,
+    rule_void_grubs,
+)
+
+
+def _grub_event(killer: str, event_time: float) -> dict:
+    return {"EventName": "VoidGrub", "KillerName": killer, "EventTime": event_time}
+
+
+def test_void_grubs_silent_before_window() -> None:
+    snap = _Snap(game_time=VOID_GRUB_WINDOW_START_S - 1.0, active_team="ORDER")
+    assert rule_void_grubs(snap) is None
+
+
+def test_void_grubs_silent_after_window() -> None:
+    snap = _Snap(game_time=VOID_GRUB_WINDOW_END_S + 1.0, active_team="ORDER")
+    assert rule_void_grubs(snap) is None
+
+
+def test_void_grubs_contest_shows_correct_needed_count() -> None:
+    """Contest signal: 1 ally grub → needs 2 more for hornguard."""
+    ally = _ally_with_name("P1")
+    events = [_grub_event("P1", 300.0)]  # 1 ally grub
+    snap = _Snap(game_time=320.0, allies=[ally], raw_events=events, active_team="ORDER")
+    rec = rule_void_grubs(snap)
+    assert rec is not None
+    assert rec.kind == "void_grub_contest"
+    assert "2" in rec.text  # needed = 3 - 1 = 2
+
+
+def test_void_grubs_enemy_hornguard_fires_warn() -> None:
+    ally = _ally_with_name("P1")
+    enemy = _Player(summoner_name="Enemy", champion_name="Darius")
+    events = [_grub_event("Enemy", 300.0 + i * 10) for i in range(VOID_GRUB_HORNGUARD)]
+    snap = _Snap(game_time=340.0, allies=[ally], enemies=[enemy], raw_events=events, active_team="ORDER")
+    rec = rule_void_grubs(snap)
+    assert rec is not None
+    assert rec.kind == "enemy_hornguard"
+    assert rec.severity == "warn"
+    assert str(VOID_GRUB_HORNGUARD) in rec.text
+
+
+def test_void_grubs_ally_hornguard_fires_info() -> None:
+    ally = _ally_with_name("P1")
+    events = [_grub_event("P1", 300.0 + i * 10) for i in range(VOID_GRUB_HORNGUARD)]
+    snap = _Snap(game_time=340.0, allies=[ally], raw_events=events, active_team="ORDER")
+    rec = rule_void_grubs(snap)
+    assert rec is not None
+    assert rec.kind == "ally_hornguard"
+    assert rec.severity == "info"
+
+
+def test_void_grubs_contest_fires_when_neither_has_hornguard() -> None:
+    ally = _ally_with_name("P1")
+    events = [_grub_event("P1", 300.0), _grub_event("Enemy", 310.0)]  # 1 each
+    snap = _Snap(game_time=330.0, allies=[ally], raw_events=events, active_team="ORDER")
+    rec = rule_void_grubs(snap)
+    assert rec is not None
+    assert rec.kind == "void_grub_contest"
+    assert rec.severity == "info"
+
+
+def test_void_grubs_enemy_hornguard_takes_priority_over_ally() -> None:
+    """Even if ally has 2 grubs, enemy at 3 triggers the defensive warn."""
+    ally = _ally_with_name("P1")
+    enemy = _Player(summoner_name="Enemy", champion_name="Darius")
+    events = (
+        [_grub_event("Enemy", 300.0 + i * 10) for i in range(VOID_GRUB_HORNGUARD)]
+        + [_grub_event("P1", 360.0), _grub_event("P1", 370.0)]
+    )
+    snap = _Snap(game_time=380.0, allies=[ally], enemies=[enemy], raw_events=events, active_team="ORDER")
+    rec = rule_void_grubs(snap)
+    assert rec is not None
+    assert rec.kind == "enemy_hornguard"
+
+
+def test_void_grubs_in_evaluate() -> None:
+    ally = _ally_with_name("P1")
+    enemy = _Player(summoner_name="Enemy", champion_name="Darius")
+    events = [_grub_event("Enemy", 280.0 + i * 10) for i in range(VOID_GRUB_HORNGUARD)]
+    snap = _Snap(game_time=330.0, allies=[ally], enemies=[enemy], raw_events=events, active_team="ORDER")
+    recs = evaluate(snap)
+    assert any(r.kind == "enemy_hornguard" for r in recs)
+
+
+def test_void_grubs_ally_hornguard_suppressed_by_numbers_disadv() -> None:
+    recs = [
+        _rec("numbers_disadv", "alert"),
+        _rec("ally_hornguard", "info"),
+    ]
+    result = _suppress_dominated(recs)
+    assert not any(r.kind == "ally_hornguard" for r in result)
+
+
+def test_void_grubs_enemy_hornguard_survives_numbers_disadv() -> None:
+    """enemy_hornguard is defensive — must survive numbers_disadv."""
+    recs = [
+        _rec("numbers_disadv", "alert"),
+        _rec("enemy_hornguard", "warn"),
+    ]
+    result = _suppress_dominated(recs)
+    assert any(r.kind == "enemy_hornguard" for r in result)
+
+
+def test_void_grubs_suppressed_by_ally_inhib_down() -> None:
+    recs = [
+        _rec("ally_inhib_down", "warn"),
+        _rec("void_grub_contest", "info"),
+    ]
+    result = _suppress_dominated(recs)
+    assert not any(r.kind == "void_grub_contest" for r in result)
     assert any(r.kind == "ally_inhib_down" for r in result)

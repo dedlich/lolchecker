@@ -430,6 +430,32 @@ def _enemy_drake_stack_count(snapshot: "LcdaSnapshot") -> int:
     )
 
 
+def _ally_grub_count(snapshot: "LcdaSnapshot") -> int:
+    """Count Void Grubs killed by the allied team (EventName='VoidGrub')."""
+    events = getattr(snapshot, "raw_events", []) or []
+    allies = getattr(snapshot, "allies", []) or []
+    if not events or not allies:
+        return 0
+    ids = _player_ids(allies)
+    return sum(
+        1 for e in events
+        if e.get("EventName") == "VoidGrub" and e.get("KillerName") in ids
+    )
+
+
+def _enemy_grub_count(snapshot: "LcdaSnapshot") -> int:
+    """Count Void Grubs killed by the enemy team (EventName='VoidGrub')."""
+    events = getattr(snapshot, "raw_events", []) or []
+    enemies = getattr(snapshot, "enemies", []) or []
+    if not events or not enemies:
+        return 0
+    ids = _player_ids(enemies)
+    return sum(
+        1 for e in events
+        if e.get("EventName") == "VoidGrub" and e.get("KillerName") in ids
+    )
+
+
 HERALD_USAGE_WINDOW_S = 180.0   # enemy has ~3 min to place the herald after pickup
 # Flash is 300s base; alert only when it won't be back imminently.
 FLASH_DOWN_ALERT_S = 60.0
@@ -453,6 +479,13 @@ ELDER_BUFF_DURATION_S = 150.0
 ELDER_BUFF_EXPIRY_ALERT_S = 60.0
 # Ally turret lost — fire a defensive alert for this many seconds after the kill.
 ALLY_TURRET_ALERT_WINDOW_S = 60.0
+# Dragon Soul reminder fires for this many seconds after the 4th drake is secured.
+DRAGON_SOUL_SIGNAL_S = 120.0
+# Void Grubs — pre-Herald early objective (Season 14+).
+# Event name in LCDA is "VoidGrub" (not "VoidGrubKill").
+VOID_GRUB_WINDOW_START_S = 270.0   # 4:30 — warn slightly before first spawn
+VOID_GRUB_WINDOW_END_S = 840.0    # 14:00 — Herald replaces grubs at this point
+VOID_GRUB_HORNGUARD = 3            # kills required for Hornguard buff
 
 _LANE_DISPLAY: dict[str, str] = {"L0": "Bot", "L1": "Mid", "L2": "Top"}
 
@@ -1940,6 +1973,122 @@ def rule_ally_turret_lost(snapshot: "LcdaSnapshot") -> Recommendation | None:
     )
 
 
+def rule_dragon_soul_pressure(snapshot: "LcdaSnapshot") -> Recommendation | None:
+    """Fires for DRAGON_SOUL_SIGNAL_S seconds after the 4th dragon is secured.
+
+    Reminds the team to capitalise on Dragon Soul before regrouping attention
+    on Baron/Elder. Suppressed by any active objective-take call (which is
+    already the more specific action) and by numbers_disadv."""
+    ally_stacks = _drake_stack_count(snapshot)
+    if ally_stacks < 4:
+        return None
+    events = getattr(snapshot, "raw_events", []) or []
+    allies = list(getattr(snapshot, "allies", []) or [])
+    if not allies:
+        return None
+    ids = _player_ids(allies)
+    game_time = float(getattr(snapshot, "game_time", 0.0) or 0.0)
+    dragon_kills = sorted(
+        (e for e in events if e.get("EventName") == "DragonKill" and e.get("KillerName") in ids),
+        key=lambda e: float(e.get("EventTime", 0)),
+    )
+    if len(dragon_kills) < 4:
+        return None
+    soul_time = float(dragon_kills[3].get("EventTime", 0))
+    age_s = game_time - soul_time
+    if age_s > DRAGON_SOUL_SIGNAL_S:
+        return None
+    gold = _team_gold_diff(snapshot)
+    return Recommendation(
+        text="Dragon Soul gesichert — Group + Baron/Elder forcen!",
+        severity="info",
+        category="objective",
+        confidence=0.82,
+        risk="LOW",
+        ttl_s=max(0.0, DRAGON_SOUL_SIGNAL_S - age_s),
+        kind="dragon_soul",
+        reasons=(
+            f"Dragon Soul aktiv ({ally_stacks} Drachen)!",
+            "Baron + Dragon Soul = maximale Siegchance",
+            f"Gold-Diff: {gold:+d}",
+        ),
+    )
+
+
+def rule_void_grubs(snapshot: "LcdaSnapshot") -> Recommendation | None:
+    """Early-game Void Grub objective (Season 14+, 4:30–14:00 window).
+
+    Tracks ally/enemy VoidGrub event counts and surfaces:
+      - Enemy Hornguard (≥3 grubs) → warn to play turrets defensively
+      - Ally Hornguard (≥3 grubs)  → info to press tower advantages
+      - Contest phase (neither at 3) → info to keep contesting
+
+    Note: LCDA event name is 'VoidGrub' (not 'VoidGrubKill').
+    If Riot renames it in a future patch, update the EventName strings
+    in _ally_grub_count / _enemy_grub_count."""
+    game_time = float(getattr(snapshot, "game_time", 0.0) or 0.0)
+    if not (VOID_GRUB_WINDOW_START_S <= game_time <= VOID_GRUB_WINDOW_END_S):
+        return None
+    ally_grubs = _ally_grub_count(snapshot)
+    enemy_grubs = _enemy_grub_count(snapshot)
+    total_killed = ally_grubs + enemy_grubs
+    gold = _team_gold_diff(snapshot)
+    remaining_window = max(0.0, VOID_GRUB_WINDOW_END_S - game_time)
+
+    # Enemy Hornguard — defensive alert
+    if enemy_grubs >= VOID_GRUB_HORNGUARD:
+        return Recommendation(
+            text=f"Gegner Hornguard ({enemy_grubs} Grubs) — Türme vorsichtig verteidigen!",
+            severity="warn",
+            category="safety",
+            confidence=0.82,
+            risk="HIGH",
+            ttl_s=min(60.0, remaining_window),
+            kind="enemy_hornguard",
+            reasons=(
+                f"Gegner hat {enemy_grubs} Void Grubs — Hornguard-Voidmites aktiv!",
+                "Voidmites greifen Türme an — defensiv spielen",
+                f"Gold-Diff: {gold:+d}",
+            ),
+        )
+
+    # Ally Hornguard — push signal
+    if ally_grubs >= VOID_GRUB_HORNGUARD:
+        return Recommendation(
+            text=f"Hornguard aktiv ({ally_grubs} Grubs) — Türme pushen!",
+            severity="info",
+            category="objective",
+            confidence=0.78,
+            risk="LOW",
+            ttl_s=min(60.0, remaining_window),
+            kind="ally_hornguard",
+            reasons=(
+                f"Wir haben {ally_grubs} Void Grubs — Voidmites attacken Türme!",
+                "Split-Push oder Group für maximalen Türm-Druck",
+                f"Gold-Diff: {gold:+d}",
+            ),
+        )
+
+    # Contest phase — grubs still available
+    if total_killed < 6:
+        needed = max(0, VOID_GRUB_HORNGUARD - ally_grubs)
+        return Recommendation(
+            text=f"Void Grubs — noch {needed} für Hornguard! ({int(remaining_window)}s)",
+            severity="info",
+            category="objective",
+            confidence=0.72,
+            risk="MEDIUM",
+            ttl_s=min(60.0, remaining_window),
+            kind="void_grub_contest",
+            reasons=(
+                f"Void Grubs: Wir {ally_grubs} — Gegner {enemy_grubs} (von 6 total)",
+                f"{VOID_GRUB_HORNGUARD} Grubs = Hornguard (Voidmites greifen Türme an)",
+                f"Fenster endet ca. 14:00 ({int(remaining_window)}s übrig)",
+            ),
+        )
+    return None
+
+
 def rule_ally_inhib_down(snapshot: "LcdaSnapshot") -> Recommendation | None:
     """Enemy destroyed one or more of OUR inhibitors — defensive alert (B4).
 
@@ -2388,6 +2537,10 @@ ALL_RULES: tuple[Callable[["LcdaSnapshot"], Recommendation | None], ...] = (
     rule_kill_lead_snowball,
     rule_kill_deficit_defensive,
     rule_late_game_group,
+    # Post-soul pressure — fires for 2 minutes after securing Dragon Soul.
+    rule_dragon_soul_pressure,
+    # Early-game Void Grub objective (4:30–14:00 window).
+    rule_void_grubs,
     # Lane/base pressure — structural map-state (turrets + inhibs + herald).
     rule_enemy_herald_danger,
     rule_ally_herald_window,
@@ -2452,6 +2605,9 @@ def _suppress_dominated(recs: list[Recommendation]) -> list[Recommendation]:
             "elder_buff_expiring",  # same — don't fight when short-handed
             "ally_herald",       # don't split to place herald while down
             "inhib_expiring",    # don't push their base while short-handed
+            "dragon_soul",       # don't Baron/Elder rush while short-handed
+            "ally_hornguard",    # tower push irrelevant when down a player
+            "void_grub_contest", # contesting grubs while short-handed is bad
         }
         return [r for r in recs if r.kind not in _offensive]
 
@@ -2485,6 +2641,7 @@ def _suppress_dominated(recs: list[Recommendation]) -> list[Recommendation]:
         _obj_take_kinds = {
             "dragon_take", "baron_take", "elder_take",
             "lane_open", "inhib_expiring", "ally_turret_lost",
+            "dragon_soul", "ally_hornguard", "void_grub_contest",
         }
         recs = [r for r in recs if r.kind not in _obj_take_kinds]
 
