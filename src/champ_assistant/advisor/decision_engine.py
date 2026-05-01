@@ -363,6 +363,9 @@ FLASH_DOWN_ALERT_S = 60.0
 # Baron buff (Hand of Baron) lasts 180s; alert in final 60s to push NOW.
 BARON_BUFF_DURATION_S = 180.0
 BARON_BUFF_EXPIRY_ALERT_S = 60.0
+# Elder Drake buff lasts 150s; alert in final 60s.
+ELDER_BUFF_DURATION_S = 150.0
+ELDER_BUFF_EXPIRY_ALERT_S = 60.0
 
 _LANE_DISPLAY: dict[str, str] = {"L0": "Bot", "L1": "Mid", "L2": "Top"}
 
@@ -463,6 +466,59 @@ def _ally_baron_buff_remaining(snapshot: "LcdaSnapshot") -> float | None:
     kill_time = float(last.get("EventTime") or 0.0)
     game_time = float(getattr(snapshot, "game_time", 0.0) or 0.0)
     remaining = BARON_BUFF_DURATION_S - (game_time - kill_time)
+    return remaining if remaining > 0 else None
+
+
+def _enemy_baron_buff_remaining(snapshot: "LcdaSnapshot") -> float | None:
+    """Seconds left on the enemy Hand-of-Baron buff, or None if not active.
+
+    Mirrors _ally_baron_buff_remaining but looks for BaronKill events
+    taken by enemy players — meaning we need to defend our base.
+    """
+    events = getattr(snapshot, "raw_events", []) or []
+    enemies = list(getattr(snapshot, "enemies", []) or [])
+    if not events or not enemies:
+        return None
+    enemy_ids = _player_ids(enemies)
+    baron_kills = [
+        e for e in events
+        if e.get("EventName") == "BaronKill"
+        and (e.get("KillerName") or "") in enemy_ids
+    ]
+    if not baron_kills:
+        return None
+    last = baron_kills[-1]
+    kill_time = float(last.get("EventTime") or 0.0)
+    game_time = float(getattr(snapshot, "game_time", 0.0) or 0.0)
+    remaining = BARON_BUFF_DURATION_S - (game_time - kill_time)
+    return remaining if remaining > 0 else None
+
+
+def _ally_elder_buff_remaining(snapshot: "LcdaSnapshot") -> float | None:
+    """Seconds left on the ally Elder Drake buff, or None if not active.
+
+    Looks for DragonKill events with DragonType "Elder" taken by an ally.
+    The buff lasts ELDER_BUFF_DURATION_S (150s). LCDA uses either
+    'DragonType' or 'TrapType' depending on the API version — we check
+    both defensively.
+    """
+    events = getattr(snapshot, "raw_events", []) or []
+    allies = list(getattr(snapshot, "allies", []) or [])
+    if not events or not allies:
+        return None
+    ally_ids = _player_ids(allies)
+    elder_kills = [
+        e for e in events
+        if e.get("EventName") == "DragonKill"
+        and (e.get("KillerName") or "") in ally_ids
+        and (e.get("DragonType") or e.get("TrapType") or "").lower() == "elder"
+    ]
+    if not elder_kills:
+        return None
+    last = elder_kills[-1]
+    kill_time = float(last.get("EventTime") or 0.0)
+    game_time = float(getattr(snapshot, "game_time", 0.0) or 0.0)
+    remaining = ELDER_BUFF_DURATION_S - (game_time - kill_time)
     return remaining if remaining > 0 else None
 
 
@@ -1579,6 +1635,78 @@ def rule_baron_buff_expiring(snapshot: "LcdaSnapshot") -> Recommendation | None:
     )
 
 
+def rule_enemy_baron_buff(snapshot: "LcdaSnapshot") -> Recommendation | None:
+    """Enemy has active Baron Nashor buff — defend our base (B4).
+
+    Fires for the full 180s buff duration. Severity escalates in the
+    final 60s when the buff is expiring and a counter-engage window opens:
+    - remaining > 60s → warn "defend base"
+    - remaining ≤ 60s → alert "counter-engage window" (they're losing the buff)
+
+    NOT suppressed by numbers_disadv — knowing the enemy has Baron is
+    still critical defensive information when short-handed.
+    """
+    remaining = _enemy_baron_buff_remaining(snapshot)
+    if remaining is None:
+        return None
+    if remaining > BARON_BUFF_EXPIRY_ALERT_S:
+        return Recommendation(
+            text=f"Feind Baron-Buff ({int(remaining)}s) — Basis sichern! Kein Mid-Map!",
+            severity="warn",
+            category="safety",
+            confidence=0.95,
+            risk="HIGH",
+            ttl_s=remaining,
+            kind="enemy_baron_buff",
+            reasons=(
+                f"Gegner hat Hand of Baron — {int(remaining)}s verbleibend",
+                "Feind-Super-Minions + Buff — Basis-Türme defensiv halten",
+                "Kein Objective contest — erst Baron-Buff ablaufen lassen",
+            ),
+        )
+    return Recommendation(
+        text=f"Feind Baron-Buff läuft ab in {int(remaining)}s — Konter-Engage Fenster!",
+        severity="alert",
+        category="tempo",
+        confidence=0.88,
+        risk="MEDIUM",
+        ttl_s=remaining,
+        kind="enemy_baron_buff",
+        reasons=(
+            f"Feind Baron-Buff endet in {int(remaining)}s",
+            "Buff-Vorteil endet — Konter-Engage wird möglich",
+            "Wellen clearen + Ults bereit → dann Engage",
+        ),
+    )
+
+
+def rule_elder_buff_expiring(snapshot: "LcdaSnapshot") -> Recommendation | None:
+    """Ally Elder Drake buff about to expire — push NOW (B4).
+
+    Elder buff lasts 150s; fires in the final ELDER_BUFF_EXPIRY_ALERT_S (60s).
+    Elder-buffed executes (true damage at low HP) make teamfights decisive —
+    the team should be grouping and fighting, not farming waves.
+    """
+    remaining = _ally_elder_buff_remaining(snapshot)
+    if remaining is None or remaining > ELDER_BUFF_EXPIRY_ALERT_S:
+        return None
+    severity = "alert" if remaining <= 30 else "warn"
+    return Recommendation(
+        text=f"Elder-Buff läuft ab in {int(remaining)}s — JETZT teamfighten!",
+        severity=severity,
+        category="tempo",
+        confidence=0.93,
+        risk="LOW",
+        ttl_s=remaining,
+        kind="elder_buff_expiring",
+        reasons=(
+            f"Elder Drake Buff endet in {int(remaining)}s",
+            "Elder Execute = True Damage bei niedrigem HP — Fights gewinnen",
+            "Letztes Fenster mit Elder-Vorteil — jetzt gruppieren!",
+        ),
+    )
+
+
 def rule_enemy_flash_down(
     snapshot: "LcdaSnapshot",
     spell_tracker: "SpellTracker",
@@ -1664,6 +1792,8 @@ ALL_RULES: tuple[Callable[["LcdaSnapshot"], Recommendation | None], ...] = (
     rule_enemy_inhibitor_down,
     rule_ally_inhib_down,
     rule_baron_buff_expiring,
+    rule_enemy_baron_buff,
+    rule_elder_buff_expiring,
     rule_enemy_base_exposed,
     rule_lane_pressure,
 )
@@ -1709,8 +1839,9 @@ def _suppress_dominated(recs: list[Recommendation]) -> list[Recommendation]:
     if "numbers_disadv" in kinds:
         _offensive = {"fight", "numbers_adv", "gold_lead", "kill_lead",
                       "dragon_take", "dragon_free", "baron_take", "baron_free",
-                      "flash_down",           # engage window irrelevant when short-handed
-                      "baron_buff_expiring"}  # pushing while outnumbered is still bad
+                      "flash_down",            # engage window irrelevant when short-handed
+                      "baron_buff_expiring",   # pushing while outnumbered is still bad
+                      "elder_buff_expiring"}   # same — don't fight when short-handed
         return [r for r in recs if r.kind not in _offensive]
 
     # Rule 3 — free-window objective absorbs standalone numbers_adv
