@@ -18,13 +18,14 @@ in a normal window which is friendlier to headless / pytest-qt).
 """
 from __future__ import annotations
 
-from PyQt6.QtCore import QPoint, Qt, pyqtSignal
-from PyQt6.QtGui import QGuiApplication, QKeySequence, QPixmap, QShortcut
+from PyQt6.QtCore import QEvent, QPoint, Qt, pyqtSignal
+from PyQt6.QtGui import QGuiApplication, QKeySequence, QMouseEvent, QPixmap, QShortcut
 from PyQt6.QtWidgets import (
     QFrame,
     QHBoxLayout,
     QLabel,
     QMainWindow,
+    QPushButton,
     QVBoxLayout,
     QWidget,
 )
@@ -40,6 +41,20 @@ from .summoner_tracker import SummonerTrackerPanel
 from .title_bar import TitleBar
 from .view_model import SessionView
 from .widgets import ConnectionStatusBar
+
+
+class _ClickableFrame(QFrame):
+    """QFrame that calls ``on_click`` on a left mouse press."""
+
+    def __init__(self, on_click, parent=None) -> None:  # type: ignore[no-untyped-def]
+        super().__init__(parent)
+        self._on_click = on_click
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+
+    def mousePressEvent(self, event: QMouseEvent | None) -> None:  # type: ignore[override]
+        if event is not None and event.button() == Qt.MouseButton.LeftButton:
+            self._on_click()
+        super().mousePressEvent(event)
 
 
 class MainOverlay(QMainWindow):
@@ -218,6 +233,19 @@ class MainOverlay(QMainWindow):
         self._my_build_champ_label = QLabel("Your Build")
         self._my_build_champ_label.setObjectName("sectionTitle")
         my_build_header.addWidget(self._my_build_champ_label, 1)
+
+        self._my_build_apply_btn = QPushButton("Apply")
+        self._my_build_apply_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._my_build_apply_btn.setStyleSheet(
+            f"QPushButton {{ background-color: {styles.ACCENT}; color: #fff;"
+            f" border: none; border-radius: {styles.RADIUS_SMALL}px;"
+            f" font-size: {styles.FS_CAPTION}px; font-weight: 700;"
+            f" padding: 2px 10px; }}"
+            f"QPushButton:hover {{ background-color: {styles.ACCENT_BRIGHT}; }}"
+        )
+        self._my_build_apply_btn.clicked.connect(self._on_apply_build_clicked)
+        self._my_build_apply_btn.hide()
+        my_build_header.addWidget(self._my_build_apply_btn)
         my_build_outer.addLayout(my_build_header)
 
         self._my_build_rows = QVBoxLayout()
@@ -226,6 +254,9 @@ class MainOverlay(QMainWindow):
 
         body_layout.addWidget(self._my_build_panel)
         self._my_build_panel.hide()
+
+        # Pending build data for the Apply button handler.
+        self._my_build_pending: tuple[str, list[str], list[str]] | None = None
 
         self._power_spike_panel = PowerSpikePanel()
         body_layout.addWidget(self._power_spike_panel)
@@ -407,7 +438,7 @@ class MainOverlay(QMainWindow):
 
     def _make_pick_row(self, s: "PickSuggestion") -> QFrame:
         from PyQt6.QtWidgets import QFrame, QHBoxLayout, QLabel, QVBoxLayout
-        row = QFrame()
+        row = _ClickableFrame(lambda: self.pick_hover_requested.emit(s.champion_key))
         row.setProperty("role", "row")
         row.setStyleSheet(
             f"QFrame[role='row'] {{ background-color: {styles.BG_TERTIARY};"
@@ -469,8 +500,12 @@ class MainOverlay(QMainWindow):
         champ_key = view.my_champion_key
         if not champ_key or build is None:
             self._my_build_panel.hide()
+            self._my_build_pending = None
+            self._my_build_apply_btn.hide()
             return
 
+        self._my_build_pending = (champ_key, list(build.runes), list(build.items))
+        self._my_build_apply_btn.show()
         self._my_build_panel.show()
 
         # Update header icon + champion name
@@ -511,6 +546,12 @@ class MainOverlay(QMainWindow):
             self._my_build_rows.addWidget(
                 self._build_info_row("Items", "  ·  ".join(build.items[:4]), styles.WARNING)
             )
+
+    def _on_apply_build_clicked(self) -> None:
+        if self._my_build_pending is None:
+            return
+        champ_key, runes, items = self._my_build_pending
+        self.apply_build_requested.emit(champ_key, runes, items)
 
     def _build_info_row(self, label: str, value: str, value_color: str) -> QFrame:
         from PyQt6.QtWidgets import QFrame, QHBoxLayout, QLabel
