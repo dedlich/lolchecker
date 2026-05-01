@@ -419,11 +419,52 @@ def _fed_score(player: object, game_time: float) -> float:
     return kills / max(1.0, game_time / 60.0) * 5.0
 
 
-def _focus_target(enemies: list, game_time: float) -> tuple[str, str] | None:
+def _kill_streak(player: object, events: list[dict]) -> int:
+    """Consecutive kills by ``player`` since their last death (from raw_events).
+
+    Walks events in reverse order. Stops counting when we find a
+    ChampionKill where this player is the victim, or when all events
+    are exhausted. Multi-kills (rapid kills in quick succession) count
+    as individual kill-streak entries — this is intentional; a penta
+    reads as streak=5.
+    """
+    ids: set[str] = set()
+    sn = getattr(player, "summoner_name", "") or ""
+    cn = getattr(player, "champion_name", "") or ""
+    if sn:
+        ids.add(sn)
+    if cn:
+        ids.add(cn)
+    if not ids:
+        return 0
+    streak = 0
+    for evt in reversed(events):
+        if evt.get("EventName") != "ChampionKill":
+            continue
+        killer = evt.get("KillerName") or ""
+        victim = evt.get("VictimName") or ""
+        if killer in ids:
+            streak += 1
+        elif victim in ids:
+            break  # they died — streak resets here
+    return streak
+
+
+def _focus_target(
+    enemies: list,
+    game_time: float,
+    raw_events: list[dict] | None = None,
+) -> tuple[str, str] | None:
     """Return (champion_name, reason) for the highest-priority alive enemy.
-    Factors: base kill priority from _CHAMP_DATA, multiplied by fed-score."""
+
+    Factors:
+    - Base kill priority from _CHAMP_DATA
+    - Fed-score (kills/time)
+    - Kill streak from raw_events (boosts priority when on a spree)
+    """
     if not enemies:
         return None
+    events = raw_events or []
 
     def _score(p: object) -> float:
         if not getattr(p, "is_alive", True):
@@ -431,7 +472,10 @@ def _focus_target(enemies: list, game_time: float) -> tuple[str, str] | None:
         champ = getattr(p, "champion_name", "") or ""
         base = float(_CHAMP_DATA.get(champ, {}).get("priority", 3))
         fed = _fed_score(p, game_time)
-        return base * max(1.0, fed)
+        streak = _kill_streak(p, events)
+        # Each kill on the current streak adds +1 to base priority (capped at 5+).
+        streak_bonus = min(streak, 3) * 0.5
+        return (base + streak_bonus) * max(1.0, fed)
 
     ranked = sorted(enemies, key=_score, reverse=True)
     best = ranked[0]
@@ -442,14 +486,19 @@ def _focus_target(enemies: list, game_time: float) -> tuple[str, str] | None:
     kills = getattr(best, "kills", 0)
     deaths = max(1, getattr(best, "deaths", 1) or 1)
     fed = _fed_score(best, game_time)
+    streak = _kill_streak(best, events)
     priority = _CHAMP_DATA.get(champ, {}).get("priority", 3)
 
     parts: list[str] = []
-    if fed >= 2.0:
+    if streak >= 3:
+        parts.append(f"KILLING SPREE {streak} kills — sofort töten!")
+    elif streak == 2:
+        parts.append(f"Double Kill — {kills}/{deaths} fed")
+    elif fed >= 2.0:
         parts.append(f"{kills}/{deaths} — extrem fed")
     elif fed >= 1.3:
         parts.append(f"{kills}/{deaths} — fed")
-    if priority >= 5:
+    if priority >= 5 and not streak:
         parts.append("primäres Carry")
     return (champ, ", ".join(parts) if parts else "höchste Kill-Prio")
 
@@ -1103,7 +1152,8 @@ def rule_fight_opportunity(snapshot: "LcdaSnapshot") -> Recommendation | None:
     if -FIGHT_SCORE_THRESHOLD < score < FIGHT_SCORE_THRESHOLD:
         return None
 
-    focus = _focus_target(enemies, game_time)
+    raw_events = list(getattr(snapshot, "raw_events", []) or [])
+    focus = _focus_target(enemies, game_time, raw_events)
     aoe_warnings = _aoe_cc_warnings(enemies)[:2]
 
     reasons: list[str] = [
@@ -1269,9 +1319,55 @@ def rule_ace_detected(snapshot: "LcdaSnapshot") -> Recommendation | None:
     )
 
 
+def rule_game_ended(snapshot: "LcdaSnapshot") -> Recommendation | None:
+    """Surface a final Win/Loss card when the GameEnd event is present.
+
+    Shows ally drake count and final gold diff as context. Once this fires,
+    _suppress_dominated drops all other recommendations — the game is over.
+    """
+    result = getattr(snapshot, "game_result", "") or ""
+    if not result:
+        return None
+    ally_drakes = _drake_stack_count(snapshot)
+    enemy_drakes = _enemy_drake_stack_count(snapshot)
+    gold = _team_gold_diff(snapshot)
+    drake_str = f"{ally_drakes}x Drake" if ally_drakes else "0 Drakes"
+    if result == "Win":
+        return Recommendation(
+            text=f"SIEG! GG — {drake_str}, Gold {gold:+d}",
+            severity="alert",
+            category="tempo",
+            confidence=1.0,
+            risk="LOW",
+            ttl_s=300.0,
+            kind="game_end",
+            reasons=(
+                "VICTORY — Spiel gewonnen!",
+                f"Ally Drakes: {ally_drakes} | Enemy Drakes: {enemy_drakes}",
+                f"Final Gold-Diff: {gold:+d}",
+            ),
+        )
+    return Recommendation(
+        text=f"NIEDERLAGE — GG, nächstes Spiel ({drake_str})",
+        severity="warn",
+        category="safety",
+        confidence=1.0,
+        risk="LOW",
+        ttl_s=300.0,
+        kind="game_end",
+        reasons=(
+            "DEFEAT — Spiel verloren",
+            f"Ally Drakes: {ally_drakes} | Enemy Drakes: {enemy_drakes}",
+            f"Final Gold-Diff: {gold:+d}",
+        ),
+    )
+
+
 # Rule registry — extend by appending a function. Order doesn't affect
 # ``evaluate``'s output (caller sorts by severity).
 ALL_RULES: tuple[Callable[["LcdaSnapshot"], Recommendation | None], ...] = (
+    # Game-end summary — trumps everything when the match is over.
+    rule_game_ended,
     # Ace detection — highest-priority window, overrides most other calls.
     rule_ace_detected,
     # Numbers-asymmetry — safety overrides objective calls.
@@ -1320,6 +1416,10 @@ def _suppress_dominated(recs: list[Recommendation]) -> list[Recommendation]:
        suppress fight_bad when we're already recommending taking an objective.
     """
     kinds = {r.kind for r in recs}
+
+    # Rule 0 — game_end present: show only the result card, suppress everything
+    if "game_end" in kinds:
+        return [r for r in recs if r.kind == "game_end"]
 
     # Rule 1 — ace absorbs redundant offensive signals
     if "ace" in kinds:

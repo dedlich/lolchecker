@@ -84,6 +84,7 @@ class _Snap:
     objectives: list = field(default_factory=list)
     raw_events: list = field(default_factory=list)
     active_team: str = ""
+    game_result: str = ""
 
 
 def _drake_in(seconds: float) -> _Objective:
@@ -697,9 +698,11 @@ def test_numbers_advantage_detects_dead_enemy() -> None:
 from champ_assistant.advisor.decision_engine import (
     _parse_turret_name,
     _enemy_turrets_down,
+    _kill_streak,
     rule_lane_pressure,
     rule_ace_detected,
     rule_enemy_base_exposed,
+    rule_game_ended,
 )
 
 
@@ -920,3 +923,107 @@ def test_suppress_base_exposed_absorbs_lane_open() -> None:
     result_kinds = {r.kind for r in result}
     assert "base_exposed" in result_kinds
     assert "lane_open" not in result_kinds
+
+
+# ----------------------------------------------------------------------
+# _kill_streak — consecutive kill tracking from raw_events
+# ----------------------------------------------------------------------
+
+def _kill_event(killer: str, victim: str, t: float = 500.0) -> dict:
+    return {"EventName": "ChampionKill", "KillerName": killer,
+            "VictimName": victim, "EventTime": t}
+
+
+def test_kill_streak_counts_consecutive_kills() -> None:
+    player = _Player(champion_name="Jinx", summoner_name="P1")
+    events = [
+        _kill_event("Jinx", "Thresh", 300.0),
+        _kill_event("Jinx", "Ashe", 310.0),
+        _kill_event("Jinx", "Caitlyn", 320.0),
+    ]
+    assert _kill_streak(player, events) == 3
+
+
+def test_kill_streak_resets_on_death() -> None:
+    player = _Player(champion_name="Jinx", summoner_name="P1")
+    events = [
+        _kill_event("Thresh", "Jinx", 200.0),  # Jinx dies
+        _kill_event("Jinx", "Ashe", 300.0),    # then gets one kill
+    ]
+    assert _kill_streak(player, events) == 1
+
+
+def test_kill_streak_zero_with_no_kills() -> None:
+    player = _Player(champion_name="Jinx", summoner_name="P1")
+    events = [_kill_event("Thresh", "Ashe", 300.0)]
+    assert _kill_streak(player, events) == 0
+
+
+def test_kill_streak_matches_summoner_name_format() -> None:
+    """KillerName may be summoner name instead of champion name."""
+    player = _Player(champion_name="Jinx", summoner_name="FlashKing")
+    events = [_kill_event("FlashKing", "Thresh", 300.0)]
+    assert _kill_streak(player, events) == 1
+
+
+def test_kill_streak_empty_events() -> None:
+    player = _Player(champion_name="Jinx")
+    assert _kill_streak(player, []) == 0
+
+
+# ----------------------------------------------------------------------
+# rule_game_ended — Win/Loss summary card
+# ----------------------------------------------------------------------
+
+def test_rule_game_ended_fires_on_win() -> None:
+    snap = _Snap(game_result="Win")
+    rec = rule_game_ended(snap)
+    assert rec is not None
+    assert "SIEG" in rec.text
+    assert rec.kind == "game_end"
+    assert rec.severity == "alert"
+
+
+def test_rule_game_ended_fires_on_lose() -> None:
+    snap = _Snap(game_result="Lose")
+    rec = rule_game_ended(snap)
+    assert rec is not None
+    assert "NIEDERLAGE" in rec.text
+    assert rec.kind == "game_end"
+
+
+def test_rule_game_ended_silent_during_game() -> None:
+    snap = _Snap(game_result="")
+    assert rule_game_ended(snap) is None
+
+
+def test_rule_game_ended_includes_drake_count() -> None:
+    ally = _Player(summoner_name="P1", champion_name="Jinx")
+    snap = _Snap(
+        game_result="Win",
+        allies=[ally],
+        raw_events=[
+            {"EventName": "DragonKill", "KillerName": "Jinx"},
+            {"EventName": "DragonKill", "KillerName": "Jinx"},
+        ],
+    )
+    rec = rule_game_ended(snap)
+    assert rec is not None
+    assert "2x Drake" in rec.text
+
+
+# ----------------------------------------------------------------------
+# _suppress_dominated: game_end suppresses ALL other recommendations
+# ----------------------------------------------------------------------
+
+def test_suppress_game_end_drops_all_others() -> None:
+    recs = [
+        _rec("game_end", "alert"),
+        _rec("dragon_take", "alert"),
+        _rec("fight", "alert"),
+        _rec("numbers_disadv", "alert"),
+        _rec("lane_open", "warn"),
+    ]
+    result = _suppress_dominated(recs)
+    assert len(result) == 1
+    assert result[0].kind == "game_end"
