@@ -43,9 +43,10 @@ class OverlayState:
     # Diagnostics logging (CPU/mem/FPS every 10s). Default on so existing
     # users keep their behavior; toggleable via Settings → Diagnostics.
     diagnostics_enabled: bool = True
-    # Experimental: vision-based automatic camp detection. Stage A —
-    # color heuristic, Windows-only. Disabled by default.
-    enable_auto_camp_detection: bool = False
+    # Vision-based automatic camp detection (minimap color heuristic).
+    # Enabled by default — arms jungle timers automatically when camp
+    # icons disappear from the minimap, same as Blitz/Porofessor.
+    enable_auto_camp_detection: bool = True
     # Vision-based scoreboard visibility detection — drives the
     # scoreboard-scoped gold-diff overlay (panel only renders while
     # the in-game tab-scoreboard is up). Default ON so users see the
