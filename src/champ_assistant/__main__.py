@@ -1144,6 +1144,16 @@ async def _hydrate_champions_and_icons(
                 log.exception("champions_fetch_failed")
                 champions = {c.id: c for c in _STARTER_CHAMPIONS}
 
+            # Refresh tier list from Lolalytics (6 h TTL, non-blocking).
+            try:
+                from champ_assistant.data.refresh import maybe_refresh
+                new_tiers = await maybe_refresh(data_dir, champions)
+                if new_tiers is not None:
+                    assistant.tiers = new_tiers
+                    log.info("tier_refresh_applied")
+            except Exception:
+                log.exception("tier_refresh_error")
+
             keys = sorted({c.key for c in champions.values()})
             log.info("icon_prefetch_start patch=%s keys=%d", patch, len(keys))
             icons_bytes = await dd.prefetch_icons(patch, keys)
