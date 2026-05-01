@@ -488,6 +488,11 @@ ELDER_BUFF_DURATION_S = 150.0
 ELDER_BUFF_EXPIRY_ALERT_S = 60.0
 # Ally turret lost — fire a defensive alert for this many seconds after the kill.
 ALLY_TURRET_ALERT_WINDOW_S = 60.0
+# Enemy soul-point persistent reminder: hand off to dragon_window when dragon
+# spawns within this many seconds (dragon_window has more specific messaging).
+ENEMY_SOUL_POINT_HANDOFF_S = 120.0
+# Ally inhib respawning — fire info this many seconds before the respawn.
+ALLY_INHIB_RESPAWN_ALERT_S = 60.0
 # Dragon Soul reminder fires for this many seconds after the 4th drake is secured.
 DRAGON_SOUL_SIGNAL_S = 120.0
 # Void Grubs — pre-Herald early objective (Season 14+).
@@ -641,6 +646,36 @@ def _active_ally_inhibitors_down(snapshot: "LcdaSnapshot") -> int:
         1 for e in events if e.get("EventName") == "InhibitorRespawned"
     )
     return max(0, killed - respawned)
+
+
+def _earliest_ally_inhib_respawn_remaining(snapshot: "LcdaSnapshot") -> float | None:
+    """Seconds until the next ally inhibitor respawns, or None.
+
+    Mirrors _earliest_enemy_inhib_respawn_remaining but looks for
+    InhibitorKilled events taken by an ENEMY player (they destroyed our
+    inhibitor). FIFO pairing with InhibitorRespawned events finds the
+    soonest active respawn."""
+    events = getattr(snapshot, "raw_events", []) or []
+    enemies = list(getattr(snapshot, "enemies", []) or [])
+    if not events or not enemies:
+        return None
+    enemy_ids = _player_ids(enemies)
+    game_time = float(getattr(snapshot, "game_time", 0.0) or 0.0)
+    kill_times = sorted(
+        float(e.get("EventTime") or 0.0)
+        for e in events
+        if e.get("EventName") == "InhibitorKilled"
+        and (e.get("KillerName") or "") in enemy_ids
+    )
+    if not kill_times:
+        return None
+    respawn_count = sum(1 for e in events if e.get("EventName") == "InhibitorRespawned")
+    active_kills = kill_times[respawn_count:]
+    if not active_kills:
+        return None
+    remaining_times = [INHIB_RESPAWN_S - (game_time - t) for t in active_kills]
+    positive = [r for r in remaining_times if r > 0]
+    return min(positive) if positive else None
 
 
 def _ally_baron_buff_remaining(snapshot: "LcdaSnapshot") -> float | None:
@@ -2176,6 +2211,70 @@ def rule_enemy_jungler_down(snapshot: "LcdaSnapshot") -> Recommendation | None:
     )
 
 
+def rule_enemy_dragon_soul(snapshot: "LcdaSnapshot") -> Recommendation | None:
+    """Enemy is at soul point (3 drakes) — persistent denial reminder (B3).
+
+    Fires between drake spawns when enemy has exactly 3 stacks. Silent when
+    dragon_window is about to open (within ENEMY_SOUL_POINT_HANDOFF_S) since
+    that rule provides more specific "VERHINDERN" messaging, and silent once
+    the enemy secures soul (4+ stacks, game-over scenario handled elsewhere).
+    """
+    enemy_stacks = _enemy_drake_stack_count(snapshot)
+    if enemy_stacks != 3:
+        return None
+    game_time = float(getattr(snapshot, "game_time", 0.0) or 0.0)
+    drake_obj = next(
+        (o for o in (getattr(snapshot, "objectives", []) or [])
+         if getattr(o, "name", "") == "Dragon"),
+        None,
+    )
+    remaining = drake_obj.remaining(game_time) if drake_obj else None
+    if remaining is not None and remaining <= ENEMY_SOUL_POINT_HANDOFF_S:
+        return None  # dragon_window takes over
+    gold = _team_gold_diff(snapshot)
+    ttl = min(ENEMY_SOUL_POINT_HANDOFF_S, remaining - ENEMY_SOUL_POINT_HANDOFF_S) if remaining else 90.0
+    return Recommendation(
+        text="Feind bei 3 Drachen — SOUL POINT! Nächsten Drake um jeden Preis verhindern!",
+        severity="warn",
+        category="objective",
+        confidence=0.88,
+        risk="HIGH",
+        ttl_s=max(30.0, ttl),
+        kind="enemy_soul_point",
+        reasons=(
+            f"Gegner: {enemy_stacks} Drake-Stacks — ein Drache = Soul!",
+            "Drake-Soul ist oft spielentscheidend — unbedingt verhindern",
+            f"Gold-Diff: {gold:+d}",
+        ),
+    )
+
+
+def rule_ally_inhib_respawning(snapshot: "LcdaSnapshot") -> Recommendation | None:
+    """Ally inhibitor respawns soon — transition from defense to objectives (B4).
+
+    Fires in the final ALLY_INHIB_RESPAWN_ALERT_S (60s) before the soonest
+    ally inhib respawn, signaling that the defensive pressure window is closing
+    and the team can plan a Baron/Dragon call.
+    """
+    remaining = _earliest_ally_inhib_respawn_remaining(snapshot)
+    if remaining is None or remaining > ALLY_INHIB_RESPAWN_ALERT_S:
+        return None
+    return Recommendation(
+        text=f"Ally Inhib respawnt in {int(remaining)}s — dann Objectives möglich!",
+        severity="info",
+        category="tempo",
+        confidence=0.88,
+        risk="LOW",
+        ttl_s=remaining,
+        kind="ally_inhib_respawning",
+        reasons=(
+            f"Eigener Inhibitor respawnt in {int(remaining)}s",
+            "Super-Minions stoppen → Baron/Dragon-Fenster öffnet sich",
+            "Ults + Wellen bereit halten",
+        ),
+    )
+
+
 def rule_ally_inhib_down(snapshot: "LcdaSnapshot") -> Recommendation | None:
     """Enemy destroyed one or more of OUR inhibitors — defensive alert (B4).
 
@@ -2672,12 +2771,15 @@ ALL_RULES: tuple[Callable[["LcdaSnapshot"], Recommendation | None], ...] = (
     rule_void_grubs,
     # B2 contribution — enemy jungler is dead, push/contest window.
     rule_enemy_jungler_down,
+    # B3 — enemy at soul point (3 drakes), persistent denial reminder.
+    rule_enemy_dragon_soul,
     # Lane/base pressure — structural map-state (turrets + inhibs + herald).
     rule_enemy_herald_danger,
     rule_ally_herald_window,
     rule_enemy_inhibitor_down,
     rule_enemy_inhib_expiring,
     rule_ally_turret_lost,
+    rule_ally_inhib_respawning,
     rule_ally_inhib_down,
     rule_baron_buff_expiring,
     rule_enemy_baron_buff,
@@ -2741,6 +2843,7 @@ def _suppress_dominated(recs: list[Recommendation]) -> list[Recommendation]:
             "ally_hornguard",    # tower push irrelevant when down a player
             "void_grub_contest", # contesting grubs while short-handed is bad
             "jungler_down",      # push suggestion irrelevant when short-handed
+            "enemy_soul_point",  # drake denial requires going aggro — not when short-handed
         }
         return [r for r in recs if r.kind not in _offensive]
 
@@ -2775,7 +2878,10 @@ def _suppress_dominated(recs: list[Recommendation]) -> list[Recommendation]:
             "dragon_take", "baron_take", "elder_take",
             "lane_open", "inhib_expiring", "ally_turret_lost",
             "dragon_soul", "ally_hornguard", "void_grub_contest",
-            "jungler_down",  # don't push while defending super-minions
+            "jungler_down",      # don't push while defending super-minions
+            "enemy_soul_point",  # drake denial requires committing — not when base is open
+            # NOTE: ally_inhib_respawning intentionally coexists with ally_inhib_down:
+            # "defend now + inhib back in 30s" are complementary, not conflicting.
         }
         recs = [r for r in recs if r.kind not in _obj_take_kinds]
 

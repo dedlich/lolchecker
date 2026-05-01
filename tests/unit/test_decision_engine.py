@@ -3193,3 +3193,195 @@ def test_cross_obj_baron_alone_not_suppressed() -> None:
     recs = [_rec("baron_take", "alert")]
     result = _suppress_dominated(recs)
     assert any(r.kind == "baron_take" for r in result)
+
+
+# ----------------------------------------------------------------------
+# rule_enemy_dragon_soul (B3 — enemy at soul point, persistent reminder)
+# ----------------------------------------------------------------------
+from champ_assistant.advisor.decision_engine import (  # noqa: E402
+    ENEMY_SOUL_POINT_HANDOFF_S,
+    _enemy_drake_stack_count,
+    rule_enemy_dragon_soul,
+)
+
+
+def _enemy_drake_kill(killer: str, event_time: float) -> dict:
+    return {"EventName": "DragonKill", "KillerName": killer, "EventTime": event_time}
+
+
+def test_enemy_dragon_soul_silent_when_fewer_than_3_stacks() -> None:
+    enemy = _Player(summoner_name="E1", champion_name="Darius")
+    events = [_enemy_drake_kill("E1", t) for t in [100.0, 200.0]]
+    snap = _Snap(game_time=900.0, enemies=[enemy], raw_events=events)
+    assert rule_enemy_dragon_soul(snap) is None
+
+
+def test_enemy_dragon_soul_silent_when_4_or_more_stacks() -> None:
+    """At 4 stacks enemy already has soul — this rule is silent (other rules handle it)."""
+    enemy = _Player(summoner_name="E1", champion_name="Darius")
+    events = [_enemy_drake_kill("E1", t) for t in [100.0, 200.0, 300.0, 400.0]]
+    snap = _Snap(game_time=900.0, enemies=[enemy], raw_events=events)
+    assert rule_enemy_dragon_soul(snap) is None
+
+
+def test_enemy_dragon_soul_fires_when_exactly_3_stacks_far_from_spawn() -> None:
+    enemy = _Player(summoner_name="E1", champion_name="Darius")
+    events = [_enemy_drake_kill("E1", t) for t in [100.0, 200.0, 300.0]]
+    # Dragon spawns in 300s (well past the 120s handoff window)
+    dragon = _Objective(name="Dragon", next_spawn=600.0 + 300.0)
+    snap = _Snap(game_time=600.0, enemies=[enemy], raw_events=events, objectives=[dragon])
+    rec = rule_enemy_dragon_soul(snap)
+    assert rec is not None
+    assert rec.kind == "enemy_soul_point"
+    assert rec.severity == "warn"
+    assert "3" in rec.text or "Soul" in rec.text
+
+
+def test_enemy_dragon_soul_silent_when_dragon_within_handoff_window() -> None:
+    """When dragon spawns within ENEMY_SOUL_POINT_HANDOFF_S, hand off to dragon_window."""
+    enemy = _Player(summoner_name="E1", champion_name="Darius")
+    events = [_enemy_drake_kill("E1", t) for t in [100.0, 200.0, 300.0]]
+    dragon = _Objective(name="Dragon", next_spawn=600.0 + ENEMY_SOUL_POINT_HANDOFF_S - 10.0)
+    snap = _Snap(game_time=600.0, enemies=[enemy], raw_events=events, objectives=[dragon])
+    assert rule_enemy_dragon_soul(snap) is None
+
+
+def test_enemy_dragon_soul_suppressed_by_numbers_disadv() -> None:
+    recs = [
+        _rec("numbers_disadv", "alert"),
+        _rec("enemy_soul_point", "warn"),
+    ]
+    result = _suppress_dominated(recs)
+    assert not any(r.kind == "enemy_soul_point" for r in result)
+
+
+def test_enemy_dragon_soul_suppressed_by_ally_inhib_down() -> None:
+    recs = [
+        _rec("ally_inhib_down", "warn"),
+        _rec("enemy_soul_point", "warn"),
+    ]
+    result = _suppress_dominated(recs)
+    assert not any(r.kind == "enemy_soul_point" for r in result)
+    assert any(r.kind == "ally_inhib_down" for r in result)
+
+
+def test_enemy_dragon_soul_in_evaluate() -> None:
+    enemy = _Player(summoner_name="E1", champion_name="Darius")
+    events = [_enemy_drake_kill("E1", t) for t in [100.0, 200.0, 300.0]]
+    dragon = _Objective(name="Dragon", next_spawn=900.0 + 300.0)
+    snap = _Snap(game_time=900.0, enemies=[enemy], raw_events=events, objectives=[dragon])
+    recs = evaluate(snap)
+    assert any(r.kind == "enemy_soul_point" for r in recs)
+
+
+# ----------------------------------------------------------------------
+# rule_ally_inhib_respawning (B4 — inhib about to respawn, go objectives)
+# ----------------------------------------------------------------------
+from champ_assistant.advisor.decision_engine import (  # noqa: E402
+    ALLY_INHIB_RESPAWN_ALERT_S,
+    INHIB_RESPAWN_S,
+    _earliest_ally_inhib_respawn_remaining,
+    rule_ally_inhib_respawning,
+)
+
+
+def _enemy_inhib_kill(killer: str, event_time: float) -> dict:
+    return {"EventName": "InhibitorKilled", "KillerName": killer, "EventTime": event_time}
+
+
+def _inhib_respawn_event() -> dict:
+    return {"EventName": "InhibitorRespawned"}
+
+
+def test_ally_inhib_respawn_remaining_none_when_no_events() -> None:
+    snap = _Snap(game_time=600.0, enemies=[_Player(summoner_name="E1")])
+    assert _earliest_ally_inhib_respawn_remaining(snap) is None
+
+
+def test_ally_inhib_respawn_remaining_returns_correct_seconds() -> None:
+    enemy = _Player(summoner_name="E1", champion_name="Darius")
+    kill_time = 500.0
+    snap = _Snap(
+        game_time=600.0,
+        enemies=[enemy],
+        raw_events=[_enemy_inhib_kill("E1", kill_time)],
+    )
+    expected = INHIB_RESPAWN_S - (600.0 - kill_time)
+    assert _earliest_ally_inhib_respawn_remaining(snap) == pytest.approx(expected)
+
+
+def test_ally_inhib_respawn_remaining_none_when_respawned() -> None:
+    enemy = _Player(summoner_name="E1", champion_name="Darius")
+    kill_time = 100.0
+    snap = _Snap(
+        game_time=600.0,
+        enemies=[enemy],
+        raw_events=[_enemy_inhib_kill("E1", kill_time), _inhib_respawn_event()],
+    )
+    assert _earliest_ally_inhib_respawn_remaining(snap) is None
+
+
+def test_ally_inhib_respawn_remaining_ignores_ally_kills() -> None:
+    """Ally killed enemy inhib — must NOT count as ally inhib respawn."""
+    ally = _Player(summoner_name="P1", champion_name="Jinx")
+    enemy = _Player(summoner_name="E1", champion_name="Darius")
+    snap = _Snap(
+        game_time=600.0,
+        allies=[ally], enemies=[enemy],
+        raw_events=[{"EventName": "InhibitorKilled", "KillerName": "P1", "EventTime": 500.0}],
+    )
+    assert _earliest_ally_inhib_respawn_remaining(snap) is None
+
+
+def test_ally_inhib_respawning_silent_when_too_far() -> None:
+    enemy = _Player(summoner_name="E1", champion_name="Darius")
+    kill_time = 200.0  # 400s ago at game_time=600 → 300-400 = -100 → respawned long ago... wait
+    # Need kill that respawns far from now: kill at 400 → respawns at 700, at game_time=600 → 100s left
+    kill_time2 = 600.0 - (INHIB_RESPAWN_S - ALLY_INHIB_RESPAWN_ALERT_S - 30.0)
+    snap = _Snap(
+        game_time=600.0,
+        enemies=[enemy],
+        raw_events=[_enemy_inhib_kill("E1", kill_time2)],
+    )
+    assert rule_ally_inhib_respawning(snap) is None
+
+
+def test_ally_inhib_respawning_fires_when_within_alert_window() -> None:
+    enemy = _Player(summoner_name="E1", champion_name="Darius")
+    # Kill such that remaining = 30s (well within 60s alert window)
+    kill_time = 600.0 - (INHIB_RESPAWN_S - 30.0)
+    snap = _Snap(
+        game_time=600.0,
+        enemies=[enemy],
+        raw_events=[_enemy_inhib_kill("E1", kill_time)],
+    )
+    rec = rule_ally_inhib_respawning(snap)
+    assert rec is not None
+    assert rec.kind == "ally_inhib_respawning"
+    assert rec.severity == "info"
+    assert "30" in rec.text
+    assert rec.ttl_s == pytest.approx(30.0)
+
+
+def test_ally_inhib_respawning_coexists_with_ally_inhib_down() -> None:
+    """Both cards fire simultaneously when inhib is down but about to respawn.
+    They are complementary: 'defend now' + 'back in 30s' tells the full story."""
+    recs = [
+        _rec("ally_inhib_down", "warn"),
+        _rec("ally_inhib_respawning", "info"),
+    ]
+    result = _suppress_dominated(recs)
+    assert any(r.kind == "ally_inhib_respawning" for r in result)
+    assert any(r.kind == "ally_inhib_down" for r in result)
+
+
+def test_ally_inhib_respawning_in_evaluate() -> None:
+    enemy = _Player(summoner_name="E1", champion_name="Darius")
+    kill_time = 900.0 - (INHIB_RESPAWN_S - 30.0)
+    snap = _Snap(
+        game_time=900.0,
+        enemies=[enemy],
+        raw_events=[_enemy_inhib_kill("E1", kill_time)],
+    )
+    recs = evaluate(snap)
+    assert any(r.kind == "ally_inhib_respawning" for r in recs)
