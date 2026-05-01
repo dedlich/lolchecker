@@ -1208,7 +1208,8 @@ def rule_late_game_group(snapshot: "LcdaSnapshot") -> Recommendation | None:
 def rule_dragon_window(snapshot: "LcdaSnapshot") -> Recommendation | None:
     """Pro-level Dragon call. Factors: timer, stack count + soul-point,
     drake type, dead-enemy free-window, gold/numbers. Replaces the
-    simpler rule_drake_priority + rule_drake_give_up in ALL_RULES."""
+    simpler rule_drake_priority + rule_drake_give_up in ALL_RULES.
+    Elder Dragon is handled by rule_elder_window — deferred here."""
     remaining = _objective_remaining(snapshot, "Dragon")
     if remaining is None or remaining > DRAKE_SETUP_WINDOW_S:
         return None
@@ -1233,6 +1234,10 @@ def rule_dragon_window(snapshot: "LcdaSnapshot") -> Recommendation | None:
          if getattr(o, "name", "") == "Dragon"),
         None,
     )
+    # Elder gets its own dedicated rule with higher-urgency messaging.
+    if getattr(drake_obj, "detail", None) == "Elder":
+        return None
+
     drake_name = _DRAKE_DISPLAY.get(
         getattr(drake_obj, "detail", None) or "", "Drache"
     )
@@ -1330,6 +1335,118 @@ def rule_dragon_window(snapshot: "LcdaSnapshot") -> Recommendation | None:
                 (f"Stacks: Wir {ally_stacks} — Gegner {enemy_stacks}",)
                 if ally_stacks > 0 or enemy_stacks > 0 else ()
             ),
+            f"Gold-Diff: {gold:+d} | {allies_alive}v{enemies_alive} alive",
+        ),
+    )
+
+
+def rule_elder_window(snapshot: "LcdaSnapshot") -> Recommendation | None:
+    """Elder Dragon — highest-stakes drake. Fires only when Elder is the
+    active spawn. Combined with Dragon Soul it is essentially a GG button;
+    must always be contested or seized.
+
+    Fires with a wider setup window (120s, same as Baron) because Elder
+    vision / wave-clear preparation takes longer than regular drakes."""
+    remaining = _objective_remaining(snapshot, "Dragon")
+    if remaining is None or remaining > BARON_SETUP_WINDOW_S:
+        return None
+
+    drake_obj = next(
+        (o for o in (getattr(snapshot, "objectives", []) or [])
+         if getattr(o, "name", "") == "Dragon"),
+        None,
+    )
+    if getattr(drake_obj, "detail", None) != "Elder":
+        return None  # not Elder — handled by rule_dragon_window
+
+    allies = list(getattr(snapshot, "allies", []) or [])
+    enemies = list(getattr(snapshot, "enemies", []) or [])
+    if not allies or not enemies:
+        return None
+    allies_alive = _alive_count(allies)
+    enemies_alive = _alive_count(enemies)
+    numbers_diff = allies_alive - enemies_alive
+    gold = _team_gold_diff(snapshot)
+
+    ally_stacks = _drake_stack_count(snapshot)
+    enemy_stacks = _enemy_drake_stack_count(snapshot)
+    ally_has_soul = ally_stacks >= 4
+    enemy_has_soul = enemy_stacks >= 4
+
+    dead_enemies = [e for e in enemies if not getattr(e, "is_alive", True)]
+    free_window = numbers_diff > 0 and len(dead_enemies) > 0
+
+    # Free-take: numbers advantage + dead enemies
+    if free_window:
+        dead_names = " + ".join(
+            getattr(e, "champion_name", "?") for e in dead_enemies[:2]
+        )
+        soul_suffix = " + Soul = GG!" if ally_has_soul else ""
+        return Recommendation(
+            text=f"Elder JETZT nehmen{soul_suffix} — {dead_names} tot!",
+            severity="alert",
+            category="objective",
+            confidence=0.97,
+            risk="LOW",
+            ttl_s=remaining,
+            kind="elder_take",
+            reasons=(
+                f"FREE ELDER — {dead_names} tot ({numbers_diff} man up)",
+                f"Elder in {int(remaining)}s",
+                *(("Wir haben Dragon Soul — Elder + Soul = GG!",) if ally_has_soul else ()),
+                f"Gold-Diff: {gold:+d} | {allies_alive}v{enemies_alive} alive",
+            ),
+        )
+
+    # Ally has Dragon Soul → Elder closes the game
+    if ally_has_soul:
+        severity = "alert" if remaining <= BARON_PRIORITY_WINDOW_S else "warn"
+        return Recommendation(
+            text=f"Elder in {int(remaining)}s — Soul + Elder = GG JETZT!",
+            severity=severity,
+            category="objective",
+            confidence=0.94,
+            risk="MEDIUM",
+            ttl_s=remaining,
+            kind="elder_take",
+            reasons=(
+                "Wir haben Dragon Soul — Elder-Buff = Execute-Schaden!",
+                f"Elder in {int(remaining)}s — Soul + Elder ist unschlagbar",
+                f"Gold-Diff: {gold:+d} | {allies_alive}v{enemies_alive} alive",
+            ),
+        )
+
+    # Enemy has Dragon Soul → must contest Elder at all costs
+    if enemy_has_soul:
+        return Recommendation(
+            text=f"Elder VERHINDERN in {int(remaining)}s — Gegner-Soul + Elder = GG!",
+            severity="alert",
+            category="objective",
+            confidence=0.92,
+            risk="HIGH",
+            ttl_s=remaining,
+            kind="elder_take",
+            reasons=(
+                f"Gegner hat Dragon Soul ({enemy_stacks} Stacks)!",
+                "Elder geben = Gegner unschlagbar — Contest ist Pflicht!",
+                f"Elder in {int(remaining)}s | Gold-Diff: {gold:+d}",
+                f"Numbers: {allies_alive}v{enemies_alive}",
+            ),
+        )
+
+    # Neither team has soul (early Elder, uncommon)
+    active = remaining <= BARON_PRIORITY_WINDOW_S
+    severity = "alert" if active else "warn"
+    return Recommendation(
+        text=f"Elder-Drache in {int(remaining)}s — Gruppenbildung!",
+        severity=severity,
+        category="objective",
+        confidence=0.88,
+        risk="MEDIUM",
+        ttl_s=remaining,
+        kind="elder_take",
+        reasons=(
+            f"Elder Drake in {int(remaining)}s — Execute-Buff für ganzes Team",
             f"Gold-Diff: {gold:+d} | {allies_alive}v{enemies_alive} alive",
         ),
     )
@@ -2154,6 +2271,7 @@ ALL_RULES: tuple[Callable[["LcdaSnapshot"], Recommendation | None], ...] = (
     rule_numbers_disadvantage,
     rule_numbers_advantage,
     # Pro-level window rules (replace the simpler drake/baron 4-pack).
+    rule_elder_window,
     rule_dragon_window,
     rule_baron_window,
     rule_herald_priority,
@@ -2220,6 +2338,7 @@ def _suppress_dominated(recs: list[Recommendation]) -> list[Recommendation]:
         _offensive = {
             "fight", "numbers_adv", "gold_lead", "kill_lead",
             "dragon_take", "dragon_free", "baron_take", "baron_free",
+            "elder_take",        # Elder is still a take — don't go while short-handed
             "flash_down",        # engage window irrelevant when short-handed
             "tp_down",           # side-lane freedom irrelevant when short-handed
             "combat_spell_down", # trade windows irrelevant when short-handed
@@ -2231,7 +2350,7 @@ def _suppress_dominated(recs: list[Recommendation]) -> list[Recommendation]:
         return [r for r in recs if r.kind not in _offensive]
 
     # Rule 3 — free-window objective absorbs standalone numbers_adv
-    if "dragon_free" in kinds or "baron_free" in kinds:
+    if "dragon_free" in kinds or "baron_free" in kinds or "elder_take" in kinds:
         recs = [r for r in recs if r.kind != "numbers_adv"]
 
     # Rule 4 — fight rec subsumes generic lead signals
@@ -2240,7 +2359,7 @@ def _suppress_dominated(recs: list[Recommendation]) -> list[Recommendation]:
 
     # Rule 5 — "don't fight" contradicts an active objective-take call;
     # suppress fight_bad when we're already recommending taking an objective.
-    _obj_take = {"dragon_take", "dragon_free", "baron_take", "baron_free"}
+    _obj_take = {"dragon_take", "dragon_free", "baron_take", "baron_free", "elder_take"}
     if kinds & _obj_take:
         recs = [r for r in recs if r.kind != "fight_bad"]
 
@@ -2257,7 +2376,7 @@ def _suppress_dominated(recs: list[Recommendation]) -> list[Recommendation]:
     # Rule 8 — ally_inhib_down is a defensive alert; suppress mid-map objective
     # "take" signals and the inhib_expiring push (defend first, push second).
     if "ally_inhib_down" in kinds:
-        _obj_take_kinds = {"dragon_take", "baron_take", "lane_open", "inhib_expiring"}
+        _obj_take_kinds = {"dragon_take", "baron_take", "elder_take", "lane_open", "inhib_expiring"}
         recs = [r for r in recs if r.kind not in _obj_take_kinds]
 
     return recs

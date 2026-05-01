@@ -61,6 +61,7 @@ class _Objective:
     name: str
     next_spawn: float | None
     last_killed: float | None = None
+    detail: str | None = None
 
     @property
     def next_spawn_seconds(self):
@@ -2353,3 +2354,162 @@ def test_inhib_expiring_suppressed_by_ally_inhib_down() -> None:
     result = _suppress_dominated(recs)
     assert not any(r.kind == "inhib_expiring" for r in result)
     assert any(r.kind == "ally_inhib_down" for r in result)
+
+
+# ----------------------------------------------------------------------
+# rule_elder_window (B1 — Elder Dragon handling)
+# ----------------------------------------------------------------------
+from champ_assistant.advisor.decision_engine import (  # noqa: E402
+    BARON_SETUP_WINDOW_S,
+    rule_elder_window,
+)
+
+
+def _elder_drake_in(seconds: float) -> _Objective:
+    return _Objective(name="Dragon", next_spawn=600.0 + seconds, last_killed=300.0, detail="Elder")
+
+
+def _four_dragon_kills(killer: str) -> list[dict]:
+    return [
+        {"EventName": "DragonKill", "KillerName": killer, "EventTime": t}
+        for t in [300.0, 360.0, 420.0, 480.0]
+    ]
+
+
+def test_elder_window_silent_when_no_dragon_objective() -> None:
+    ally = _Player(champion_name="Jinx", summoner_name="Jinx")
+    snap = _Snap(game_time=600.0, allies=[ally])
+    assert rule_elder_window(snap) is None
+
+
+def test_elder_window_silent_when_regular_dragon() -> None:
+    ally = _Player(champion_name="Jinx", summoner_name="Jinx")
+    snap = _Snap(
+        game_time=600.0,
+        allies=[ally],
+        enemies=[_Player()],
+        objectives=[_drake_in(20)],  # no detail == "Elder"
+    )
+    assert rule_elder_window(snap) is None
+
+
+def test_elder_window_silent_when_too_far_away() -> None:
+    ally = _Player(champion_name="Jinx", summoner_name="Jinx")
+    obj = _elder_drake_in(BARON_SETUP_WINDOW_S + 60)
+    snap = _Snap(game_time=600.0, allies=[ally], enemies=[_Player()], objectives=[obj])
+    assert rule_elder_window(snap) is None
+
+
+def test_elder_window_fires_alert_when_ally_has_soul() -> None:
+    ally = _Player(champion_name="Jinx", summoner_name="Jinx")
+    enemy = _Player(champion_name="Draven", summoner_name="Draven")
+    snap = _Snap(
+        game_time=600.0,
+        allies=[ally],
+        enemies=[enemy],
+        objectives=[_elder_drake_in(30)],
+        raw_events=_four_dragon_kills("Jinx"),
+    )
+    rec = rule_elder_window(snap)
+    assert rec is not None
+    assert rec.kind == "elder_take"
+    assert "Soul" in rec.text or "GG" in rec.text
+
+
+def test_elder_window_alert_when_enemy_has_soul() -> None:
+    ally = _Player(champion_name="Jinx", summoner_name="Jinx")
+    enemy = _Player(champion_name="Draven", summoner_name="Draven")
+    enemy_kills = [
+        {"EventName": "DragonKill", "KillerName": "Draven", "EventTime": t}
+        for t in [300.0, 360.0, 420.0, 480.0]
+    ]
+    snap = _Snap(
+        game_time=600.0,
+        allies=[ally],
+        enemies=[enemy],
+        objectives=[_elder_drake_in(30)],
+        raw_events=enemy_kills,
+    )
+    rec = rule_elder_window(snap)
+    assert rec is not None
+    assert rec.kind == "elder_take"
+    assert rec.severity == "alert"
+    assert "VERHINDERN" in rec.text
+
+
+def test_elder_window_free_take_when_enemies_dead() -> None:
+    ally = _Player(champion_name="Jinx", summoner_name="Jinx")
+    dead_enemy = _Player(champion_name="Draven", summoner_name="Draven", is_alive=False)
+    snap = _Snap(
+        game_time=600.0,
+        allies=[ally],
+        enemies=[dead_enemy],
+        objectives=[_elder_drake_in(20)],
+        raw_events=_four_dragon_kills("Jinx"),
+    )
+    rec = rule_elder_window(snap)
+    assert rec is not None
+    assert rec.kind == "elder_take"
+    assert rec.severity == "alert"
+    assert "JETZT" in rec.text
+
+
+def test_elder_window_no_soul_neither_team() -> None:
+    ally = _Player(champion_name="Jinx", summoner_name="Jinx")
+    enemy = _Player(champion_name="Draven", summoner_name="Draven")
+    snap = _Snap(
+        game_time=600.0,
+        allies=[ally],
+        enemies=[enemy],
+        objectives=[_elder_drake_in(50)],
+    )
+    rec = rule_elder_window(snap)
+    assert rec is not None
+    assert rec.kind == "elder_take"
+
+
+def test_elder_window_in_all_rules() -> None:
+    ally = _Player(champion_name="Jinx", summoner_name="Jinx")
+    enemy = _Player(champion_name="Draven", summoner_name="Draven")
+    snap = _Snap(
+        game_time=600.0,
+        allies=[ally],
+        enemies=[enemy],
+        objectives=[_elder_drake_in(30)],
+        raw_events=_four_dragon_kills("Jinx"),
+    )
+    recs = evaluate(snap)
+    assert any(r.kind == "elder_take" for r in recs)
+
+
+def test_dragon_window_skips_elder() -> None:
+    """rule_dragon_window must defer to rule_elder_window for Elder."""
+    ally = _Player(champion_name="Jinx", summoner_name="Jinx")
+    enemy = _Player(champion_name="Draven", summoner_name="Draven")
+    snap = _Snap(
+        game_time=600.0,
+        allies=[ally],
+        enemies=[enemy],
+        objectives=[_elder_drake_in(20)],
+    )
+    assert rule_dragon_window(snap) is None
+
+
+def test_elder_take_suppressed_by_numbers_disadv() -> None:
+    recs = [
+        _rec("numbers_disadv", "alert"),
+        _rec("elder_take", "alert"),
+    ]
+    result = _suppress_dominated(recs)
+    assert not any(r.kind == "elder_take" for r in result)
+
+
+def test_elder_take_suppressed_by_ally_inhib_down() -> None:
+    recs = [
+        _rec("ally_inhib_down", "warn"),
+        _rec("elder_take", "alert"),
+        _rec("baron_take", "alert"),
+    ]
+    result = _suppress_dominated(recs)
+    assert not any(r.kind == "elder_take" for r in result)
+    assert not any(r.kind == "baron_take" for r in result)
