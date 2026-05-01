@@ -14,9 +14,12 @@ visual validation without needing a live LCDA snapshot. Drives the
 """
 from __future__ import annotations
 
+import time
+
 from PyQt6.QtCore import (
     QEasingCurve,
     QPropertyAnimation,
+    QTimer,
     Qt,
 )
 from PyQt6.QtGui import QColor, QPainter, QPaintEvent
@@ -37,6 +40,7 @@ FOCUS_MODE_ROWS = 1
 CONFIDENCE_BAR_HEIGHT_PX = 3  # thin strip at the bottom of each rec card
 PULSE_DURATION_MS = 1200      # full 1→0.85→1 cycle for high-priority alerts
 PULSE_PRIORITY_THRESHOLD = 0.8
+TTL_GRACE_S = 5.0             # seconds a card stays after its TTL hits 0
 
 
 # Per-category glyph + tint. Icon-on-color reads better than plain
@@ -64,6 +68,11 @@ class _RecRow(QFrame):
         # bar invisible until a real Recommendation lands.
         self._severity: str | None = None
         self._confidence: float = 0.0
+        # TTL countdown state — updated by tick_ttl() every second.
+        self._meta_prefix: str = ""
+        self._ttl_s: float = 0.0
+        self._issued_at: float = 0.0
+        self._expired_at: float | None = None
         # Pulse animation — opacity oscillates 1.0 → 0.85 → 1.0 in a
         # loop on high-priority alerts. Cheap, non-intrusive attention
         # cue. Only set up once; start/stop_pulse() drive the QPropertyAnimation.
@@ -120,11 +129,12 @@ class _RecRow(QFrame):
         # Stash for paintEvent — confidence bar at bottom of the card.
         self._severity = rec.severity
         self._confidence = max(0.0, min(1.0, rec.confidence))
-        # Meta-line: "78% • MEDIUM • 12s" (TTL only when present).
-        meta = f"{int(rec.confidence * 100)}% • {rec.risk}"
-        if rec.ttl_s and rec.ttl_s > 0:
-            meta += f" • {int(rec.ttl_s)}s"
-        self._meta.setText(meta)
+        # Meta-line: "78% • MEDIUM • 12s" (TTL ticks down each second).
+        self._meta_prefix = f"{int(rec.confidence * 100)}% • {rec.risk}"
+        self._ttl_s = rec.ttl_s or 0.0
+        self._issued_at = time.monotonic()
+        self._expired_at = None
+        self._update_ttl_display(self._ttl_s)
         # Pulse only when this is a high-priority alert AND the
         # engine is confident enough to warrant the attention.
         if rec.severity == "alert" and rec.confidence >= PULSE_PRIORITY_THRESHOLD:
@@ -132,6 +142,30 @@ class _RecRow(QFrame):
         else:
             self._stop_pulse()
         self.update()
+
+    def _update_ttl_display(self, remaining: float) -> None:
+        meta = self._meta_prefix
+        if self._ttl_s > 0:
+            meta += f" • {int(remaining)}s"
+        self._meta.setText(meta)
+
+    def tick_ttl(self, now: float) -> float | None:
+        """Decrement displayed TTL. Returns remaining seconds (≥0) or None when
+        no TTL is set. Marks the card as expired when remaining first hits 0."""
+        if self._ttl_s <= 0:
+            return None
+        remaining = max(0.0, self._ttl_s - (now - self._issued_at))
+        self._update_ttl_display(remaining)
+        if remaining == 0.0 and self._expired_at is None:
+            self._expired_at = now
+        return remaining
+
+    def is_past_grace(self, now: float) -> bool:
+        """True once the card has shown 0s for longer than TTL_GRACE_S."""
+        return (
+            self._expired_at is not None
+            and now - self._expired_at >= TTL_GRACE_S
+        )
 
     def _start_pulse(self) -> None:
         if self._pulse_anim is not None:
@@ -279,6 +313,13 @@ class RecommendationPanel(FloatingWidget):
         # results — silent default beats stale text on screen.
         self.hide()
 
+        # 1-second ticker: keeps the TTL counter live between LCDA snapshots
+        # and hides cards that have been at 0s for longer than TTL_GRACE_S.
+        self._tick = QTimer(self)
+        self._tick.setInterval(1000)
+        self._tick.timeout.connect(self._on_tick)
+        self._tick.start()
+
     # -- public API ------------------------------------------------------
 
     def set_recommendations(self, recs: list[Recommendation]) -> None:
@@ -324,6 +365,21 @@ class RecommendationPanel(FloatingWidget):
                 if i >= FOCUS_MODE_ROWS:
                     row.hide()
                     row._stop_pulse()
+
+    def _on_tick(self) -> None:
+        now = time.monotonic()
+        any_visible = False
+        for row in self._rows:
+            if not row.isVisible():
+                continue
+            remaining = row.tick_ttl(now)
+            if remaining is not None and row.is_past_grace(now):
+                row.hide()
+                row._stop_pulse()
+            else:
+                any_visible = True
+        if not any_visible and self.isVisible():
+            self.hide()
 
     def populate_demo(self) -> None:
         """Fill with example output of every rule for visual testing
