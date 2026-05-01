@@ -129,32 +129,42 @@ class _BanRow(QFrame):
 
 
 class BanPanel(QFrame):
-    """Renders ban suggestions as a stacked list of rows."""
+    """Two-column ban-suggestion panel: lane-targeted (left) + allround (right)."""
 
     ban_hover_requested = pyqtSignal(str)
-    # Bubbled from each _BanRow — the overlay forwards this further
-    # up to the orchestrator. One signal per click; the BanPanel
-    # owns its rows so we can rewire on every update_suggestions().
 
     def __init__(self) -> None:
         super().__init__()
         self.setProperty("panel", True)
 
         outer = QVBoxLayout(self)
-        outer.setContentsMargins(10, 10, 10, 10)
-        outer.setSpacing(4)
+        outer.setContentsMargins(10, 8, 10, 8)
+        outer.setSpacing(6)
 
-        title = QLabel("Ban Suggestions")
-        title.setObjectName("sectionTitle")
-        outer.addWidget(title)
+        # Two-column header
+        header = QHBoxLayout()
+        header.setSpacing(styles.SPACING_GRID)
+        lane_title = QLabel("Lane Bans")
+        lane_title.setObjectName("sectionTitle")
+        allround_title = QLabel("Allround Bans")
+        allround_title.setObjectName("sectionTitle")
+        header.addWidget(lane_title, 1)
+        header.addWidget(allround_title, 1)
+        outer.addLayout(header)
 
-        self._rows = QVBoxLayout()
-        self._rows.setSpacing(4)
-        outer.addLayout(self._rows)
+        # Two-column ban rows
+        cols = QHBoxLayout()
+        cols.setSpacing(styles.SPACING_GRID)
 
-        self._empty = QLabel(
-            "Bans appear when the tier list + enemy profiles disagree on what to fear."
-        )
+        self._lane_col = QVBoxLayout()
+        self._lane_col.setSpacing(3)
+        self._allround_col = QVBoxLayout()
+        self._allround_col.setSpacing(3)
+        cols.addLayout(self._lane_col, 1)
+        cols.addLayout(self._allround_col, 1)
+        outer.addLayout(cols)
+
+        self._empty = QLabel("Ban suggestions appear once tier-list data is loaded.")
         self._empty.setStyleSheet(
             f"color: {styles.TEXT_MUTED}; font-size: {styles.FS_LABEL}px;"
             f" padding: 6px 4px; font-style: italic;"
@@ -169,22 +179,41 @@ class BanPanel(QFrame):
         suggestions: list[BanSuggestion],
         icon_lookup,  # type: ignore[no-untyped-def]
     ) -> None:
-        """Replace the list of rendered rows with the new ranking.
-        ``icon_lookup`` maps champion-key -> QPixmap (or None)."""
-        # Clear old rows
-        while self._rows.count():
-            item = self._rows.takeAt(0)
-            widget = item.widget() if item is not None else None
-            if widget is not None:
-                widget.deleteLater()
+        """Legacy single-list update — routes all to lane column for backward compat."""
+        self.update_suggestions_categorized(suggestions, [], icon_lookup)
 
-        if not suggestions:
+    def update_suggestions_categorized(
+        self,
+        lane: list[BanSuggestion],
+        allround: list[BanSuggestion],
+        icon_lookup,  # type: ignore[no-untyped-def]
+    ) -> None:
+        """Replace both columns with new lane + allround suggestions."""
+        self._clear_col(self._lane_col)
+        self._clear_col(self._allround_col)
+
+        if not lane and not allround:
+            self._empty.show()
             self.hide()
             return
 
         self.show()
         self._empty.hide()
-        for idx, s in enumerate(suggestions, start=1):
+
+        for idx, s in enumerate(lane[:5], start=1):
             row = _BanRow(s, icon_lookup(s.champion_key), rank=idx)
             row.ban_hover_requested.connect(self.ban_hover_requested.emit)
-            self._rows.addWidget(row)
+            self._lane_col.addWidget(row)
+
+        for idx, s in enumerate(allround[:5], start=1):
+            row = _BanRow(s, icon_lookup(s.champion_key), rank=idx)
+            row.ban_hover_requested.connect(self.ban_hover_requested.emit)
+            self._allround_col.addWidget(row)
+
+    @staticmethod
+    def _clear_col(layout: QVBoxLayout) -> None:
+        while layout.count():
+            item = layout.takeAt(0)
+            widget = item.widget() if item is not None else None
+            if widget is not None:
+                widget.deleteLater()

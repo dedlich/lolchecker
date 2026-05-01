@@ -77,3 +77,15 @@ class SessionView(BaseModel):
 
     ban_suggestions: list[BanSuggestion] = Field(default_factory=list)
     """Top-N champions to ban, ranked by tier + enemy mains."""
+
+    ban_suggestions_lane: list[BanSuggestion] = Field(default_factory=list)
+    """Top-5 ban suggestions targeted to the player's assigned lane."""
+
+    ban_suggestions_allround: list[BanSuggestion] = Field(default_factory=list)
+    """Top-5 ban suggestions based on global tier + enemy mains (no lane filter)."""
+
+    picks_counter: list[PickSuggestion] = Field(default_factory=list)
+    """Picks that counter the enemy lane opponent (empty when opponent not yet locked in)."""
+
+    picks_synergy: list[PickSuggestion] = Field(default_factory=list)
+    """Picks that fill team composition gaps (tier + gap-fill, no counter focus)."""

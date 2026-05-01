@@ -150,69 +150,52 @@ class MainOverlay(QMainWindow):
         self._onboarding = OnboardingBanner(_on_onboarding_dismissed, parent=self._body)
         body_layout.addWidget(self._onboarding)
 
-        # Champ-select section: enemy + picks side-by-side. The container
-        # holds them in a horizontal layout so users get more horizontal
-        # breathing room for the long rune/item lines on the pick cards.
-        self._champselect_row = QFrame()
-        self._champselect_row.setStyleSheet("background: transparent;")
-        cs_layout = QHBoxLayout(self._champselect_row)
-        cs_layout.setContentsMargins(0, 0, 0, 0)
-        cs_layout.setSpacing(styles.SPACING_GRID)
-
-        # Enemy team panel (left column)
-        self._enemy_panel = QFrame()
-        self._enemy_panel.setProperty("panel", True)
-        enemy_layout = QVBoxLayout(self._enemy_panel)
-        enemy_layout.setContentsMargins(10, 10, 10, 10)
-        enemy_layout.setSpacing(4)
-
-        enemy_title = QLabel("Enemy Team")
-        enemy_title.setObjectName("sectionTitle")
-        enemy_layout.addWidget(enemy_title)
-
+        # Enemy rows kept as an empty list for backward-compat with the
+        # enemy_rows property and _update_enemies; the visual panel has
+        # been removed in favour of the two-column pick/ban layout.
         self._enemy_rows: list[EnemyRow] = []
-        for _ in range(5):
-            row = EnemyRow()
-            row.role_clicked.connect(self.enemy_role_clicked.emit)
-            self._enemy_rows.append(row)
-            enemy_layout.addWidget(row)
 
-        cs_layout.addWidget(self._enemy_panel, 1)
-
-        # Picks panel (right column)
-        self._picks_panel = QFrame()
-        self._picks_panel.setProperty("panel", True)
-        picks_outer = QVBoxLayout(self._picks_panel)
-        picks_outer.setContentsMargins(10, 10, 10, 10)
-        picks_outer.setSpacing(4)
-
-        picks_title = QLabel("Your Picks")
-        picks_title.setObjectName("sectionTitle")
-        picks_outer.addWidget(picks_title)
-
-        self._picks_container = QVBoxLayout()
-        self._picks_container.setSpacing(6)
-        picks_outer.addLayout(self._picks_container)
-
-        self._no_picks_label = QLabel(
-            "Pick suggestions appear once enemies start locking in."
-        )
-        self._no_picks_label.setProperty("role", "muted")
-        self._no_picks_label.setStyleSheet(
-            f"color: {styles.TEXT_MUTED}; font-size: {styles.FS_LABEL}px;"
-            f" padding: 8px 4px; font-style: italic;"
-        )
-        self._no_picks_label.setWordWrap(True)
-        picks_outer.addWidget(self._no_picks_label)
-
-        cs_layout.addWidget(self._picks_panel, 1)
-        body_layout.addWidget(self._champselect_row)
-
-        # Ban suggestions sit below the side-by-side champ-select row at
-        # full width so the rows have room to breathe.
+        # Ban suggestions panel at full width.
         self._ban_panel = BanPanel()
         self._ban_panel.ban_hover_requested.connect(self.ban_hover_requested.emit)
         body_layout.addWidget(self._ban_panel)
+
+        # Compact pick panel (two-column: counter picks | synergy picks)
+        self._picks_row = QFrame()
+        self._picks_row.setProperty("panel", True)
+        picks_outer = QVBoxLayout(self._picks_row)
+        picks_outer.setContentsMargins(10, 8, 10, 8)
+        picks_outer.setSpacing(6)
+
+        picks_header = QHBoxLayout()
+        picks_header.setSpacing(styles.SPACING_GRID)
+        counter_title = QLabel("Counter Picks")
+        counter_title.setObjectName("sectionTitle")
+        synergy_title = QLabel("Synergy Picks")
+        synergy_title.setObjectName("sectionTitle")
+        picks_header.addWidget(counter_title, 1)
+        picks_header.addWidget(synergy_title, 1)
+        picks_outer.addLayout(picks_header)
+
+        picks_cols = QHBoxLayout()
+        picks_cols.setSpacing(styles.SPACING_GRID)
+        self._counter_col = QVBoxLayout()
+        self._counter_col.setSpacing(3)
+        self._synergy_col = QVBoxLayout()
+        self._synergy_col.setSpacing(3)
+        picks_cols.addLayout(self._counter_col, 1)
+        picks_cols.addLayout(self._synergy_col, 1)
+        picks_outer.addLayout(picks_cols)
+
+        self._picks_no_data = QLabel("Pick suggestions appear once enemies start locking in.")
+        self._picks_no_data.setStyleSheet(
+            f"color: {styles.TEXT_MUTED}; font-size: {styles.FS_LABEL}px;"
+            f" padding: 8px 4px; font-style: italic;"
+        )
+        self._picks_no_data.setWordWrap(True)
+        picks_outer.addWidget(self._picks_no_data)
+
+        body_layout.addWidget(self._picks_row)
 
         self._power_spike_panel = PowerSpikePanel()
         body_layout.addWidget(self._power_spike_panel)
@@ -315,8 +298,10 @@ class MainOverlay(QMainWindow):
         self._status_bar.set_state(view.connection_state)
         self._update_enemies(view)
         self._update_picks(view)
-        self._ban_panel.update_suggestions(
-            view.ban_suggestions, self._icon_for_key,
+        self._ban_panel.update_suggestions_categorized(
+            view.ban_suggestions_lane,
+            view.ban_suggestions_allround,
+            self._icon_for_key,
         )
         # Floating lobby stats widget runs alongside the main overlay's
         # champ-select panel and reads the same SessionView. Held here so
@@ -363,31 +348,83 @@ class MainOverlay(QMainWindow):
                 row.clear()
 
     def _update_picks(self, view: SessionView) -> None:
-        # Clear existing cards.
-        while self._picks_container.count():
-            item = self._picks_container.takeAt(0)
-            widget = item.widget() if item is not None else None
-            if widget is not None:
-                widget.deleteLater()
+        counter = view.picks_counter
+        synergy = view.picks_synergy
 
-        if not view.suggestions:
-            self._no_picks_label.show()
+        for col in (self._counter_col, self._synergy_col):
+            while col.count():
+                item = col.takeAt(0)
+                w = item.widget() if item is not None else None
+                if w is not None:
+                    w.deleteLater()
+
+        if not counter and not synergy:
+            self._picks_no_data.show()
+            self._picks_row.hide()
             return
 
-        self._no_picks_label.hide()
-        for idx, s in enumerate(view.suggestions, start=1):
-            icon = self._icon_for_key(s.champion_key)
-            build = view.suggestion_builds.get(s.champion_key)
-            reasons = view.suggestion_build_reasons.get(s.champion_key) or []
-            card = PickCard(
-                s, icon=icon, build=build, rank=idx,
-                build_reasons=reasons,
-                item_icons=self._item_icons,
-                rune_icons=self._rune_icons,
+        self._picks_row.show()
+        self._picks_no_data.hide()
+
+        for s in counter[:5]:
+            row = self._make_pick_row(s)
+            self._counter_col.addWidget(row)
+
+        for s in synergy[:5]:
+            row = self._make_pick_row(s)
+            self._synergy_col.addWidget(row)
+
+    def _make_pick_row(self, s: "PickSuggestion") -> QFrame:
+        from PyQt6.QtWidgets import QFrame, QHBoxLayout, QLabel, QVBoxLayout
+        row = QFrame()
+        row.setProperty("role", "row")
+        row.setStyleSheet(
+            f"QFrame[role='row'] {{ background-color: {styles.BG_TERTIARY};"
+            f" border-radius: {styles.RADIUS}px;"
+            f" border-left: 3px solid {styles.ACCENT}; }}"
+            f" QFrame[role='row']:hover {{ background-color: {styles.BG_INTERACT}; }}"
+        )
+        h = QHBoxLayout(row)
+        h.setContentsMargins(8, 4, 8, 4)
+        h.setSpacing(6)
+
+        icon_label = QLabel()
+        icon_label.setFixedSize(24, 24)
+        icon_label.setScaledContents(True)
+        icon_label.setStyleSheet(
+            f"background-color: {styles.BG_PRIMARY};"
+            f" border-radius: {styles.RADIUS_SMALL}px;"
+        )
+        pix = self._icon_for_key(s.champion_key)
+        if pix is not None and not pix.isNull():
+            icon_label.setPixmap(pix)
+        h.addWidget(icon_label)
+
+        text_col = QVBoxLayout()
+        text_col.setSpacing(1)
+        text_col.setContentsMargins(0, 0, 0, 0)
+        name_lbl = QLabel(s.champion_key)
+        name_lbl.setStyleSheet(
+            f"font-weight: 700; font-size: {styles.FS_BODY}px; color: {styles.TEXT_PRIMARY};"
+        )
+        text_col.addWidget(name_lbl)
+        if s.reasons:
+            reason_lbl = QLabel(s.reasons[0])
+            reason_lbl.setStyleSheet(
+                f"color: {styles.TEXT_MUTED}; font-size: {styles.FS_CAPTION}px;"
             )
-            card.apply_build_requested.connect(self.apply_build_requested.emit)
-            card.pick_hover_requested.connect(self.pick_hover_requested.emit)
-            self._picks_container.addWidget(card)
+            text_col.addWidget(reason_lbl)
+        h.addLayout(text_col, 1)
+
+        score_lbl = QLabel(f"{s.score:.0f}")
+        score_lbl.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        score_lbl.setStyleSheet(
+            f"color: {styles.ACCENT}; font-family: {styles.FONT_MONO};"
+            f" font-size: {styles.FS_BODY}px; font-weight: 700;"
+        )
+        score_lbl.setFixedWidth(36)
+        h.addWidget(score_lbl)
+        return row
 
     # -- in-game panels visibility ---------------------------------------
 
@@ -505,9 +542,12 @@ class MainOverlay(QMainWindow):
         stays compact. The objective and summoner panels manage their
         own visibility from LCDA snapshots.
         """
-        # The whole side-by-side champ-select row hides as one block; that
-        # keeps the in-game overlay nice and narrow.
-        self._champselect_row.setVisible(in_champ_select or not in_game)
+        # Ban + pick panels collapse during a live game so the overlay
+        # stays compact. Visibility is driven by _apply_champ_select_subphase
+        # for champ-select; here we just hide them entirely in-game.
+        if in_game and not in_champ_select:
+            self._ban_panel.setVisible(False)
+            self._picks_row.setVisible(False)
 
     # -- champ-select state machine --------------------------------------
 
@@ -516,7 +556,7 @@ class MainOverlay(QMainWindow):
     # min/preferred widths so the user's manual resize still wins on
     # a re-drag, but our pivots set a sane starting point on phase
     # transitions.
-    _W_CHAMP_SELECT = 720
+    _W_CHAMP_SELECT = 880
     _W_INGAME = 420
 
     def _apply_champ_select_subphase(self, view: SessionView) -> None:
@@ -536,43 +576,40 @@ class MainOverlay(QMainWindow):
         subphase = session.display_subphase() if session is not None else "idle"
 
         if subphase == "in_game":
-            self._champselect_row.setVisible(False)
             self._ban_panel.setVisible(False)
+            self._picks_row.setVisible(False)
             self._set_width(self._W_INGAME)
             return
 
         if subphase == "idle":
-            # Pre-lobby / disconnected — keep the whole champ-select
-            # block visible at narrow width so the user sees the
-            # connection-status hint instead of an empty void.
-            self._champselect_row.setVisible(True)
+            # Pre-lobby / disconnected — keep panels visible at narrow
+            # width so the user sees the connection-status hint.
             self._set_width(self._W_INGAME)
             return
 
         # Active champ-select — wider window, then per-subphase pivots.
-        self._champselect_row.setVisible(True)
         self._set_width(self._W_CHAMP_SELECT)
 
         if subphase == "ban":
             # Ban-step focus: bans front, picks suppressed.
             self._ban_panel.setVisible(True)
-            self._picks_panel.setVisible(False)
+            self._picks_row.setVisible(False)
         elif subphase in ("pick", "finalization", "planning"):
             # Pick/finalization: counters + suggestions take over,
             # bans collapse (history, not actionable anymore).
             self._ban_panel.setVisible(False)
-            self._picks_panel.setVisible(True)
+            self._picks_row.setVisible(True)
         elif subphase == "loading":
             # Loading screen → lobby_stats floating widget is the
             # primary surface. Hide both ban + pick panels in the
             # main overlay so it doesn't compete.
             self._ban_panel.setVisible(False)
-            self._picks_panel.setVisible(False)
+            self._picks_row.setVisible(False)
         else:
             # Unknown phase — leave everything visible as a safe
             # fallback rather than silently hiding.
             self._ban_panel.setVisible(True)
-            self._picks_panel.setVisible(True)
+            self._picks_row.setVisible(True)
 
     def _set_width(self, target_w: int) -> None:
         """Resize the window to ``target_w`` while respecting the user's

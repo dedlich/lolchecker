@@ -278,16 +278,23 @@ class ChampAssistant:
 
         from .advisor.ban_suggestions import suggest_bans
         ally_candidate_keys = [s.champion_key for s in suggestions[:5]] if suggestions else []
-        bans = suggest_bans(
+        _ban_kwargs = dict(
             session=session,
             champions=self.champions,
             tiers=self.tiers,
-            enemy_profiles=self._enemy_profiles_by_cell,  # type: ignore[arg-type]
-            my_role=my_role,
+            enemy_profiles=self._enemy_profiles_by_cell,
             counters=self.counters,
             ally_candidate_keys=ally_candidate_keys,
-            limit=3,
         )
+        ban_suggestions_lane = suggest_bans(**_ban_kwargs, my_role=my_role, limit=5)  # type: ignore[arg-type]
+        _lane_keys = {b.champion_key for b in ban_suggestions_lane}
+        # Allround: global tier + mains, no role filter; exclude lane-ban dupes.
+        _allround_raw = suggest_bans(**_ban_kwargs, my_role=None, limit=10)  # type: ignore[arg-type]
+        ban_suggestions_allround = [b for b in _allround_raw if b.champion_key not in _lane_keys][:5]
+        # Keep legacy field populated (union, capped at 3) so old tests still pass.
+        bans = (ban_suggestions_lane + [b for b in ban_suggestions_allround if b not in ban_suggestions_lane])[:3]
+
+        picks_counter, picks_synergy = self._compute_picks_categorized(session)
 
         return SessionView(
             connection_state=self._connection_state,
@@ -313,6 +320,10 @@ class ChampAssistant:
             enemy_profiles=dict(self._enemy_profiles_by_cell),  # type: ignore[arg-type]
             ally_profiles=dict(self._ally_profiles_by_cell),  # type: ignore[arg-type]
             ban_suggestions=bans,
+            ban_suggestions_lane=ban_suggestions_lane,
+            ban_suggestions_allround=ban_suggestions_allround,
+            picks_counter=picks_counter,
+            picks_synergy=picks_synergy,
         )
 
     def _maybe_fetch_profiles(self, session: ChampSelectSession) -> None:
@@ -592,6 +603,54 @@ class ChampAssistant:
             limit=5,
         )
         return suggestions, gaps
+
+    def _compute_picks_categorized(
+        self, session: ChampSelectSession
+    ) -> tuple[list[PickSuggestion], list[PickSuggestion]]:
+        """Return (counter_picks, synergy_picks) for the two-column pick panel.
+
+        counter_picks: champions that beat the enemy lane opponent.
+        synergy_picks: champions that fill team comp gaps (tier + gap-fill only,
+            no counter component so it complements rather than duplicates counter col).
+        """
+        me = session.me
+        if me is None or me.assigned_position is None:
+            return [], []
+
+        my_role = me.assigned_position
+        my_keys = self._team_keys(session.my_team)
+        enemy_keys = self._team_keys(session.their_team)
+        gaps = analyze_composition(my_keys, self.tags)
+
+        # Counter picks — only when the lane opponent is locked in.
+        counter_picks: list[PickSuggestion] = []
+        lane_opponent = self._enemy_in_role(session, my_role)
+        if lane_opponent is not None:
+            counters = self._lookup_counters(lane_opponent.key, my_role)
+            if counters:
+                drafted = {k for k in (my_keys + enemy_keys) if k}
+                raw = self._suggestions_from_counters(
+                    counters,
+                    lane_opponent_key=lane_opponent.key,
+                    drafted=drafted,
+                    my_role=my_role,
+                    gaps=gaps,
+                )
+                counter_picks = raw[:5]
+
+        # Synergy picks — tier + gap-fill, no counter weight (pass empty enemy list).
+        synergy_picks = suggest_picks(
+            my_role,
+            my_keys,
+            [],   # no enemy keys → no counter score → pure tier + gap-fill
+            gaps,
+            self.tiers,
+            self.counters,
+            self.tags,
+            limit=5,
+        )
+
+        return counter_picks, synergy_picks
 
     def _enemy_in_role(
         self, session: ChampSelectSession, target_role: Role
