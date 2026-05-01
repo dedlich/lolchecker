@@ -1908,3 +1908,142 @@ def test_enemy_herald_danger_still_works_after_refactor() -> None:
     assert result is not None
     _, remaining = result
     assert remaining == pytest.approx(HERALD_USAGE_WINDOW_S - 100.0)
+
+
+# ----------------------------------------------------------------------
+# rule_enemy_tp_down (B2 — Teleport cooldown tracking)
+# ----------------------------------------------------------------------
+from champ_assistant.advisor.decision_engine import (  # noqa: E402
+    TP_DOWN_ALERT_S,
+    rule_enemy_tp_down,
+)
+
+
+@dataclass
+class _PlayerWithTP:
+    summoner_name: str = "Enemy"
+    champion_name: str = "Darius"
+    spell_one: LiveSummonerSpell = field(
+        default_factory=lambda: LiveSummonerSpell(name="Teleport", cooldown=210.0)
+    )
+    spell_two: LiveSummonerSpell = field(
+        default_factory=lambda: LiveSummonerSpell(name="Flash", cooldown=300.0)
+    )
+    is_alive: bool = True
+    respawn_timer: float = 0.0
+
+
+def _tracker_with_tp(summoner: str, game_time: float, remaining: float) -> SpellTracker:
+    t = SpellTracker()
+    cast_at = game_time - (210.0 - remaining)
+    t.mark_used(summoner, "Teleport", 210.0, cast_at)
+    return t
+
+
+def test_tp_down_fires_info_for_single_enemy() -> None:
+    snap = _Snap(
+        game_time=600.0,
+        enemies=[_PlayerWithTP(summoner_name="Garen", champion_name="Garen")],
+    )
+    tracker = _tracker_with_tp("Garen", 600.0, TP_DOWN_ALERT_S + 30.0)
+    rec = rule_enemy_tp_down(snap, tracker)
+    assert rec is not None
+    assert rec.kind == "tp_down"
+    assert rec.severity == "info"
+    assert "Garen" in rec.text or "TP" in rec.text
+
+
+def test_tp_down_fires_warn_for_multiple_enemies() -> None:
+    snap = _Snap(
+        game_time=600.0,
+        enemies=[
+            _PlayerWithTP(summoner_name="A", champion_name="Garen"),
+            _PlayerWithTP(summoner_name="B", champion_name="Darius"),
+        ],
+    )
+    cast_at = 600.0 - (210.0 - (TP_DOWN_ALERT_S + 30.0))
+    tracker = SpellTracker()
+    tracker.mark_used("A", "Teleport", 210.0, cast_at)
+    tracker.mark_used("B", "Teleport", 210.0, cast_at - 10.0)
+    rec = rule_enemy_tp_down(snap, tracker)
+    assert rec is not None
+    assert rec.severity == "warn"
+    assert "2" in rec.text
+
+
+def test_tp_down_silent_when_tp_almost_ready() -> None:
+    snap = _Snap(
+        game_time=600.0,
+        enemies=[_PlayerWithTP(summoner_name="Garen")],
+    )
+    tracker = _tracker_with_tp("Garen", 600.0, TP_DOWN_ALERT_S - 30.0)
+    assert rule_enemy_tp_down(snap, tracker) is None
+
+
+def test_tp_down_silent_when_tracker_empty() -> None:
+    snap = _Snap(
+        game_time=600.0,
+        enemies=[_PlayerWithTP(summoner_name="Garen")],
+    )
+    assert rule_enemy_tp_down(snap, SpellTracker()) is None
+
+
+def test_tp_down_silent_when_enemy_has_no_tp() -> None:
+    no_tp = _PlayerWithTP(
+        summoner_name="Zed",
+        spell_one=LiveSummonerSpell(name="Ignite", cooldown=180.0),
+        spell_two=LiveSummonerSpell(name="Flash", cooldown=300.0),
+    )
+    snap = _Snap(game_time=600.0, enemies=[no_tp])
+    tracker = SpellTracker()
+    tracker.mark_used("Zed", "Ignite", 180.0, 500.0)
+    assert rule_enemy_tp_down(snap, tracker) is None
+
+
+def test_evaluate_includes_tp_down_when_tracker_provided() -> None:
+    snap = _Snap(
+        game_time=600.0,
+        enemies=[_PlayerWithTP(summoner_name="Garen")],
+    )
+    tracker = _tracker_with_tp("Garen", 600.0, TP_DOWN_ALERT_S + 60.0)
+    recs = evaluate(snap, spell_tracker=tracker)
+    assert any(r.kind == "tp_down" for r in recs)
+
+
+def test_evaluate_no_tp_down_without_tracker() -> None:
+    snap = _Snap(
+        game_time=600.0,
+        enemies=[_PlayerWithTP(summoner_name="Garen")],
+    )
+    recs = evaluate(snap)
+    assert not any(r.kind == "tp_down" for r in recs)
+
+
+def test_tp_down_suppressed_by_numbers_disadv() -> None:
+    recs = [
+        _rec("numbers_disadv", "alert"),
+        _rec("tp_down", "info"),
+    ]
+    result = _suppress_dominated(recs)
+    assert not any(r.kind == "tp_down" for r in result)
+    assert any(r.kind == "numbers_disadv" for r in result)
+
+
+def test_flash_down_and_tp_down_both_appear_together() -> None:
+    """Both rules can coexist — different tactical meaning."""
+    snap = _Snap(
+        game_time=600.0,
+        enemies=[
+            _PlayerWithSpells(summoner_name="A"),   # has Flash
+            _PlayerWithTP(summoner_name="B"),        # has TP
+        ],
+    )
+    flash_cast = 600.0 - (300.0 - (FLASH_DOWN_ALERT_S + 30.0))
+    tp_cast = 600.0 - (210.0 - (TP_DOWN_ALERT_S + 30.0))
+    tracker = SpellTracker()
+    tracker.mark_used("A", "Flash", 300.0, flash_cast)
+    tracker.mark_used("B", "Teleport", 210.0, tp_cast)
+    recs = evaluate(snap, spell_tracker=tracker)
+    kinds = {r.kind for r in recs}
+    assert "flash_down" in kinds
+    assert "tp_down" in kinds

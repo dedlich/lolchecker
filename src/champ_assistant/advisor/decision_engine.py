@@ -360,6 +360,8 @@ def _enemy_drake_stack_count(snapshot: "LcdaSnapshot") -> int:
 HERALD_USAGE_WINDOW_S = 180.0   # enemy has ~3 min to place the herald after pickup
 # Flash is 300s base; alert only when it won't be back imminently.
 FLASH_DOWN_ALERT_S = 60.0
+# Teleport alert: wider window than Flash since TP blocks global rotations.
+TP_DOWN_ALERT_S = 90.0
 # Baron buff (Hand of Baron) lasts 180s; alert in final 60s to push NOW.
 BARON_BUFF_DURATION_S = 180.0
 BARON_BUFF_EXPIRY_ALERT_S = 60.0
@@ -1851,6 +1853,72 @@ def rule_enemy_flash_down(
     )
 
 
+def rule_enemy_tp_down(
+    snapshot: "LcdaSnapshot",
+    spell_tracker: "SpellTracker",
+) -> Recommendation | None:
+    """Advisory when one or more enemies have Teleport on cooldown (B2).
+
+    TP down blocks global rotations — the enemy can't react to your
+    side-lane pressure or TP to save a collapsing teamfight. Fires when
+    remaining CD > TP_DOWN_ALERT_S (90s) so the info is still actionable.
+    Suppressed by numbers_disadv — don't split when short-handed.
+
+    Severity scales with count:
+    - 1 TP down → info (single-person advisory)
+    - 2+ TP down → warn (major tempo window)
+    """
+    enemies = list(getattr(snapshot, "enemies", []) or [])
+    game_time = float(getattr(snapshot, "game_time", 0.0) or 0.0)
+    if not enemies or not game_time:
+        return None
+
+    tps_down: list[tuple[str, float]] = []
+    for enemy in enemies:
+        for spell in (getattr(enemy, "spell_one", None), getattr(enemy, "spell_two", None)):
+            if spell is None or getattr(spell, "name", "") != "Teleport":
+                continue
+            name = (
+                getattr(enemy, "summoner_name", "")
+                or getattr(enemy, "champion_name", "")
+            )
+            remaining = spell_tracker.remaining(
+                getattr(enemy, "summoner_name", ""), "Teleport", game_time,
+            )
+            if remaining > TP_DOWN_ALERT_S:
+                tps_down.append((name, remaining))
+            break
+
+    if not tps_down:
+        return None
+
+    count = len(tps_down)
+    names = ", ".join(n for n, _ in tps_down[:3])
+    min_remaining = min(r for _, r in tps_down)
+    severity = "warn" if count >= 2 else "info"
+
+    if count == 1:
+        name, remaining = tps_down[0]
+        text = f"TP down: {name} ({int(remaining)}s) — kein Flank-TP!"
+    else:
+        text = f"{count}× TP down ({int(min_remaining)}s) — keine globale Rotation!"
+
+    return Recommendation(
+        text=text,
+        severity=severity,
+        category="tempo",
+        confidence=0.88,
+        risk="LOW",
+        ttl_s=min_remaining,
+        kind="tp_down",
+        reasons=(
+            f"{names} ohne Teleport",
+            f"TP bereit in ~{int(min_remaining)}s",
+            "Kein TP = kein globaler Eingriff — Side-Lanes frei!",
+        ),
+    )
+
+
 # Rule registry — extend by appending a function. Order doesn't affect
 # ``evaluate``'s output (caller sorts by severity).
 ALL_RULES: tuple[Callable[["LcdaSnapshot"], Recommendation | None], ...] = (
@@ -1927,6 +1995,7 @@ def _suppress_dominated(recs: list[Recommendation]) -> list[Recommendation]:
         _offensive = {"fight", "numbers_adv", "gold_lead", "kill_lead",
                       "dragon_take", "dragon_free", "baron_take", "baron_free",
                       "flash_down",            # engage window irrelevant when short-handed
+                      "tp_down",               # side-lane freedom irrelevant when short-handed
                       "baron_buff_expiring",   # pushing while outnumbered is still bad
                       "elder_buff_expiring",   # same — don't fight when short-handed
                       "ally_herald"}           # don't split to place herald while down
@@ -1992,11 +2061,12 @@ def evaluate(
         if rec is not None:
             out.append(rec)
     if spell_tracker is not None:
-        try:
-            flash_rec = rule_enemy_flash_down(snapshot, spell_tracker)
-            if flash_rec is not None:
-                out.append(flash_rec)
-        except Exception:  # noqa: BLE001
-            pass
+        for _spell_rule in (rule_enemy_flash_down, rule_enemy_tp_down):
+            try:
+                rec = _spell_rule(snapshot, spell_tracker)
+                if rec is not None:
+                    out.append(rec)
+            except Exception:  # noqa: BLE001
+                pass
     out.sort(key=lambda r: _SEVERITY_RANK.get(r.severity, 99))
     return _suppress_dominated(out)
