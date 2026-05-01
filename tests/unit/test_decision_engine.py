@@ -83,6 +83,7 @@ class _Snap:
     enemies: list = field(default_factory=list)
     objectives: list = field(default_factory=list)
     raw_events: list = field(default_factory=list)
+    active_team: str = ""
 
 
 def _drake_in(seconds: float) -> _Objective:
@@ -688,3 +689,181 @@ def test_numbers_advantage_detects_dead_enemy() -> None:
     rec = rule_numbers_advantage(snap)
     assert rec is not None
     assert "5v4" in rec.text
+
+
+# ----------------------------------------------------------------------
+# Turret tracking — _parse_turret_name + _enemy_turrets_down
+# ----------------------------------------------------------------------
+from champ_assistant.advisor.decision_engine import (
+    _parse_turret_name,
+    _enemy_turrets_down,
+    rule_lane_pressure,
+    rule_ace_detected,
+)
+
+
+def _turret_killed_event(turret_name: str) -> dict:
+    return {"EventName": "TurretKilled", "TurretKilled": turret_name, "EventTime": 500.0}
+
+
+def test_parse_turret_name_chaos_bot_outer() -> None:
+    result = _parse_turret_name("Turret_TChaos_L0_P1_MinionSpawnPos")
+    assert result == ("TChaos", "L0", "P1")
+
+
+def test_parse_turret_name_order_top_inner() -> None:
+    result = _parse_turret_name("Turret_TOrder_L2_P2_Base")
+    assert result == ("TOrder", "L2", "P2")
+
+
+def test_parse_turret_name_inhibitor_tier() -> None:
+    result = _parse_turret_name("Turret_TChaos_L1_P3_Base")
+    assert result == ("TChaos", "L1", "P3")
+
+
+def test_parse_turret_name_invalid_returns_none() -> None:
+    assert _parse_turret_name("SomeRandomStructure") is None
+    assert _parse_turret_name("") is None
+
+
+def test_enemy_turrets_down_counts_enemy_outers_order_team() -> None:
+    """active_team=ORDER → enemy side is TChaos."""
+    snap = _Snap(
+        active_team="ORDER",
+        raw_events=[
+            _turret_killed_event("Turret_TChaos_L0_P1_MinionSpawnPos"),  # enemy Bot outer
+            _turret_killed_event("Turret_TChaos_L0_P2_MinionSpawnPos"),  # enemy Bot inner
+        ],
+    )
+    result = _enemy_turrets_down(snap)
+    assert result == {"Bot": 2}
+
+
+def test_enemy_turrets_down_ignores_ally_turrets() -> None:
+    """TOrder turrets are ally side when active_team=ORDER → not counted."""
+    snap = _Snap(
+        active_team="ORDER",
+        raw_events=[
+            _turret_killed_event("Turret_TOrder_L2_P1_Base"),  # ally Top outer
+        ],
+    )
+    assert _enemy_turrets_down(snap) == {}
+
+
+def test_enemy_turrets_down_ignores_inhibitor_tier() -> None:
+    """P3 = inhibitor turret; only P1/P2 count."""
+    snap = _Snap(
+        active_team="ORDER",
+        raw_events=[
+            _turret_killed_event("Turret_TChaos_L1_P3_Base"),  # inhib — excluded
+        ],
+    )
+    assert _enemy_turrets_down(snap) == {}
+
+
+def test_enemy_turrets_down_empty_without_active_team() -> None:
+    snap = _Snap(raw_events=[_turret_killed_event("Turret_TChaos_L0_P1_Base")])
+    assert _enemy_turrets_down(snap) == {}
+
+
+# ----------------------------------------------------------------------
+# rule_lane_pressure
+# ----------------------------------------------------------------------
+
+def test_lane_pressure_fires_on_fully_open_lane() -> None:
+    snap = _Snap(
+        active_team="ORDER",
+        raw_events=[
+            _turret_killed_event("Turret_TChaos_L0_P1_Base"),
+            _turret_killed_event("Turret_TChaos_L0_P2_Base"),
+        ],
+    )
+    rec = rule_lane_pressure(snap)
+    assert rec is not None
+    assert "Bot" in rec.text
+    assert rec.severity == "warn"
+
+
+def test_lane_pressure_fires_on_partial_open_lane() -> None:
+    snap = _Snap(
+        active_team="ORDER",
+        raw_events=[_turret_killed_event("Turret_TChaos_L2_P1_Base")],
+    )
+    rec = rule_lane_pressure(snap)
+    assert rec is not None
+    assert "Top" in rec.text
+    assert rec.severity == "info"
+
+
+def test_lane_pressure_silent_when_no_turrets_down() -> None:
+    snap = _Snap(active_team="ORDER", raw_events=[])
+    assert rule_lane_pressure(snap) is None
+
+
+def test_lane_pressure_silent_without_active_team() -> None:
+    snap = _Snap(active_team="", raw_events=[_turret_killed_event("Turret_TChaos_L0_P1_Base")])
+    assert rule_lane_pressure(snap) is None
+
+
+# ----------------------------------------------------------------------
+# rule_ace_detected
+# ----------------------------------------------------------------------
+
+def test_ace_detected_fires_when_all_five_enemies_dead() -> None:
+    dead_enemies = [_Player(is_alive=False, respawn_timer=25.0) for _ in range(5)]
+    five_allies = [_Player(is_alive=True, respawn_timer=0.0) for _ in range(5)]
+    snap = _Snap(allies=five_allies, enemies=dead_enemies)
+    rec = rule_ace_detected(snap)
+    assert rec is not None
+    assert "ACE" in rec.text
+    assert rec.severity == "alert"
+    assert rec.kind == "ace"
+
+
+def test_ace_not_fires_when_one_enemy_alive() -> None:
+    enemies = [_Player(is_alive=False, respawn_timer=20.0) for _ in range(4)]
+    enemies.append(_Player(is_alive=True, respawn_timer=0.0))
+    allies = [_Player(is_alive=True, respawn_timer=0.0) for _ in range(5)]
+    snap = _Snap(allies=allies, enemies=enemies)
+    assert rule_ace_detected(snap) is None
+
+
+def test_ace_not_fires_with_fewer_than_five_enemies() -> None:
+    """Team not fully identified → no ace."""
+    dead_enemies = [_Player(is_alive=False, respawn_timer=25.0) for _ in range(3)]
+    allies = [_Player(is_alive=True, respawn_timer=0.0) for _ in range(5)]
+    snap = _Snap(allies=allies, enemies=dead_enemies)
+    assert rule_ace_detected(snap) is None
+
+
+# ----------------------------------------------------------------------
+# _suppress_dominated: ace suppression
+# ----------------------------------------------------------------------
+
+def test_suppress_ace_removes_fight_and_lead_signals() -> None:
+    """Rule 1 (ace): fight, gold_lead, kill_lead, numbers_adv drop."""
+    recs = [
+        _rec("ace", "alert"),
+        _rec("fight", "alert"),
+        _rec("fight_bad", "warn"),
+        _rec("gold_lead", "info"),
+        _rec("kill_lead", "info"),
+        _rec("numbers_adv", "alert"),
+    ]
+    result = _suppress_dominated(recs)
+    result_kinds = {r.kind for r in result}
+    assert "ace" in result_kinds
+    for dropped in ("fight", "fight_bad", "gold_lead", "kill_lead", "numbers_adv"):
+        assert dropped not in result_kinds
+
+
+def test_suppress_ace_keeps_safety_and_lane_open() -> None:
+    recs = [
+        _rec("ace", "alert"),
+        _rec("numbers_disadv", "alert"),
+        _rec("lane_open", "warn"),
+    ]
+    result = _suppress_dominated(recs)
+    result_kinds = {r.kind for r in result}
+    assert "ace" in result_kinds
+    assert "lane_open" in result_kinds

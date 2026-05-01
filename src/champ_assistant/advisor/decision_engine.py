@@ -177,6 +177,9 @@ _CHAMP_DATA: dict[str, dict] = {
     "Janna":        {"priority": 3, "tags": ["Monsoon-Knockback — Engage-Interrupt!"], "aoe_cc": True},
     "Alistar":      {"priority": 2, "tags": ["Headbutt-Pulverize-Combo"], "aoe_cc": True},
     "Braum":        {"priority": 2, "tags": ["Glacial-Fissure-AoE — NICHT CLUSTERN!"], "aoe_cc": True},
+    # ---- New champions ----
+    "Mel":          {"priority": 4, "tags": ["Projektile NICHT einsetzen — Reflect!"], "aoe_cc": False},
+    "Yunara":       {"priority": 4, "tags": ["Hypercarry-Scaling"],  "aoe_cc": False},
 }
 
 # Drake type localised names + strategic value (1=low, 5=high).
@@ -351,6 +354,56 @@ def _enemy_drake_stack_count(snapshot: "LcdaSnapshot") -> int:
         1 for e in events
         if e.get("EventName") == "DragonKill" and e.get("KillerName") in ids
     )
+
+
+_LANE_DISPLAY: dict[str, str] = {"L0": "Bot", "L1": "Mid", "L2": "Top"}
+
+
+def _parse_turret_name(name: str) -> tuple[str, str, str] | None:
+    """Parse LCDA turret name into (side, lane, tier), or None on bad format.
+
+    Format: Turret_<Side>_<Lane>_<Tier>_...
+      side: TOrder (blue) or TChaos (red)
+      lane: L0=Bot, L1=Mid, L2=Top
+      tier: P1=Outer, P2=Inner, P3=Inhibitor, P4=Nexus
+    """
+    parts = name.split("_")
+    side = lane = tier = ""
+    for p in parts:
+        if p in ("TOrder", "TChaos"):
+            side = p
+        elif len(p) == 2 and p[0] == "L" and p[1].isdigit():
+            lane = p
+        elif len(p) == 2 and p[0] == "P" and p[1].isdigit():
+            tier = p
+    return (side, lane, tier) if (side and lane and tier) else None
+
+
+def _enemy_turrets_down(snapshot: "LcdaSnapshot") -> dict[str, int]:
+    """Count enemy outer+inner turrets destroyed per lane (from raw_events).
+
+    Returns {"Bot": n, "Mid": n, "Top": n}. Only P1/P2 (outer/inner) count;
+    inhibitor and nexus turrets indicate a different game state handled
+    separately. Returns empty dict when team identity is unknown.
+    """
+    events = getattr(snapshot, "raw_events", []) or []
+    active_team = (getattr(snapshot, "active_team", "") or "").upper()
+    if not events or not active_team:
+        return {}
+    enemy_side = "TChaos" if active_team == "ORDER" else "TOrder"
+    counts: dict[str, int] = {}
+    for e in events:
+        if e.get("EventName") != "TurretKilled":
+            continue
+        parsed = _parse_turret_name(e.get("TurretKilled", "") or "")
+        if parsed is None:
+            continue
+        side, lane, tier = parsed
+        if side != enemy_side or tier not in ("P1", "P2"):
+            continue
+        label = _LANE_DISPLAY.get(lane, lane)
+        counts[label] = counts.get(label, 0) + 1
+    return counts
 
 
 def _fed_score(player: object, game_time: float) -> float:
@@ -1104,10 +1157,87 @@ def rule_fight_opportunity(snapshot: "LcdaSnapshot") -> Recommendation | None:
         )
 
 
+def rule_lane_pressure(snapshot: "LcdaSnapshot") -> Recommendation | None:
+    """Enemy outer or inner turrets down → push that lane for objectives.
+
+    Fully open lane (both outer + inner fallen) signals an inhib threat
+    and forces enemy rotations — use it to enable drake/baron vision.
+    Partial open (only outer) is an info nudge to send waves.
+    """
+    active_team = (getattr(snapshot, "active_team", "") or "")
+    if not active_team:
+        return None
+    turrets_down = _enemy_turrets_down(snapshot)
+    if not turrets_down:
+        return None
+    fully_open = [lane for lane, n in turrets_down.items() if n >= 2]
+    partially_open = [lane for lane, n in turrets_down.items() if n == 1]
+    if fully_open:
+        lanes_str = " + ".join(sorted(fully_open))
+        return Recommendation(
+            text=f"{lanes_str}-Lane offen bis Inhib — Pressure + Obj-Vision!",
+            severity="warn",
+            category="lane",
+            confidence=0.82,
+            risk="LOW",
+            ttl_s=60.0,
+            kind="lane_open",
+            reasons=(
+                f"Enemy {lanes_str}: Outer + Inner Tower fallen",
+                "Inhib angreifbar — zwingt Rotationen",
+                "Super-Minions nach Inhib = passiver Pressure",
+            ),
+        )
+    if partially_open:
+        lanes_str = " + ".join(sorted(partially_open))
+        return Recommendation(
+            text=f"{lanes_str}-Lane Outer down — Side-Waves pushen",
+            severity="info",
+            category="lane",
+            confidence=0.74,
+            risk="LOW",
+            ttl_s=45.0,
+            kind="lane_open",
+            reasons=(
+                f"Enemy {lanes_str}: Outer Tower fallen",
+                "Side-Waves erzeugen Rotationsdruck",
+            ),
+        )
+    return None
+
+
+def rule_ace_detected(snapshot: "LcdaSnapshot") -> Recommendation | None:
+    """All 5 enemies dead simultaneously — game-winning window, push NOW."""
+    enemies = list(getattr(snapshot, "enemies", []) or [])
+    allies = list(getattr(snapshot, "allies", []) or [])
+    if len(enemies) < 5 or not allies:
+        return None
+    enemies_alive = _alive_count(enemies)
+    if enemies_alive > 0:
+        return None
+    allies_alive = _alive_count(allies)
+    return Recommendation(
+        text=f"ACE! Alle 5 Feinde tot — PUSHEN zum GG! ({allies_alive}v0)",
+        severity="alert",
+        category="tempo",
+        confidence=0.98,
+        risk="LOW",
+        ttl_s=30.0,
+        kind="ace",
+        reasons=(
+            "ACE — alle Gegner tot",
+            f"Allies alive: {allies_alive}/5",
+            "Pushe Inhib + Nexus-Türme sofort!",
+        ),
+    )
+
+
 # Rule registry — extend by appending a function. Order doesn't affect
 # ``evaluate``'s output (caller sorts by severity).
 ALL_RULES: tuple[Callable[["LcdaSnapshot"], Recommendation | None], ...] = (
-    # Numbers-asymmetry first — safety overrides objective calls.
+    # Ace detection — highest-priority window, overrides most other calls.
+    rule_ace_detected,
+    # Numbers-asymmetry — safety overrides objective calls.
     rule_numbers_disadvantage,
     rule_numbers_advantage,
     # Pro-level window rules (replace the simpler drake/baron 4-pack).
@@ -1122,6 +1252,8 @@ ALL_RULES: tuple[Callable[["LcdaSnapshot"], Recommendation | None], ...] = (
     rule_kill_lead_snowball,
     rule_kill_deficit_defensive,
     rule_late_game_group,
+    # Lane pressure — structural map-state (turrets).
+    rule_lane_pressure,
 )
 
 
@@ -1131,35 +1263,47 @@ _SEVERITY_RANK = {"alert": 0, "warn": 1, "info": 2}
 def _suppress_dominated(recs: list[Recommendation]) -> list[Recommendation]:
     """Remove recommendations made redundant by more specific ones.
 
-    Three suppression rules (applied in order):
+    Suppression rules (applied in order):
 
-    1. numbers_disadv present → drop ALL offensive calls (fight, push,
+    1. ace present → drop numbers_adv, fight, gold_lead, kill_lead (all
+       subsumed by the ACE push signal). Keep safety and lane_open.
+
+    2. numbers_disadv present → drop ALL offensive calls (fight, push,
        numbers_adv, and objective "take" recs). Keep give-up and safety.
        A teammate is dead — no aggressive rec should reach the user.
 
-    2. dragon_free / baron_free already embeds the numbers-advantage
+    3. dragon_free / baron_free already embeds the numbers-advantage
        signal in richer context → remove the standalone numbers_adv card.
 
-    3. fight rec present → remove gold_lead and kill_lead (they are
+    4. fight rec present → remove gold_lead and kill_lead (they are
        sub-signals of the same "you're ahead, press it" message).
+
+    5. "don't fight" contradicts an active objective-take call;
+       suppress fight_bad when we're already recommending taking an objective.
     """
     kinds = {r.kind for r in recs}
 
-    # Rule 1 — safety first
+    # Rule 1 — ace absorbs redundant offensive signals
+    if "ace" in kinds:
+        _ace_drop = {"fight", "fight_bad", "numbers_adv", "gold_lead", "kill_lead"}
+        recs = [r for r in recs if r.kind not in _ace_drop]
+        kinds = {r.kind for r in recs}
+
+    # Rule 2 — safety first
     if "numbers_disadv" in kinds:
         _offensive = {"fight", "numbers_adv", "gold_lead", "kill_lead",
                       "dragon_take", "dragon_free", "baron_take", "baron_free"}
         return [r for r in recs if r.kind not in _offensive]
 
-    # Rule 2 — free-window objective absorbs standalone numbers_adv
+    # Rule 3 — free-window objective absorbs standalone numbers_adv
     if "dragon_free" in kinds or "baron_free" in kinds:
         recs = [r for r in recs if r.kind != "numbers_adv"]
 
-    # Rule 3 — fight rec subsumes generic lead signals
+    # Rule 4 — fight rec subsumes generic lead signals
     if "fight" in kinds:
         recs = [r for r in recs if r.kind not in {"gold_lead", "kill_lead"}]
 
-    # Rule 4 — "don't fight" contradicts an active objective-take call;
+    # Rule 5 — "don't fight" contradicts an active objective-take call;
     # suppress fight_bad when we're already recommending taking an objective.
     _obj_take = {"dragon_take", "dragon_free", "baron_take", "baron_free"}
     if kinds & _obj_take:
