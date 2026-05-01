@@ -4,6 +4,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Optional
 
+import pytest
+
 from champ_assistant.advisor.decision_engine import (
     BARON_PRIORITY_WINDOW_S,
     DRAKE_PRIORITY_WINDOW_S,
@@ -1386,4 +1388,137 @@ def test_flash_down_suppressed_by_numbers_disadv() -> None:
     ]
     result = _suppress_dominated(recs)
     assert not any(r.kind == "flash_down" for r in result)
+    assert any(r.kind == "numbers_disadv" for r in result)
+
+
+# ----------------------------------------------------------------------
+# rule_baron_buff_expiring (B4 — Hand-of-Baron push reminder)
+# ----------------------------------------------------------------------
+from champ_assistant.advisor.decision_engine import (  # noqa: E402
+    BARON_BUFF_DURATION_S,
+    BARON_BUFF_EXPIRY_ALERT_S,
+    _ally_baron_buff_remaining,
+    rule_baron_buff_expiring,
+)
+
+
+def _baron_kill_event(killer: str, event_time: float) -> dict:
+    return {"EventName": "BaronKill", "KillerName": killer, "EventTime": event_time}
+
+
+def test_ally_baron_buff_remaining_none_when_no_events() -> None:
+    snap = _Snap(allies=[_Player(champion_name="Jinx")], raw_events=[])
+    assert _ally_baron_buff_remaining(snap) is None
+
+
+def test_ally_baron_buff_remaining_none_when_no_baron_kill() -> None:
+    snap = _Snap(
+        allies=[_Player(champion_name="Jinx")],
+        raw_events=[{"EventName": "DragonKill", "KillerName": "Jinx", "EventTime": 500.0}],
+    )
+    assert _ally_baron_buff_remaining(snap) is None
+
+
+def test_ally_baron_buff_remaining_returns_correct_seconds() -> None:
+    """Ally killed baron at 400s, game_time=500s → 80s remaining (180-100)."""
+    ally = _Player(champion_name="Jinx", summoner_name="Jinx")
+    snap = _Snap(
+        game_time=500.0,
+        allies=[ally],
+        raw_events=[_baron_kill_event("Jinx", 400.0)],
+    )
+    assert _ally_baron_buff_remaining(snap) == pytest.approx(80.0)
+
+
+def test_ally_baron_buff_remaining_none_when_expired() -> None:
+    ally = _Player(champion_name="Jinx", summoner_name="Jinx")
+    snap = _Snap(
+        game_time=700.0,
+        allies=[ally],
+        raw_events=[_baron_kill_event("Jinx", 400.0)],
+    )
+    assert _ally_baron_buff_remaining(snap) is None
+
+
+def test_ally_baron_buff_remaining_none_when_enemy_killed_baron() -> None:
+    """Enemy baron kill must not be counted as ally buff."""
+    ally = _Player(champion_name="Jinx", summoner_name="Jinx")
+    snap = _Snap(
+        game_time=500.0,
+        allies=[ally],
+        enemies=[_Player(champion_name="Draven", summoner_name="Draven")],
+        raw_events=[_baron_kill_event("Draven", 400.0)],
+    )
+    assert _ally_baron_buff_remaining(snap) is None
+
+
+def test_rule_baron_buff_expiring_fires_with_warn_in_alert_window() -> None:
+    """50s remaining → severity=warn."""
+    ally = _Player(champion_name="Jinx", summoner_name="Jinx")
+    kill_time = 600.0 - (BARON_BUFF_DURATION_S - 50.0)
+    snap = _Snap(
+        game_time=600.0,
+        allies=[ally],
+        raw_events=[_baron_kill_event("Jinx", kill_time)],
+    )
+    rec = rule_baron_buff_expiring(snap)
+    assert rec is not None
+    assert rec.kind == "baron_buff_expiring"
+    assert rec.severity == "warn"
+    assert "pushen" in rec.text.lower()
+
+
+def test_rule_baron_buff_expiring_alert_when_very_close() -> None:
+    """20s remaining → severity=alert."""
+    ally = _Player(champion_name="Jinx", summoner_name="Jinx")
+    kill_time = 600.0 - (BARON_BUFF_DURATION_S - 20.0)
+    snap = _Snap(
+        game_time=600.0,
+        allies=[ally],
+        raw_events=[_baron_kill_event("Jinx", kill_time)],
+    )
+    rec = rule_baron_buff_expiring(snap)
+    assert rec is not None
+    assert rec.severity == "alert"
+
+
+def test_rule_baron_buff_expiring_silent_when_plenty_of_time() -> None:
+    """120s remaining → still well within buff, no alert yet."""
+    ally = _Player(champion_name="Jinx", summoner_name="Jinx")
+    kill_time = 600.0 - (BARON_BUFF_DURATION_S - 120.0)
+    snap = _Snap(
+        game_time=600.0,
+        allies=[ally],
+        raw_events=[_baron_kill_event("Jinx", kill_time)],
+    )
+    assert rule_baron_buff_expiring(snap) is None
+
+
+def test_rule_baron_buff_expiring_silent_when_no_baron_kill() -> None:
+    snap = _Snap(allies=[_Player(champion_name="Jinx")])
+    assert rule_baron_buff_expiring(snap) is None
+
+
+def test_baron_buff_expiring_in_all_rules() -> None:
+    """rule_baron_buff_expiring must be reachable through evaluate()."""
+    import pytest as _pytest
+    ally = _Player(champion_name="Jinx", summoner_name="Jinx")
+    kill_time = 600.0 - (BARON_BUFF_DURATION_S - 30.0)
+    snap = _Snap(
+        game_time=600.0,
+        allies=[ally],
+        raw_events=[_baron_kill_event("Jinx", kill_time)],
+    )
+    recs = evaluate(snap)
+    assert any(r.kind == "baron_buff_expiring" for r in recs)
+
+
+def test_baron_buff_expiring_suppressed_by_numbers_disadv() -> None:
+    """Pushing while short-handed is bad — buff expiry must not override safety."""
+    recs = [
+        _rec("numbers_disadv", "alert"),
+        _rec("baron_buff_expiring", "warn"),
+    ]
+    result = _suppress_dominated(recs)
+    assert not any(r.kind == "baron_buff_expiring" for r in result)
     assert any(r.kind == "numbers_disadv" for r in result)

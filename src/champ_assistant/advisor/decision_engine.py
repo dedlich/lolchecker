@@ -360,6 +360,9 @@ def _enemy_drake_stack_count(snapshot: "LcdaSnapshot") -> int:
 HERALD_USAGE_WINDOW_S = 180.0   # enemy has ~3 min to place the herald after pickup
 # Flash is 300s base; alert only when it won't be back imminently.
 FLASH_DOWN_ALERT_S = 60.0
+# Baron buff (Hand of Baron) lasts 180s; alert in final 60s to push NOW.
+BARON_BUFF_DURATION_S = 180.0
+BARON_BUFF_EXPIRY_ALERT_S = 60.0
 
 _LANE_DISPLAY: dict[str, str] = {"L0": "Bot", "L1": "Mid", "L2": "Top"}
 
@@ -435,6 +438,32 @@ def _active_ally_inhibitors_down(snapshot: "LcdaSnapshot") -> int:
         1 for e in events if e.get("EventName") == "InhibitorRespawned"
     )
     return max(0, killed - respawned)
+
+
+def _ally_baron_buff_remaining(snapshot: "LcdaSnapshot") -> float | None:
+    """Seconds left on the ally Hand-of-Baron buff, or None if not active.
+
+    Finds the last BaronKill event taken by an ally and computes how much
+    of the 180s buff window remains. Returns None when no ally Baron kill
+    is recorded or the buff has already expired.
+    """
+    events = getattr(snapshot, "raw_events", []) or []
+    allies = list(getattr(snapshot, "allies", []) or [])
+    if not events or not allies:
+        return None
+    ally_ids = _player_ids(allies)
+    baron_kills = [
+        e for e in events
+        if e.get("EventName") == "BaronKill"
+        and (e.get("KillerName") or "") in ally_ids
+    ]
+    if not baron_kills:
+        return None
+    last = baron_kills[-1]
+    kill_time = float(last.get("EventTime") or 0.0)
+    game_time = float(getattr(snapshot, "game_time", 0.0) or 0.0)
+    remaining = BARON_BUFF_DURATION_S - (game_time - kill_time)
+    return remaining if remaining > 0 else None
 
 
 def _parse_turret_name(name: str) -> tuple[str, str, str] | None:
@@ -1522,6 +1551,34 @@ def rule_game_ended(snapshot: "LcdaSnapshot") -> Recommendation | None:
     )
 
 
+def rule_baron_buff_expiring(snapshot: "LcdaSnapshot") -> Recommendation | None:
+    """Ally Baron buff (Hand of Baron) is about to run out — push NOW (B4).
+
+    The buff lasts 180s. Fires during the final BARON_BUFF_EXPIRY_ALERT_S (60s)
+    as a last-chance reminder to convert waves or take a structure before the
+    enhanced-minion pressure is lost. Suppressed by numbers_disadv — pushing
+    into an alive enemy team while short-handed is still bad.
+    """
+    remaining = _ally_baron_buff_remaining(snapshot)
+    if remaining is None or remaining > BARON_BUFF_EXPIRY_ALERT_S:
+        return None
+    severity = "alert" if remaining <= 30 else "warn"
+    return Recommendation(
+        text=f"Baron-Buff läuft ab in {int(remaining)}s — JETZT pushen!",
+        severity=severity,
+        category="tempo",
+        confidence=0.92,
+        risk="LOW",
+        ttl_s=remaining,
+        kind="baron_buff_expiring",
+        reasons=(
+            f"Hand of Baron endet in {int(remaining)}s",
+            "Supercharged Minions — letztes Push-Fenster nutzen",
+            "Nexus-Türme jetzt oder Buff verschwendet",
+        ),
+    )
+
+
 def rule_enemy_flash_down(
     snapshot: "LcdaSnapshot",
     spell_tracker: "SpellTracker",
@@ -1606,6 +1663,7 @@ ALL_RULES: tuple[Callable[["LcdaSnapshot"], Recommendation | None], ...] = (
     rule_enemy_herald_danger,
     rule_enemy_inhibitor_down,
     rule_ally_inhib_down,
+    rule_baron_buff_expiring,
     rule_enemy_base_exposed,
     rule_lane_pressure,
 )
@@ -1651,7 +1709,8 @@ def _suppress_dominated(recs: list[Recommendation]) -> list[Recommendation]:
     if "numbers_disadv" in kinds:
         _offensive = {"fight", "numbers_adv", "gold_lead", "kill_lead",
                       "dragon_take", "dragon_free", "baron_take", "baron_free",
-                      "flash_down"}  # engage window irrelevant when teammates dead
+                      "flash_down",           # engage window irrelevant when short-handed
+                      "baron_buff_expiring"}  # pushing while outnumbered is still bad
         return [r for r in recs if r.kind not in _offensive]
 
     # Rule 3 — free-window objective absorbs standalone numbers_adv
