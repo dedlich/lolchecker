@@ -245,6 +245,15 @@ _CHAMP_DATA: dict[str, dict] = {
     "Senna":        {"priority": 4, "tags": ["Absolution-Long-Range", "Global-Dawning-Shadow-AoE"], "aoe_cc": True},
     "Rell":         {"priority": 2, "tags": ["Magnet-Storm-AoE — NICHT CLUSTERN!"], "aoe_cc": True},
     "Karma":        {"priority": 3, "tags": ["Mantra-Inspire-Shield", "Spirit-Bond-Slow"], "aoe_cc": False},
+    # ---- Remaining champions ----
+    "Akshan":       {"priority": 4, "tags": ["Revive-Passive", "Grappling-Hook-Mobility"], "aoe_cc": False},
+    "Ambessa":      {"priority": 4, "tags": ["Burst-Dash-Combo", "AoE-Ult-Fist — NICHT CLUSTERN!"], "aoe_cc": True},
+    "Dr. Mundo":    {"priority": 2, "tags": ["Unsterblich-Ult — einfach warten!"],         "aoe_cc": False},
+    "Gragas":       {"priority": 3, "tags": ["Explosive-Cask-AoE-Knockback — NICHT CLUSTERN!"], "aoe_cc": True},
+    "Ivern":        {"priority": 2, "tags": ["Daisy-Tank", "Rootcaller-CC"],               "aoe_cc": False},
+    "Karthus":      {"priority": 5, "tags": ["Requiem-Global-Ult — KEIN RECALL!", "AoE-Defile — NICHT CLUSTERN!"], "aoe_cc": True},
+    "Kled":         {"priority": 3, "tags": ["Chaaaaarge!!!-Global-Ult", "Skaarl-Revive"], "aoe_cc": False},
+    "Taric":        {"priority": 2, "tags": ["Cosmic-Radiance-Invulnerable — Ult beachten!", "Bastion-Chain-CC"], "aoe_cc": False},
 }
 
 # Drake type localised names + strategic value (1=low, 5=high).
