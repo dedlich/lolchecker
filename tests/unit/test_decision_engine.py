@@ -88,6 +88,7 @@ class _Snap:
     raw_events: list = field(default_factory=list)
     active_team: str = ""
     game_result: str = ""
+    new_spikes: list = field(default_factory=list)
 
 
 def _drake_in(seconds: float) -> _Objective:
@@ -3432,3 +3433,105 @@ def test_ally_inhib_respawning_in_evaluate() -> None:
     )
     recs = evaluate(snap)
     assert any(r.kind == "ally_inhib_respawning" for r in recs)
+
+
+# ----------------------------------------------------------------------
+# Power spike rule (B1 extension — fills gap: PowerSpikePanel is hidden
+# during gameplay, so spikes must reach the RecommendationPanel)
+# ----------------------------------------------------------------------
+from champ_assistant.advisor.decision_engine import rule_power_spike  # noqa: E402
+from champ_assistant.lcda.power_spikes import PowerSpike  # noqa: E402
+
+
+def _spike(kind: str, value: int) -> PowerSpike:
+    from champ_assistant.lcda.power_spikes import _label_for_level, _label_for_items
+    if kind == "level":
+        label, detail = _label_for_level(value)
+    else:
+        label, detail = _label_for_items(value)
+    return PowerSpike(kind=kind, value=value, label=label, detail=detail)
+
+
+def test_power_spike_silent_when_no_spikes() -> None:
+    snap = _Snap(new_spikes=[])
+    assert rule_power_spike(snap) is None
+
+
+def test_power_spike_level_6_is_alert() -> None:
+    snap = _Snap(new_spikes=[_spike("level", 6)])
+    rec = rule_power_spike(snap)
+    assert rec is not None
+    assert rec.severity == "alert"
+    assert rec.kind == "power_spike"
+    assert rec.category == "tempo"
+    assert rec.confidence == 1.0
+    assert rec.ttl_s == 20.0
+
+
+def test_power_spike_level_11_is_warn() -> None:
+    snap = _Snap(new_spikes=[_spike("level", 11)])
+    rec = rule_power_spike(snap)
+    assert rec is not None
+    assert rec.severity == "warn"
+    assert rec.ttl_s == 25.0
+
+
+def test_power_spike_level_16_is_warn() -> None:
+    snap = _Snap(new_spikes=[_spike("level", 16)])
+    rec = rule_power_spike(snap)
+    assert rec is not None
+    assert rec.severity == "warn"
+
+
+def test_power_spike_two_items_is_warn() -> None:
+    snap = _Snap(new_spikes=[_spike("items", 2)])
+    rec = rule_power_spike(snap)
+    assert rec is not None
+    assert rec.severity == "warn"
+    assert rec.ttl_s == 30.0
+
+
+def test_power_spike_first_item_is_info() -> None:
+    snap = _Snap(new_spikes=[_spike("items", 1)])
+    rec = rule_power_spike(snap)
+    assert rec is not None
+    assert rec.severity == "info"
+
+
+def test_power_spike_text_includes_label_and_detail() -> None:
+    snap = _Snap(new_spikes=[_spike("level", 6)])
+    rec = rule_power_spike(snap)
+    assert rec is not None
+    assert "Ultimate is up" in rec.text
+    assert "all-in" in rec.text
+
+
+def test_power_spike_uses_last_spike_when_multiple() -> None:
+    snap = _Snap(new_spikes=[_spike("level", 6), _spike("items", 1)])
+    rec = rule_power_spike(snap)
+    assert rec is not None
+    assert rec.severity == "info"  # items=1 → info, not level-6 alert
+
+
+def test_power_spike_suppressed_by_numbers_disadv() -> None:
+    recs = [
+        _rec("numbers_disadv", "alert"),
+        _rec("power_spike", "alert"),
+    ]
+    result = _suppress_dominated(recs)
+    assert not any(r.kind == "power_spike" for r in result)
+
+
+def test_power_spike_survives_numbers_adv() -> None:
+    recs = [
+        _rec("numbers_adv", "warn"),
+        _rec("power_spike", "alert"),
+    ]
+    result = _suppress_dominated(recs)
+    assert any(r.kind == "power_spike" for r in result)
+
+
+def test_power_spike_in_evaluate() -> None:
+    snap = _Snap(new_spikes=[_spike("level", 6)])
+    recs = evaluate(snap)
+    assert any(r.kind == "power_spike" for r in recs)

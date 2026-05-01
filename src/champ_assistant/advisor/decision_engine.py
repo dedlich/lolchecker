@@ -2748,6 +2748,48 @@ def rule_enemy_combat_spell_down(
     )
 
 
+def rule_power_spike(snapshot: "LcdaSnapshot") -> Recommendation | None:
+    """Alert when the active player just crossed a power-spike threshold
+    (level 6/11/16 or first/second/third legendary item).
+
+    The ``PowerSpikePanel`` in the main overlay hides during gameplay —
+    this rule surfaces the same signal in the floating RecommendationPanel
+    so the alert is visible while a game is running.
+
+    TTL is short (20-30s) so the card expires before the window closes.
+    """
+    spikes = getattr(snapshot, "new_spikes", []) or []
+    if not spikes:
+        return None
+    spike = spikes[-1]
+    kind = getattr(spike, "kind", "")
+    value = getattr(spike, "value", 0)
+    label = getattr(spike, "label", "Power Spike")
+    detail = getattr(spike, "detail", "")
+
+    text = f"{label} — {detail}" if detail else label
+
+    if kind == "level" and value == 6:
+        severity, ttl_s = "alert", 20.0
+    elif kind == "level":
+        severity, ttl_s = "warn", 25.0
+    elif kind == "items" and value == 2:
+        severity, ttl_s = "warn", 30.0
+    else:
+        severity, ttl_s = "info", 30.0
+
+    return Recommendation(
+        text=text,
+        severity=severity,
+        category="tempo",
+        confidence=1.0,
+        risk="LOW",
+        ttl_s=ttl_s,
+        kind="power_spike",
+        reasons=(detail,) if detail else (),
+    )
+
+
 # Rule registry — extend by appending a function. Order doesn't affect
 # ``evaluate``'s output (caller sorts by severity).
 ALL_RULES: tuple[Callable[["LcdaSnapshot"], Recommendation | None], ...] = (
@@ -2755,6 +2797,8 @@ ALL_RULES: tuple[Callable[["LcdaSnapshot"], Recommendation | None], ...] = (
     rule_game_ended,
     # Ace detection — highest-priority window, overrides most other calls.
     rule_ace_detected,
+    # Power spike — ult ready / item completed; brief action window.
+    rule_power_spike,
     # Numbers-asymmetry — safety overrides objective calls.
     rule_numbers_disadvantage,
     rule_numbers_advantage,
@@ -2850,6 +2894,7 @@ def _suppress_dominated(recs: list[Recommendation]) -> list[Recommendation]:
             "void_grub_contest", # contesting grubs while short-handed is bad
             "jungler_down",      # push suggestion irrelevant when short-handed
             "enemy_soul_point",  # drake denial requires going aggro — not when short-handed
+            "power_spike",       # "fight now!" irrelevant when team is short-handed
         }
         return [r for r in recs if r.kind not in _offensive]
 
