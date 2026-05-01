@@ -456,6 +456,15 @@ def _enemy_grub_count(snapshot: "LcdaSnapshot") -> int:
     )
 
 
+def _has_smite(player: object) -> bool:
+    """Return True if either summoner spell slot is Smite."""
+    for attr in ("spell_one", "spell_two"):
+        spell = getattr(player, attr, None)
+        if spell is not None and getattr(spell, "name", "") == "Smite":
+            return True
+    return False
+
+
 HERALD_USAGE_WINDOW_S = 180.0   # enemy has ~3 min to place the herald after pickup
 # Flash is 300s base; alert only when it won't be back imminently.
 FLASH_DOWN_ALERT_S = 60.0
@@ -486,6 +495,11 @@ DRAGON_SOUL_SIGNAL_S = 120.0
 VOID_GRUB_WINDOW_START_S = 270.0   # 4:30 — warn slightly before first spawn
 VOID_GRUB_WINDOW_END_S = 840.0    # 14:00 — Herald replaces grubs at this point
 VOID_GRUB_HORNGUARD = 3            # kills required for Hornguard buff
+# Enemy jungler down — only fire when respawn is at least this far out so
+# short sub-second flickers don't spam the panel.
+JUNGLER_DOWN_MIN_S = 5.0
+# Objective "about to spawn" window used by jungler_down to upgrade severity.
+JUNGLER_DOWN_OBJ_WINDOW_S = 60.0
 
 _LANE_DISPLAY: dict[str, str] = {"L0": "Bot", "L1": "Mid", "L2": "Top"}
 
@@ -2089,6 +2103,54 @@ def rule_void_grubs(snapshot: "LcdaSnapshot") -> Recommendation | None:
     return None
 
 
+def rule_enemy_jungler_down(snapshot: "LcdaSnapshot") -> Recommendation | None:
+    """Enemy jungler is dead — push/contest window (B2 contribution).
+
+    Detects the enemy jungler via Smite spell presence. When their respawn
+    timer exceeds JUNGLER_DOWN_MIN_S this rule fires:
+    - alert + "take objective" when any objective spawns within 60s
+    - warn + "push lane" otherwise
+
+    TTL = respawn_timer so the card expires when they come back.
+    Suppressed by numbers_disadv (we're short-handed too), ace (already
+    acting on full momentum), and ally_inhib_down (defend first)."""
+    enemies = list(getattr(snapshot, "enemies", []) or [])
+    jungler = next((p for p in enemies if _has_smite(p)), None)
+    if jungler is None:
+        return None
+    respawn = float(getattr(jungler, "respawn_timer", 0.0) or 0.0)
+    if respawn < JUNGLER_DOWN_MIN_S:
+        return None
+    champ = getattr(jungler, "champion_name", "") or "Jungler"
+    gold = _team_gold_diff(snapshot)
+    game_time = float(getattr(snapshot, "game_time", 0.0) or 0.0)
+    objs = list(getattr(snapshot, "objectives", []) or [])
+    obj_soon = any(
+        (rem := o.remaining(game_time)) is not None and 0.0 <= rem <= JUNGLER_DOWN_OBJ_WINDOW_S
+        for o in objs
+    )
+    if obj_soon:
+        text = f"JUNGLER DOWN ({champ} — {int(respawn)}s) — JETZT Objective sichern!"
+        severity = "alert"
+    else:
+        text = f"Jungler down ({champ} — {int(respawn)}s) — Lane pushen!"
+        severity = "warn"
+    return Recommendation(
+        text=text,
+        severity=severity,
+        category="objective",
+        confidence=0.85,
+        risk="LOW",
+        ttl_s=respawn,
+        kind="jungler_down",
+        reasons=(
+            f"{champ} respawnt in {int(respawn)}s",
+            "Kein Gank-Risiko — aggressiv pushen / Objective nehmen",
+            f"Gold-Diff: {gold:+d}",
+        ),
+    )
+
+
 def rule_ally_inhib_down(snapshot: "LcdaSnapshot") -> Recommendation | None:
     """Enemy destroyed one or more of OUR inhibitors — defensive alert (B4).
 
@@ -2541,6 +2603,8 @@ ALL_RULES: tuple[Callable[["LcdaSnapshot"], Recommendation | None], ...] = (
     rule_dragon_soul_pressure,
     # Early-game Void Grub objective (4:30–14:00 window).
     rule_void_grubs,
+    # B2 contribution — enemy jungler is dead, push/contest window.
+    rule_enemy_jungler_down,
     # Lane/base pressure — structural map-state (turrets + inhibs + herald).
     rule_enemy_herald_danger,
     rule_ally_herald_window,
@@ -2588,7 +2652,7 @@ def _suppress_dominated(recs: list[Recommendation]) -> list[Recommendation]:
 
     # Rule 1 — ace absorbs redundant offensive signals
     if "ace" in kinds:
-        _ace_drop = {"fight", "fight_bad", "numbers_adv", "gold_lead", "kill_lead"}
+        _ace_drop = {"fight", "fight_bad", "numbers_adv", "gold_lead", "kill_lead", "jungler_down"}
         recs = [r for r in recs if r.kind not in _ace_drop]
         kinds = {r.kind for r in recs}
 
@@ -2608,6 +2672,7 @@ def _suppress_dominated(recs: list[Recommendation]) -> list[Recommendation]:
             "dragon_soul",       # don't Baron/Elder rush while short-handed
             "ally_hornguard",    # tower push irrelevant when down a player
             "void_grub_contest", # contesting grubs while short-handed is bad
+            "jungler_down",      # push suggestion irrelevant when short-handed
         }
         return [r for r in recs if r.kind not in _offensive]
 
@@ -2642,6 +2707,7 @@ def _suppress_dominated(recs: list[Recommendation]) -> list[Recommendation]:
             "dragon_take", "baron_take", "elder_take",
             "lane_open", "inhib_expiring", "ally_turret_lost",
             "dragon_soul", "ally_hornguard", "void_grub_contest",
+            "jungler_down",  # don't push while defending super-minions
         }
         recs = [r for r in recs if r.kind not in _obj_take_kinds]
 

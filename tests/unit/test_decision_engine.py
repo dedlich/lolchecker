@@ -2878,3 +2878,127 @@ def test_void_grubs_suppressed_by_ally_inhib_down() -> None:
     result = _suppress_dominated(recs)
     assert not any(r.kind == "void_grub_contest" for r in result)
     assert any(r.kind == "ally_inhib_down" for r in result)
+
+
+# ----------------------------------------------------------------------
+# rule_enemy_jungler_down (B2 — enemy Smite-carrier dead → push/contest)
+# ----------------------------------------------------------------------
+from champ_assistant.advisor.decision_engine import (  # noqa: E402
+    JUNGLER_DOWN_MIN_S,
+    JUNGLER_DOWN_OBJ_WINDOW_S,
+    rule_enemy_jungler_down,
+)
+from champ_assistant.lcda.players import LiveSummonerSpell  # noqa: E402 (already imported above)
+
+
+@dataclass
+class _JunglerEnemy:
+    summoner_name: str = "JunglerEnemy"
+    champion_name: str = "Vi"
+    spell_one: LiveSummonerSpell = field(
+        default_factory=lambda: LiveSummonerSpell(name="Smite", cooldown=90.0)
+    )
+    spell_two: LiveSummonerSpell = field(
+        default_factory=lambda: LiveSummonerSpell(name="Flash", cooldown=300.0)
+    )
+    is_alive: bool = False
+    respawn_timer: float = 20.0
+
+
+def test_jungler_down_silent_when_no_enemies() -> None:
+    snap = _Snap(game_time=600.0, enemies=[])
+    assert rule_enemy_jungler_down(snap) is None
+
+
+def test_jungler_down_silent_when_no_smite_carrier() -> None:
+    enemy = _Player(summoner_name="E1", champion_name="Darius")
+    snap = _Snap(game_time=600.0, enemies=[enemy])
+    assert rule_enemy_jungler_down(snap) is None
+
+
+def test_jungler_down_silent_when_respawn_too_short() -> None:
+    jungler = _JunglerEnemy(respawn_timer=JUNGLER_DOWN_MIN_S - 1.0)
+    snap = _Snap(game_time=600.0, enemies=[jungler])
+    assert rule_enemy_jungler_down(snap) is None
+
+
+def test_jungler_down_silent_when_alive() -> None:
+    jungler = _JunglerEnemy(respawn_timer=0.0)
+    snap = _Snap(game_time=600.0, enemies=[jungler])
+    assert rule_enemy_jungler_down(snap) is None
+
+
+def test_jungler_down_fires_warn_no_objective() -> None:
+    jungler = _JunglerEnemy(respawn_timer=25.0)
+    snap = _Snap(game_time=600.0, enemies=[jungler])
+    rec = rule_enemy_jungler_down(snap)
+    assert rec is not None
+    assert rec.kind == "jungler_down"
+    assert rec.severity == "warn"
+    assert "Vi" in rec.text
+    assert "25" in rec.text
+    assert rec.ttl_s == pytest.approx(25.0)
+
+
+def test_jungler_down_fires_alert_when_objective_soon() -> None:
+    jungler = _JunglerEnemy(respawn_timer=30.0)
+    dragon = _Objective(name="Dragon", next_spawn=600.0 + 40.0)  # 40s away, inside 60s window
+    snap = _Snap(game_time=600.0, enemies=[jungler], objectives=[dragon])
+    rec = rule_enemy_jungler_down(snap)
+    assert rec is not None
+    assert rec.kind == "jungler_down"
+    assert rec.severity == "alert"
+    assert "Objective" in rec.text or "sichern" in rec.text
+
+
+def test_jungler_down_no_alert_when_objective_too_far() -> None:
+    jungler = _JunglerEnemy(respawn_timer=30.0)
+    dragon = _Objective(name="Dragon", next_spawn=600.0 + JUNGLER_DOWN_OBJ_WINDOW_S + 10.0)
+    snap = _Snap(game_time=600.0, enemies=[jungler], objectives=[dragon])
+    rec = rule_enemy_jungler_down(snap)
+    assert rec is not None
+    assert rec.severity == "warn"  # not alert
+
+
+def test_jungler_down_ttl_matches_respawn() -> None:
+    jungler = _JunglerEnemy(respawn_timer=42.0)
+    snap = _Snap(game_time=600.0, enemies=[jungler])
+    rec = rule_enemy_jungler_down(snap)
+    assert rec is not None
+    assert rec.ttl_s == pytest.approx(42.0)
+
+
+def test_jungler_down_in_evaluate() -> None:
+    jungler = _JunglerEnemy(respawn_timer=20.0)
+    snap = _Snap(game_time=900.0, enemies=[jungler])  # past void-grub window
+    recs = evaluate(snap)
+    assert any(r.kind == "jungler_down" for r in recs)
+
+
+def test_jungler_down_suppressed_by_numbers_disadv() -> None:
+    recs = [
+        _rec("numbers_disadv", "alert"),
+        _rec("jungler_down", "warn"),
+    ]
+    result = _suppress_dominated(recs)
+    assert not any(r.kind == "jungler_down" for r in result)
+    assert any(r.kind == "numbers_disadv" for r in result)
+
+
+def test_jungler_down_suppressed_by_ace() -> None:
+    recs = [
+        _rec("ace", "alert"),
+        _rec("jungler_down", "warn"),
+    ]
+    result = _suppress_dominated(recs)
+    assert not any(r.kind == "jungler_down" for r in result)
+
+
+def test_jungler_down_suppressed_by_ally_inhib_down() -> None:
+    recs = [
+        _rec("ally_inhib_down", "warn"),
+        _rec("jungler_down", "warn"),
+    ]
+    result = _suppress_dominated(recs)
+    assert not any(r.kind == "jungler_down" for r in result)
+    assert any(r.kind == "ally_inhib_down" for r in result)
