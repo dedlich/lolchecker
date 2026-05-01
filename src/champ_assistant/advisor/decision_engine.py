@@ -451,6 +451,8 @@ BARON_BUFF_EXPIRY_ALERT_S = 60.0
 # Elder Drake buff lasts 150s; alert in final 60s.
 ELDER_BUFF_DURATION_S = 150.0
 ELDER_BUFF_EXPIRY_ALERT_S = 60.0
+# Ally turret lost — fire a defensive alert for this many seconds after the kill.
+ALLY_TURRET_ALERT_WINDOW_S = 60.0
 
 _LANE_DISPLAY: dict[str, str] = {"L0": "Bot", "L1": "Mid", "L2": "Top"}
 
@@ -723,6 +725,37 @@ def _enemy_turrets_down(
         label = _LANE_DISPLAY.get(lane, lane)
         counts[label] = counts.get(label, 0) + 1
     return counts
+
+
+def _recent_ally_turret_losses(
+    snapshot: "LcdaSnapshot",
+) -> list[tuple[str, str, str, float]]:
+    """Return (lane_label, tier, side, event_time) for ally turrets destroyed
+    within ALLY_TURRET_ALERT_WINDOW_S of current game_time.
+
+    Returns [] when team identity is unknown or no recent kills exist."""
+    events = getattr(snapshot, "raw_events", []) or []
+    active_team = (getattr(snapshot, "active_team", "") or "").upper()
+    game_time = float(getattr(snapshot, "game_time", 0.0) or 0.0)
+    if not events or not active_team:
+        return []
+    ally_side = "TOrder" if active_team == "ORDER" else "TChaos"
+    result: list[tuple[str, str, str, float]] = []
+    for e in events:
+        if e.get("EventName") != "TurretKilled":
+            continue
+        evt_time = float(e.get("EventTime") or 0.0)
+        if game_time - evt_time > ALLY_TURRET_ALERT_WINDOW_S:
+            continue
+        parsed = _parse_turret_name(e.get("TurretKilled", "") or "")
+        if parsed is None:
+            continue
+        side, lane, tier = parsed
+        if side != ally_side:
+            continue
+        label = _LANE_DISPLAY.get(lane, lane)
+        result.append((label, tier, side, evt_time))
+    return result
 
 
 def _fed_score(player: object, game_time: float) -> float:
@@ -1835,6 +1868,78 @@ def rule_ally_herald_window(snapshot: "LcdaSnapshot") -> Recommendation | None:
     )
 
 
+def rule_ally_turret_lost(snapshot: "LcdaSnapshot") -> Recommendation | None:
+    """Enemy destroyed one of OUR turrets within the last 60 seconds.
+
+    Fires a short-lived defensive nudge: recall to clear the wave, prevent
+    the enemy from extending the advantage. Severity scales with turret tier:
+      P1 (Outer)  → info   — wave-clear + rotate
+      P2 (Inner)  → warn   — base is now reachable
+      P3 (Inhib)  → alert  — inhibitor turret gone, base siege imminent
+
+    Only fires within ALLY_TURRET_ALERT_WINDOW_S (60s) of the kill so the
+    signal doesn't linger for the rest of the game. Not suppressed by
+    numbers_disadv (defensive signals remain relevant while short-handed).
+    """
+    losses = _recent_ally_turret_losses(snapshot)
+    if not losses:
+        return None
+
+    # Escalate to the highest-tier recent loss.
+    tier_rank = {"P3": 3, "P2": 2, "P1": 1}
+    losses.sort(key=lambda t: tier_rank.get(t[1], 0), reverse=True)
+    lane, tier, _side, evt_time = losses[0]
+    game_time = float(getattr(snapshot, "game_time", 0.0) or 0.0)
+    age_s = int(game_time - evt_time)
+    gold = _team_gold_diff(snapshot)
+
+    if tier == "P3":
+        return Recommendation(
+            text=f"Inhib-Turm {lane} verloren — SOFORT Basis verteidigen!",
+            severity="alert",
+            category="safety",
+            confidence=0.88,
+            risk="HIGH",
+            ttl_s=max(0.0, ALLY_TURRET_ALERT_WINDOW_S - age_s),
+            kind="ally_turret_lost",
+            reasons=(
+                f"Gegner zerstörte unseren {lane} Inhib-Turm (vor {age_s}s)",
+                "Inhib jetzt angreifbar — Super-Minions drohen!",
+                f"Gold-Diff: {gold:+d}",
+            ),
+        )
+    if tier == "P2":
+        return Recommendation(
+            text=f"Inner {lane}-Turm verloren — Wave claren, Basis absichern",
+            severity="warn",
+            category="safety",
+            confidence=0.82,
+            risk="HIGH",
+            ttl_s=max(0.0, ALLY_TURRET_ALERT_WINDOW_S - age_s),
+            kind="ally_turret_lost",
+            reasons=(
+                f"Gegner zerstörte unseren {lane} Inner Tower (vor {age_s}s)",
+                "Lane offen bis Inhib-Turm — Wellen drohen Base",
+                f"Gold-Diff: {gold:+d}",
+            ),
+        )
+    # P1 — outer turret
+    return Recommendation(
+        text=f"Outer {lane}-Turm verloren — Welle claren, dann reagieren",
+        severity="info",
+        category="safety",
+        confidence=0.74,
+        risk="MEDIUM",
+        ttl_s=max(0.0, ALLY_TURRET_ALERT_WINDOW_S - age_s),
+        kind="ally_turret_lost",
+        reasons=(
+            f"Gegner zerstörte unseren {lane} Outer Tower (vor {age_s}s)",
+            "Lane jetzt nur noch Inner Tower — reagieren!",
+            f"Gold-Diff: {gold:+d}",
+        ),
+    )
+
+
 def rule_ally_inhib_down(snapshot: "LcdaSnapshot") -> Recommendation | None:
     """Enemy destroyed one or more of OUR inhibitors — defensive alert (B4).
 
@@ -2288,6 +2393,7 @@ ALL_RULES: tuple[Callable[["LcdaSnapshot"], Recommendation | None], ...] = (
     rule_ally_herald_window,
     rule_enemy_inhibitor_down,
     rule_enemy_inhib_expiring,
+    rule_ally_turret_lost,
     rule_ally_inhib_down,
     rule_baron_buff_expiring,
     rule_enemy_baron_buff,
@@ -2374,9 +2480,12 @@ def _suppress_dominated(recs: list[Recommendation]) -> list[Recommendation]:
         recs = [r for r in recs if r.kind not in {"base_exposed", "lane_open"}]
 
     # Rule 8 — ally_inhib_down is a defensive alert; suppress mid-map objective
-    # "take" signals and the inhib_expiring push (defend first, push second).
+    # "take" signals, inhib_expiring push, and the turret alert (inhib is worse).
     if "ally_inhib_down" in kinds:
-        _obj_take_kinds = {"dragon_take", "baron_take", "elder_take", "lane_open", "inhib_expiring"}
+        _obj_take_kinds = {
+            "dragon_take", "baron_take", "elder_take",
+            "lane_open", "inhib_expiring", "ally_turret_lost",
+        }
         recs = [r for r in recs if r.kind not in _obj_take_kinds]
 
     return recs

@@ -2513,3 +2513,147 @@ def test_elder_take_suppressed_by_ally_inhib_down() -> None:
     result = _suppress_dominated(recs)
     assert not any(r.kind == "elder_take" for r in result)
     assert not any(r.kind == "baron_take" for r in result)
+
+
+# ----------------------------------------------------------------------
+# rule_ally_turret_lost (B1 — defensive turret-loss signal)
+# ----------------------------------------------------------------------
+from champ_assistant.advisor.decision_engine import (  # noqa: E402
+    ALLY_TURRET_ALERT_WINDOW_S,
+    rule_ally_turret_lost,
+)
+
+
+def _ally_turret_event(lane: str, tier: str, event_time: float, active_team: str = "ORDER") -> dict:
+    """Build a TurretKilled event for an ally turret.
+    active_team ORDER → ally side = TOrder; CHAOS → ally side = TChaos."""
+    ally_side = "TOrder" if active_team == "ORDER" else "TChaos"
+    turret_name = f"Turret_{ally_side}_{lane}_{tier}_01"
+    return {
+        "EventName": "TurretKilled",
+        "TurretKilled": turret_name,
+        "KillerName": "Enemy",
+        "EventTime": event_time,
+    }
+
+
+def test_ally_turret_lost_silent_when_no_events() -> None:
+    snap = _Snap(game_time=600.0, active_team="ORDER")
+    assert rule_ally_turret_lost(snap) is None
+
+
+def test_ally_turret_lost_silent_when_no_active_team() -> None:
+    snap = _Snap(
+        game_time=600.0,
+        active_team="",
+        raw_events=[_ally_turret_event("L1", "P1", 580.0, "ORDER")],
+    )
+    assert rule_ally_turret_lost(snap) is None
+
+
+def test_ally_turret_lost_silent_when_too_old() -> None:
+    snap = _Snap(
+        game_time=700.0,
+        active_team="ORDER",
+        raw_events=[_ally_turret_event("L1", "P1", 500.0, "ORDER")],  # 200s ago
+    )
+    assert rule_ally_turret_lost(snap) is None
+
+
+def test_ally_turret_lost_p1_fires_info() -> None:
+    snap = _Snap(
+        game_time=600.0,
+        active_team="ORDER",
+        raw_events=[_ally_turret_event("L1", "P1", 570.0, "ORDER")],
+    )
+    rec = rule_ally_turret_lost(snap)
+    assert rec is not None
+    assert rec.kind == "ally_turret_lost"
+    assert rec.severity == "info"
+    assert "Mid" in rec.text
+
+
+def test_ally_turret_lost_p2_fires_warn() -> None:
+    snap = _Snap(
+        game_time=600.0,
+        active_team="ORDER",
+        raw_events=[_ally_turret_event("L0", "P2", 580.0, "ORDER")],
+    )
+    rec = rule_ally_turret_lost(snap)
+    assert rec is not None
+    assert rec.severity == "warn"
+    assert "Bot" in rec.text
+
+
+def test_ally_turret_lost_p3_fires_alert() -> None:
+    snap = _Snap(
+        game_time=600.0,
+        active_team="ORDER",
+        raw_events=[_ally_turret_event("L2", "P3", 590.0, "ORDER")],
+    )
+    rec = rule_ally_turret_lost(snap)
+    assert rec is not None
+    assert rec.severity == "alert"
+    assert "Top" in rec.text
+    assert "Inhib" in rec.text
+
+
+def test_ally_turret_lost_escalates_to_highest_tier() -> None:
+    """Two simultaneous turret losses — P2 wins over P1."""
+    snap = _Snap(
+        game_time=600.0,
+        active_team="ORDER",
+        raw_events=[
+            _ally_turret_event("L1", "P1", 590.0, "ORDER"),
+            _ally_turret_event("L0", "P2", 595.0, "ORDER"),
+        ],
+    )
+    rec = rule_ally_turret_lost(snap)
+    assert rec is not None
+    assert rec.severity == "warn"  # P2
+
+
+def test_ally_turret_lost_ignores_enemy_turrets() -> None:
+    """TurretKilled for enemy side must NOT trigger ally_turret_lost."""
+    snap = _Snap(
+        game_time=600.0,
+        active_team="ORDER",
+        raw_events=[{
+            "EventName": "TurretKilled",
+            "TurretKilled": "Turret_TChaos_L1_P1_01",  # enemy turret
+            "KillerName": "Ally",
+            "EventTime": 595.0,
+        }],
+    )
+    assert rule_ally_turret_lost(snap) is None
+
+
+def test_ally_turret_lost_ttl_decreases_with_age() -> None:
+    snap = _Snap(
+        game_time=630.0,  # 30s after kill
+        active_team="ORDER",
+        raw_events=[_ally_turret_event("L1", "P1", 600.0, "ORDER")],
+    )
+    rec = rule_ally_turret_lost(snap)
+    assert rec is not None
+    assert rec.ttl_s == pytest.approx(30.0)
+
+
+def test_ally_turret_lost_in_all_rules() -> None:
+    snap = _Snap(
+        game_time=600.0,
+        active_team="ORDER",
+        raw_events=[_ally_turret_event("L1", "P2", 580.0, "ORDER")],
+    )
+    recs = evaluate(snap)
+    assert any(r.kind == "ally_turret_lost" for r in recs)
+
+
+def test_ally_turret_lost_suppressed_by_ally_inhib_down() -> None:
+    recs = [
+        _rec("ally_inhib_down", "warn"),
+        _rec("ally_turret_lost", "alert"),
+    ]
+    result = _suppress_dominated(recs)
+    assert not any(r.kind == "ally_turret_lost" for r in result)
+    assert any(r.kind == "ally_inhib_down" for r in result)
