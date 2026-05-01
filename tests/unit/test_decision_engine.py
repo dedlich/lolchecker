@@ -3002,3 +3002,194 @@ def test_jungler_down_suppressed_by_ally_inhib_down() -> None:
     result = _suppress_dominated(recs)
     assert not any(r.kind == "jungler_down" for r in result)
     assert any(r.kind == "ally_inhib_down" for r in result)
+
+
+# ----------------------------------------------------------------------
+# rule_enemy_elder_buff (B4 — enemy Elder Drake buff → do not fight)
+# ----------------------------------------------------------------------
+from champ_assistant.advisor.decision_engine import (  # noqa: E402
+    ELDER_BUFF_DURATION_S,
+    _enemy_elder_buff_remaining,
+    rule_enemy_elder_buff,
+)
+
+
+def _enemy_elder_kill(killer: str, event_time: float) -> dict:
+    return {
+        "EventName": "DragonKill",
+        "KillerName": killer,
+        "EventTime": event_time,
+        "DragonType": "Elder",
+    }
+
+
+def test_enemy_elder_buff_remaining_none_when_no_event() -> None:
+    enemy = _Player(champion_name="Darius", summoner_name="E1")
+    snap = _Snap(game_time=600.0, enemies=[enemy], raw_events=[])
+    assert _enemy_elder_buff_remaining(snap) is None
+
+
+def test_enemy_elder_buff_remaining_returns_correct_seconds() -> None:
+    enemy = _Player(champion_name="Darius", summoner_name="E1")
+    kill_time = 500.0
+    snap = _Snap(
+        game_time=550.0,
+        enemies=[enemy],
+        raw_events=[_enemy_elder_kill("E1", kill_time)],
+    )
+    expected = ELDER_BUFF_DURATION_S - 50.0
+    assert _enemy_elder_buff_remaining(snap) == pytest.approx(expected)
+
+
+def test_enemy_elder_buff_remaining_none_when_expired() -> None:
+    enemy = _Player(champion_name="Darius", summoner_name="E1")
+    snap = _Snap(
+        game_time=500.0 + ELDER_BUFF_DURATION_S + 1.0,
+        enemies=[enemy],
+        raw_events=[_enemy_elder_kill("E1", 500.0)],
+    )
+    assert _enemy_elder_buff_remaining(snap) is None
+
+
+def test_enemy_elder_buff_remaining_ignores_ally_elder() -> None:
+    """Ally Elder kill must NOT show as enemy elder buff."""
+    ally = _Player(champion_name="Jinx", summoner_name="P1")
+    enemy = _Player(champion_name="Darius", summoner_name="E1")
+    snap = _Snap(
+        game_time=550.0,
+        allies=[ally], enemies=[enemy],
+        raw_events=[_enemy_elder_kill("P1", 500.0)],  # ally killed it
+    )
+    assert _enemy_elder_buff_remaining(snap) is None
+
+
+def test_rule_enemy_elder_buff_fires_alert_with_plenty_of_time() -> None:
+    enemy = _Player(champion_name="Darius", summoner_name="E1")
+    kill_time = 600.0 - (ELDER_BUFF_DURATION_S - 100.0)
+    snap = _Snap(
+        game_time=600.0,
+        enemies=[enemy],
+        raw_events=[_enemy_elder_kill("E1", kill_time)],
+    )
+    rec = rule_enemy_elder_buff(snap)
+    assert rec is not None
+    assert rec.kind == "enemy_elder_buff"
+    assert rec.severity == "alert"
+    assert rec.category == "safety"
+    assert "NICHT" in rec.text or "KÄMPFEN" in rec.text
+
+
+def test_rule_enemy_elder_buff_fires_alert_when_expiring() -> None:
+    """≤30s remaining → counter-engage window text."""
+    enemy = _Player(champion_name="Darius", summoner_name="E1")
+    kill_time = 600.0 - (ELDER_BUFF_DURATION_S - 20.0)
+    snap = _Snap(
+        game_time=600.0,
+        enemies=[enemy],
+        raw_events=[_enemy_elder_kill("E1", kill_time)],
+    )
+    rec = rule_enemy_elder_buff(snap)
+    assert rec is not None
+    assert rec.severity == "alert"
+    assert rec.category == "tempo"
+    assert "Konter" in rec.text or "endet" in rec.text.lower()
+
+
+def test_rule_enemy_elder_buff_silent_when_expired() -> None:
+    enemy = _Player(champion_name="Darius", summoner_name="E1")
+    snap = _Snap(
+        game_time=600.0 + ELDER_BUFF_DURATION_S + 5.0,
+        enemies=[enemy],
+        raw_events=[_enemy_elder_kill("E1", 600.0)],
+    )
+    assert rule_enemy_elder_buff(snap) is None
+
+
+def test_enemy_elder_buff_survives_numbers_disadv() -> None:
+    """Defensive alert (enemy has elder) must survive numbers_disadv suppression."""
+    recs = [
+        _rec("numbers_disadv", "alert"),
+        _rec("enemy_elder_buff", "alert"),
+    ]
+    result = _suppress_dominated(recs)
+    assert any(r.kind == "enemy_elder_buff" for r in result)
+
+
+def test_enemy_elder_buff_suppresses_fight_and_objectives() -> None:
+    """When enemy has Elder, fight/baron/dragon take calls must be suppressed."""
+    recs = [
+        _rec("enemy_elder_buff", "alert"),
+        _rec("fight", "warn"),
+        _rec("baron_take", "alert"),
+        _rec("dragon_take", "warn"),
+        _rec("numbers_adv", "info"),
+    ]
+    result = _suppress_dominated(recs)
+    kinds = {r.kind for r in result}
+    assert "enemy_elder_buff" in kinds
+    assert "fight" not in kinds
+    assert "baron_take" not in kinds
+    assert "dragon_take" not in kinds
+    assert "numbers_adv" not in kinds
+
+
+def test_enemy_elder_buff_in_evaluate() -> None:
+    enemy = _Player(champion_name="Darius", summoner_name="E1")
+    kill_time = 600.0 - (ELDER_BUFF_DURATION_S - 90.0)
+    snap = _Snap(
+        game_time=600.0,
+        enemies=[enemy],
+        raw_events=[_enemy_elder_kill("E1", kill_time)],
+    )
+    recs = evaluate(snap)
+    assert any(r.kind == "enemy_elder_buff" for r in recs)
+
+
+# ----------------------------------------------------------------------
+# Cross-objective priority suppression (B3 — Rule 9: baron > dragon)
+# ----------------------------------------------------------------------
+def test_cross_obj_baron_beats_dragon_take() -> None:
+    """When both baron_take and dragon_take fire, dragon_take is suppressed."""
+    recs = [
+        _rec("baron_take", "alert"),
+        _rec("dragon_take", "warn"),
+    ]
+    result = _suppress_dominated(recs)
+    kinds = {r.kind for r in result}
+    assert "baron_take" in kinds
+    assert "dragon_take" not in kinds
+
+
+def test_cross_obj_baron_free_beats_dragon_take() -> None:
+    recs = [
+        _rec("baron_free", "alert"),
+        _rec("dragon_take", "warn"),
+    ]
+    result = _suppress_dominated(recs)
+    kinds = {r.kind for r in result}
+    assert "baron_free" in kinds
+    assert "dragon_take" not in kinds
+
+
+def test_cross_obj_baron_beats_dragon_free() -> None:
+    recs = [
+        _rec("baron_take", "alert"),
+        _rec("dragon_free", "warn"),
+    ]
+    result = _suppress_dominated(recs)
+    kinds = {r.kind for r in result}
+    assert "baron_take" in kinds
+    assert "dragon_free" not in kinds
+
+
+def test_cross_obj_dragon_alone_not_suppressed() -> None:
+    """When only dragon fires (no baron), dragon card must survive."""
+    recs = [_rec("dragon_take", "alert")]
+    result = _suppress_dominated(recs)
+    assert any(r.kind == "dragon_take" for r in result)
+
+
+def test_cross_obj_baron_alone_not_suppressed() -> None:
+    recs = [_rec("baron_take", "alert")]
+    result = _suppress_dominated(recs)
+    assert any(r.kind == "baron_take" for r in result)

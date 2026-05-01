@@ -722,6 +722,31 @@ def _ally_elder_buff_remaining(snapshot: "LcdaSnapshot") -> float | None:
     return remaining if remaining > 0 else None
 
 
+def _enemy_elder_buff_remaining(snapshot: "LcdaSnapshot") -> float | None:
+    """Seconds left on the enemy Elder Drake buff, or None if not active.
+
+    Mirrors _ally_elder_buff_remaining but looks for DragonKill events
+    taken by enemy players. Buff lasts ELDER_BUFF_DURATION_S (150s)."""
+    events = getattr(snapshot, "raw_events", []) or []
+    enemies = list(getattr(snapshot, "enemies", []) or [])
+    if not events or not enemies:
+        return None
+    enemy_ids = _player_ids(enemies)
+    elder_kills = [
+        e for e in events
+        if e.get("EventName") == "DragonKill"
+        and (e.get("KillerName") or "") in enemy_ids
+        and (e.get("DragonType") or e.get("TrapType") or "").lower() == "elder"
+    ]
+    if not elder_kills:
+        return None
+    last = elder_kills[-1]
+    kill_time = float(last.get("EventTime") or 0.0)
+    game_time = float(getattr(snapshot, "game_time", 0.0) or 0.0)
+    remaining = ELDER_BUFF_DURATION_S - (game_time - kill_time)
+    return remaining if remaining > 0 else None
+
+
 def _parse_turret_name(name: str) -> tuple[str, str, str] | None:
     """Parse LCDA turret name into (side, lane, tier), or None on bad format.
 
@@ -2353,6 +2378,48 @@ def rule_enemy_baron_buff(snapshot: "LcdaSnapshot") -> Recommendation | None:
     )
 
 
+def rule_enemy_elder_buff(snapshot: "LcdaSnapshot") -> Recommendation | None:
+    """Enemy has Elder Drake buff — do NOT fight, stall until it expires (B4).
+
+    Elder buff lasts 150s and grants execute damage (true damage at low HP).
+    Fighting while the enemy has Elder is almost always fatal. Two phases:
+    - >30s remaining → alert: stall, do NOT engage
+    - ≤30s remaining → alert: buff expires soon, counter-engage window opens
+    """
+    remaining = _enemy_elder_buff_remaining(snapshot)
+    if remaining is None:
+        return None
+    if remaining > 30:
+        return Recommendation(
+            text=f"FEIND ELDER-BUFF ({int(remaining)}s) — NICHT KÄMPFEN! Stallen!",
+            severity="alert",
+            category="safety",
+            confidence=0.95,
+            risk="HIGH",
+            ttl_s=remaining,
+            kind="enemy_elder_buff",
+            reasons=(
+                f"Gegner hat Elder-Buff — {int(remaining)}s verbleibend",
+                "Elder Execute = True Damage — jeder Fight tödlich!",
+                "Wellen clearen + Basis sichern → Buff ablaufen lassen",
+            ),
+        )
+    return Recommendation(
+        text=f"Feind Elder-Buff endet in {int(remaining)}s — Konter-Engage Fenster!",
+        severity="alert",
+        category="tempo",
+        confidence=0.90,
+        risk="MEDIUM",
+        ttl_s=remaining,
+        kind="enemy_elder_buff",
+        reasons=(
+            f"Elder-Buff endet in {int(remaining)}s",
+            "Execute-Vorteil endet — Engage wird sicherer",
+            "Ults bereit halten → sofort Engage wenn Buff weg",
+        ),
+    )
+
+
 def rule_elder_buff_expiring(snapshot: "LcdaSnapshot") -> Recommendation | None:
     """Ally Elder Drake buff about to expire — push NOW (B4).
 
@@ -2614,6 +2681,7 @@ ALL_RULES: tuple[Callable[["LcdaSnapshot"], Recommendation | None], ...] = (
     rule_ally_inhib_down,
     rule_baron_buff_expiring,
     rule_enemy_baron_buff,
+    rule_enemy_elder_buff,
     rule_elder_buff_expiring,
     rule_enemy_base_exposed,
     rule_lane_pressure,
@@ -2710,6 +2778,28 @@ def _suppress_dominated(recs: list[Recommendation]) -> list[Recommendation]:
             "jungler_down",  # don't push while defending super-minions
         }
         recs = [r for r in recs if r.kind not in _obj_take_kinds]
+
+    # Rule 9 — cross-objective priority: when multiple objective-take kinds
+    # fire simultaneously, keep only the highest-priority one.
+    # Priority order: elder_take > baron_take/baron_free > dragon_take/dragon_free.
+    kinds = {r.kind for r in recs}
+    _present_baron = kinds & {"baron_take", "baron_free"}
+    _present_dragon = kinds & {"dragon_take", "dragon_free"}
+    if _present_baron and _present_dragon:
+        # Baron beats dragon — drop the dragon objective cards.
+        recs = [r for r in recs if r.kind not in _present_dragon]
+        kinds = {r.kind for r in recs}
+
+    # Rule 10 — enemy Elder buff is active: suppress all "fight/push" signals.
+    # Fighting while enemy has Elder execute is nearly always fatal.
+    if "enemy_elder_buff" in kinds:
+        _fight_kinds = {
+            "fight", "numbers_adv", "gold_lead", "kill_lead",
+            "dragon_take", "dragon_free", "baron_take", "baron_free", "elder_take",
+            "baron_buff_expiring", "elder_buff_expiring",
+            "dragon_soul", "jungler_down",
+        }
+        recs = [r for r in recs if r.kind not in _fight_kinds]
 
     return recs
 
