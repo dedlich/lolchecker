@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "champ-assistant"
-version = "1.10.1"
+version = "1.10.2"
 description = "LoL Champ Select Assistant — Live counters, team-comp picks via LCU."
 readme = "README.md"
 requires-python = ">=3.11"

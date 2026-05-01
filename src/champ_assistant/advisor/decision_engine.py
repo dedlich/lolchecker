@@ -108,8 +108,46 @@ _CHAMP_DATA: dict[str, dict] = {
     "Ekko":         {"priority": 4, "tags": ["AoE-Zone-Stun"],     "aoe_cc": True},
     "Shaco":        {"priority": 4, "tags": ["Clone — kill richtige Kopie!"], "aoe_cc": False},
     "Nidalee":      {"priority": 4, "tags": ["High-Poke-Dive"],    "aoe_cc": False},
+    "Yasuo":        {"priority": 4, "tags": ["Wall-Engage", "CC-immune Ult"], "aoe_cc": False},
+    "Yone":         {"priority": 4, "tags": ["AoE Ult — NICHT CLUSTERN!"],    "aoe_cc": True},
+    "Zoe":          {"priority": 4, "tags": ["Sleep-CC"],          "aoe_cc": False},
+    "Hwei":         {"priority": 4, "tags": ["AoE-CC-Chain"],      "aoe_cc": True},
+    "Vex":          {"priority": 4, "tags": ["Global Ult-Reset"],  "aoe_cc": False},
+    "Aurora":       {"priority": 4, "tags": ["Blink-Burst"],       "aoe_cc": False},
+    "Malzahar":     {"priority": 4, "tags": ["Suppress Ult — kein Flash!"],    "aoe_cc": False},
+    # ---- ADC (continued) ----
+    "Kai'Sa":       {"priority": 5, "tags": ["Invisible Ult-Engage", "Hypercarry"], "aoe_cc": False},
+    "Nilah":        {"priority": 5, "tags": ["AoE Ult — NICHT CLUSTERN!"],    "aoe_cc": True},
+    "Smolder":      {"priority": 5, "tags": ["Hypercarry-late", "AoE Ult"],   "aoe_cc": True},
     # ---- Jungle ----
     "Lee Sin":      {"priority": 3, "tags": ["Kick-Displacement"], "aoe_cc": False},
+    "Viego":        {"priority": 4, "tags": ["Possession — getöteter Champ übernommen!"], "aoe_cc": False},
+    "Bel'Veth":     {"priority": 4, "tags": ["Hypercarry-late", "Unsterblich Ult"], "aoe_cc": False},
+    "Vi":           {"priority": 3, "tags": ["Single-Target Ult"],  "aoe_cc": False},
+    "Hecarim":      {"priority": 3, "tags": ["AoE Knockback — NICHT CLUSTERN!"], "aoe_cc": True},
+    "Diana":        {"priority": 4, "tags": ["AoE Pull — NICHT CLUSTERN!"],    "aoe_cc": True},
+    "Elise":        {"priority": 3, "tags": ["Burst-Cocoon CC"],   "aoe_cc": False},
+    "Graves":       {"priority": 4, "tags": ["Burst-Dive"],        "aoe_cc": False},
+    "Kindred":      {"priority": 4, "tags": ["Lamb's Respite — Unsterblichkeit Ult!"], "aoe_cc": False},
+    "Master Yi":    {"priority": 5, "tags": ["CC = Counter!", "Hypercarry-resets"], "aoe_cc": False},
+    "Xin Zhao":     {"priority": 3, "tags": ["AoE Ult-Knockback"], "aoe_cc": True},
+    # ---- Top (continued) ----
+    "Fiora":        {"priority": 3, "tags": ["True Damage Riposte"], "aoe_cc": False},
+    "Riven":        {"priority": 3, "tags": ["Burst-Combo"],       "aoe_cc": False},
+    "Tryndamere":   {"priority": 3, "tags": ["Unsterblich Ult — wartet ab!"],   "aoe_cc": False},
+    "Camille":      {"priority": 3, "tags": ["Hextech-Ultimatum Isolation"],    "aoe_cc": False},
+    "Gangplank":    {"priority": 3, "tags": ["Global Ult — NICHT CLUSTERN!"],  "aoe_cc": True},
+    "Illaoi":       {"priority": 3, "tags": ["NICHT in Tentakeln fight!"],      "aoe_cc": True},
+    "Irelia":       {"priority": 3, "tags": ["CC-Immune bei Stacks"],           "aoe_cc": False},
+    "K'Sante":      {"priority": 2, "tags": ["AoE Ult-Displacement"],          "aoe_cc": True},
+    "Maokai":       {"priority": 2, "tags": ["AoE — NICHT CLUSTERN!"],         "aoe_cc": True},
+    # ---- Supports (continued) ----
+    "Nami":         {"priority": 3, "tags": ["Tidal Wave — NICHT CLUSTERN!"],  "aoe_cc": True},
+    "Brand":        {"priority": 4, "tags": ["AoE Blaze — NICHT CLUSTERN!"],   "aoe_cc": True},
+    "Milio":        {"priority": 5, "tags": ["ZUERST TÖTEN — heilt + cleansed CC!"], "aoe_cc": False},
+    "Renata Glasc": {"priority": 4, "tags": ["Hostile Takeover — NICHT CLUSTERN!", "Verbündete greifen an!"], "aoe_cc": True},
+    "Bard":         {"priority": 3, "tags": ["Tempered Fate AoE Stasis — Ult beachten!"], "aoe_cc": True},
+    "Pyke":         {"priority": 4, "tags": ["Execute-Reset", "Hook CC"],      "aoe_cc": False},
     # ---- Top tanks / fighters (lower kill priority) ----
     "Malphite":     {"priority": 2, "tags": ["Unstoppable-Force — NICHT CLUSTERN!"], "aoe_cc": True},
     "Amumu":        {"priority": 2, "tags": ["Sad-Mummy-AoE — NICHT CLUSTERN!"], "aoe_cc": True},
@@ -269,29 +307,49 @@ def _objective_remaining(
     return None
 
 
+def _player_ids(players: list) -> set[str]:
+    """Return a set of both summoner_name and champion_name for each player.
+    LCDA's KillerName in kill events uses whichever identifier the API version
+    exposes — historically champion names, post-Riot-ID potentially summoner
+    names. Indexing both avoids zero-count stacks across API formats."""
+    ids: set[str] = set()
+    for p in players:
+        sn = getattr(p, "summoner_name", "") or ""
+        cn = getattr(p, "champion_name", "") or ""
+        if sn:
+            ids.add(sn)
+        if cn:
+            ids.add(cn)
+    return ids
+
+
 def _drake_stack_count(snapshot: "LcdaSnapshot") -> int:
     """Count drakes the allied team has taken (from raw_events)."""
     events = getattr(snapshot, "raw_events", []) or []
-    ally_names = {
-        p.summoner_name
-        for p in (getattr(snapshot, "allies", []) or [])
-    }
+    if not events:
+        return 0
+    allies = getattr(snapshot, "allies", []) or []
+    if not allies:
+        return 0
+    ids = _player_ids(allies)
     return sum(
         1 for e in events
-        if e.get("EventName") == "DragonKill" and e.get("KillerName") in ally_names
+        if e.get("EventName") == "DragonKill" and e.get("KillerName") in ids
     )
 
 
 def _enemy_drake_stack_count(snapshot: "LcdaSnapshot") -> int:
     """Count drakes the enemy team has taken (from raw_events)."""
     events = getattr(snapshot, "raw_events", []) or []
-    enemy_names = {
-        p.summoner_name
-        for p in (getattr(snapshot, "enemies", []) or [])
-    }
+    if not events:
+        return 0
+    enemies = getattr(snapshot, "enemies", []) or []
+    if not enemies:
+        return 0
+    ids = _player_ids(enemies)
     return sum(
         1 for e in events
-        if e.get("EventName") == "DragonKill" and e.get("KillerName") in enemy_names
+        if e.get("EventName") == "DragonKill" and e.get("KillerName") in ids
     )
 
 
@@ -643,8 +701,12 @@ def rule_numbers_disadvantage(snapshot: "LcdaSnapshot") -> Recommendation | None
     """Allies dead while enemies are up → don't fight, don't extend.
     Highest-priority safety call — overrides drake/baron context.
     """
-    allies_alive = _alive_count(getattr(snapshot, "allies", []) or [])
-    enemies_alive = _alive_count(getattr(snapshot, "enemies", []) or [])
+    allies = list(getattr(snapshot, "allies", []) or [])
+    enemies = list(getattr(snapshot, "enemies", []) or [])
+    if not allies or not enemies:
+        return None  # team identity not established yet — can't compare
+    allies_alive = _alive_count(allies)
+    enemies_alive = _alive_count(enemies)
     if allies_alive >= enemies_alive:
         return None
     deficit = enemies_alive - allies_alive
@@ -669,8 +731,12 @@ def rule_numbers_disadvantage(snapshot: "LcdaSnapshot") -> Recommendation | None
 def rule_numbers_advantage(snapshot: "LcdaSnapshot") -> Recommendation | None:
     """Enemies dead → push the temporary 5v4 / 5v3. The window is
     short (single death = ~30s), so the rec ttl matches that."""
-    allies_alive = _alive_count(getattr(snapshot, "allies", []) or [])
-    enemies_alive = _alive_count(getattr(snapshot, "enemies", []) or [])
+    allies = list(getattr(snapshot, "allies", []) or [])
+    enemies = list(getattr(snapshot, "enemies", []) or [])
+    if not allies or not enemies:
+        return None
+    allies_alive = _alive_count(allies)
+    enemies_alive = _alive_count(enemies)
     if enemies_alive >= allies_alive:
         return None
     advantage = allies_alive - enemies_alive
@@ -729,6 +795,8 @@ def rule_dragon_window(snapshot: "LcdaSnapshot") -> Recommendation | None:
     game_time = getattr(snapshot, "game_time", 0.0)
     allies = list(getattr(snapshot, "allies", []) or [])
     enemies = list(getattr(snapshot, "enemies", []) or [])
+    if not allies or not enemies:
+        return None  # team identity not established; can't compute window quality
     allies_alive = _alive_count(allies)
     enemies_alive = _alive_count(enemies)
     numbers_diff = allies_alive - enemies_alive
@@ -857,6 +925,8 @@ def rule_baron_window(snapshot: "LcdaSnapshot") -> Recommendation | None:
     game_time = getattr(snapshot, "game_time", 0.0)
     allies = list(getattr(snapshot, "allies", []) or [])
     enemies = list(getattr(snapshot, "enemies", []) or [])
+    if not allies or not enemies:
+        return None
     allies_alive = _alive_count(allies)
     enemies_alive = _alive_count(enemies)
     numbers_diff = allies_alive - enemies_alive
@@ -1088,6 +1158,12 @@ def _suppress_dominated(recs: list[Recommendation]) -> list[Recommendation]:
     # Rule 3 — fight rec subsumes generic lead signals
     if "fight" in kinds:
         recs = [r for r in recs if r.kind not in {"gold_lead", "kill_lead"}]
+
+    # Rule 4 — "don't fight" contradicts an active objective-take call;
+    # suppress fight_bad when we're already recommending taking an objective.
+    _obj_take = {"dragon_take", "dragon_free", "baron_take", "baron_free"}
+    if kinds & _obj_take:
+        recs = [r for r in recs if r.kind != "fight_bad"]
 
     return recs
 
