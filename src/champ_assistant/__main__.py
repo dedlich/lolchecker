@@ -292,6 +292,7 @@ def _run_with_ui(args: argparse.Namespace) -> int:
     qt_app = QApplication(sys.argv[:1])
 
     overlay = MainOverlay(load_persisted_state=True)
+    _perf.record_phase("overlay_created")
     # System tray icon — only way back to the main overlay during a game
     # (overlay mode hides the main window). Held as instance attr so Qt
     # doesn't garbage-collect it.
@@ -364,6 +365,7 @@ def _run_with_ui(args: argparse.Namespace) -> int:
     overlay.power_spike_panel.connect_scheduler(scheduler)
 
     assistant = _build_assistant(args, overlay)
+    _perf.record_phase("assistant_built")
     # Wire the clickable enemy-role badge to the orchestrator's cycle method.
     overlay.enemy_role_clicked.connect(assistant.cycle_enemy_role_override)
 

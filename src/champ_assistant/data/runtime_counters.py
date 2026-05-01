@@ -119,7 +119,8 @@ class RuntimeCounterStore:
         client: httpx.AsyncClient | None = None,
         patch: str = "current",
     ) -> None:
-        self.cache = diskcache.Cache(str(cache_dir))
+        self._cache_dir = str(cache_dir)
+        self._cache: "diskcache.Cache | None" = None  # lazy — opened on first access
         # Resolve provider config — accepts a name string or an explicit
         # LlmProvider instance (used by tests).
         if isinstance(provider, str):
@@ -143,6 +144,12 @@ class RuntimeCounterStore:
         self._lolalytics: object | None = None  # LolalyticsCounterFetcher, set post-init
 
     # -- Sync surface ----------------------------------------------------
+
+    @property
+    def cache(self) -> "diskcache.Cache":
+        if self._cache is None:
+            self._cache = diskcache.Cache(self._cache_dir)
+        return self._cache
 
     @property
     def enabled(self) -> bool:
@@ -309,4 +316,5 @@ class RuntimeCounterStore:
                 await self._client.aclose()
             except Exception:  # noqa: BLE001
                 logger.debug("runtime_counter_close_error")
-        self.cache.close()
+        if self._cache is not None:
+            self._cache.close()

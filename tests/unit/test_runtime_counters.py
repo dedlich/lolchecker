@@ -184,3 +184,18 @@ async def test_get_cached_does_not_hit_network(tmp_path: Path) -> None:
     cached = store.get_cached("Garen", "TOP")
     assert cached == []
     await store.aclose()
+
+
+def test_cache_not_opened_at_construction(tmp_path: Path) -> None:
+    """Diskcache must not open at __init__ — lazy open saves ~34ms at startup."""
+    store = RuntimeCounterStore(tmp_path / "lazy", provider="groq", api_key="")
+    # _cache is the internal attribute; cache property is NOT accessed yet
+    assert store._cache is None
+
+
+@pytest.mark.asyncio
+async def test_aclose_without_cache_access_does_not_raise(tmp_path: Path) -> None:
+    """aclose() on a never-used store must not open the cache."""
+    store = RuntimeCounterStore(tmp_path / "never_used", provider="groq", api_key="")
+    await store.aclose()  # must not raise even though cache was never opened
+    assert store._cache is None  # still not opened
