@@ -1070,7 +1070,10 @@ async def _run_lcda_watcher(
         # InsightPanel's internal "latest top" up-to-date so the
         # Ctrl+Alt+I hotkey always opens with the current rec.
         try:
-            recs = _decisions.evaluate(snap)
+            recs = _decisions.evaluate(
+                snap,
+                spell_tracker=overlay.summoner_tracker.tracker(),
+            )
             top = recs[0].text if recs else ""
             if top and top != _last_recommendation[0]:
                 _last_recommendation[0] = top

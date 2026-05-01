@@ -1180,3 +1180,127 @@ def test_suppress_inhib_down_removes_base_exposed_and_lane_open() -> None:
     assert "base_exposed" not in result_kinds
     assert "lane_open" not in result_kinds
     assert "fight" in result_kinds  # fight stays
+
+
+# ----------------------------------------------------------------------
+# rule_enemy_flash_down + evaluate(spell_tracker=...)
+# ----------------------------------------------------------------------
+from champ_assistant.advisor.decision_engine import (  # noqa: E402
+    FLASH_DOWN_ALERT_S,
+    rule_enemy_flash_down,
+)
+from champ_assistant.lcda.spell_tracker import SpellTracker
+from champ_assistant.lcda.players import LiveSummonerSpell
+
+
+@dataclass
+class _PlayerWithSpells:
+    summoner_name: str = "Enemy"
+    champion_name: str = "Darius"
+    spell_one: LiveSummonerSpell = field(
+        default_factory=lambda: LiveSummonerSpell(name="Flash", cooldown=300.0)
+    )
+    spell_two: LiveSummonerSpell = field(
+        default_factory=lambda: LiveSummonerSpell(name="Ignite", cooldown=180.0)
+    )
+    is_alive: bool = True
+    respawn_timer: float = 0.0
+
+
+def _tracker_with_flash(summoner: str, game_time: float, remaining: float) -> SpellTracker:
+    """Build a SpellTracker with one Flash entry whose remaining() == remaining."""
+    t = SpellTracker()
+    cast_at = game_time - (300.0 - remaining)
+    t.mark_used(summoner, "Flash", 300.0, cast_at)
+    return t
+
+
+def test_flash_down_fires_when_enemy_flash_on_cd() -> None:
+    snap = _Snap(
+        game_time=600.0,
+        enemies=[_PlayerWithSpells(summoner_name="Jinx", champion_name="Jinx")],
+    )
+    tracker = _tracker_with_flash("Jinx", 600.0, FLASH_DOWN_ALERT_S + 30.0)
+    rec = rule_enemy_flash_down(snap, tracker)
+    assert rec is not None
+    assert rec.kind == "flash_down"
+    assert "Jinx" in rec.text
+    assert rec.severity == "warn"
+
+
+def test_flash_down_silent_when_flash_almost_ready() -> None:
+    """Flash with only 30s remaining (< FLASH_DOWN_ALERT_S) — no alert."""
+    snap = _Snap(
+        game_time=600.0,
+        enemies=[_PlayerWithSpells(summoner_name="Darius")],
+    )
+    tracker = _tracker_with_flash("Darius", 600.0, FLASH_DOWN_ALERT_S - 30.0)
+    assert rule_enemy_flash_down(snap, tracker) is None
+
+
+def test_flash_down_silent_when_tracker_empty() -> None:
+    snap = _Snap(
+        game_time=600.0,
+        enemies=[_PlayerWithSpells(summoner_name="Garen")],
+    )
+    assert rule_enemy_flash_down(snap, SpellTracker()) is None
+
+
+def test_flash_down_silent_when_enemy_has_no_flash() -> None:
+    no_flash_player = _PlayerWithSpells(
+        summoner_name="Singed",
+        spell_one=LiveSummonerSpell(name="Ghost", cooldown=210.0),
+        spell_two=LiveSummonerSpell(name="Ignite", cooldown=180.0),
+    )
+    snap = _Snap(game_time=600.0, enemies=[no_flash_player])
+    tracker = SpellTracker()
+    tracker.mark_used("Singed", "Ghost", 210.0, 500.0)
+    assert rule_enemy_flash_down(snap, tracker) is None
+
+
+def test_flash_down_multiple_enemies_in_text() -> None:
+    snap = _Snap(
+        game_time=600.0,
+        enemies=[
+            _PlayerWithSpells(summoner_name="A", champion_name="Darius"),
+            _PlayerWithSpells(summoner_name="B", champion_name="Garen"),
+        ],
+    )
+    # Cast both flashes recently enough that remaining > FLASH_DOWN_ALERT_S
+    cast_at = 600.0 - (300.0 - (FLASH_DOWN_ALERT_S + 30.0))
+    tracker = SpellTracker()
+    tracker.mark_used("A", "Flash", 300.0, cast_at)
+    tracker.mark_used("B", "Flash", 300.0, cast_at - 10.0)
+    rec = rule_enemy_flash_down(snap, tracker)
+    assert rec is not None
+    assert "2×" in rec.text or "2" in rec.text
+
+
+def test_evaluate_includes_flash_down_when_tracker_provided() -> None:
+    snap = _Snap(
+        game_time=600.0,
+        enemies=[_PlayerWithSpells(summoner_name="Jinx")],
+    )
+    tracker = _tracker_with_flash("Jinx", 600.0, FLASH_DOWN_ALERT_S + 60.0)
+    recs = evaluate(snap, spell_tracker=tracker)
+    assert any(r.kind == "flash_down" for r in recs)
+
+
+def test_evaluate_no_flash_down_without_tracker() -> None:
+    snap = _Snap(
+        game_time=600.0,
+        enemies=[_PlayerWithSpells(summoner_name="Jinx")],
+    )
+    recs = evaluate(snap)
+    assert not any(r.kind == "flash_down" for r in recs)
+
+
+def test_flash_down_suppressed_by_numbers_disadv() -> None:
+    """Flash-down engage window must not show when a teammate is dead."""
+    recs = [
+        _rec("numbers_disadv", "alert"),
+        _rec("flash_down", "warn"),
+    ]
+    result = _suppress_dominated(recs)
+    assert not any(r.kind == "flash_down" for r in result)
+    assert any(r.kind == "numbers_disadv" for r in result)

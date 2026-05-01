@@ -44,6 +44,7 @@ from typing import TYPE_CHECKING, Callable
 if TYPE_CHECKING:
     from ..lcda.objectives import ObjectiveTimer
     from ..lcda.source import LcdaSnapshot
+    from ..lcda.spell_tracker import SpellTracker
 
 # Thresholds — tunables. Pulled out so future re-tuning is one file.
 DRAKE_PRIORITY_WINDOW_S = 30.0  # drake spawning within this is "soon"
@@ -357,6 +358,8 @@ def _enemy_drake_stack_count(snapshot: "LcdaSnapshot") -> int:
 
 
 HERALD_USAGE_WINDOW_S = 180.0   # enemy has ~3 min to place the herald after pickup
+# Flash is 300s base; alert only when it won't be back imminently.
+FLASH_DOWN_ALERT_S = 60.0
 
 _LANE_DISPLAY: dict[str, str] = {"L0": "Bot", "L1": "Mid", "L2": "Top"}
 
@@ -1468,6 +1471,64 @@ def rule_game_ended(snapshot: "LcdaSnapshot") -> Recommendation | None:
     )
 
 
+def rule_enemy_flash_down(
+    snapshot: "LcdaSnapshot",
+    spell_tracker: "SpellTracker",
+) -> Recommendation | None:
+    """Alert when one or more enemies have Flash on cooldown (B2 — engage window).
+
+    Requires a SpellTracker with user-tracked spell casts. Fires when at least
+    one tracked enemy flash has more than FLASH_DOWN_ALERT_S remaining so the
+    alert is still actionable. Suppressed by _suppress_dominated when the team
+    is behind (numbers_disadv) — flash-down is an opportunity only when safe.
+    """
+    enemies = list(getattr(snapshot, "enemies", []) or [])
+    game_time = float(getattr(snapshot, "game_time", 0.0) or 0.0)
+    if not enemies or not game_time:
+        return None
+
+    flashes_down: list[tuple[str, float]] = []
+    for enemy in enemies:
+        for spell in (getattr(enemy, "spell_one", None), getattr(enemy, "spell_two", None)):
+            if spell is None or getattr(spell, "name", "") != "Flash":
+                continue
+            name = getattr(enemy, "summoner_name", "") or getattr(enemy, "champion_name", "")
+            remaining = spell_tracker.remaining(
+                getattr(enemy, "summoner_name", ""), "Flash", game_time
+            )
+            if remaining > FLASH_DOWN_ALERT_S:
+                flashes_down.append((name, remaining))
+            break  # each enemy has at most one Flash
+
+    if not flashes_down:
+        return None
+
+    count = len(flashes_down)
+    names = ", ".join(n for n, _ in flashes_down[:3])
+    min_remaining = min(r for _, r in flashes_down)
+
+    if count == 1:
+        name, remaining = flashes_down[0]
+        text = f"Flash down: {name} ({int(remaining)}s)"
+    else:
+        text = f"{count}× Flash down — Engage-Fenster!"
+
+    return Recommendation(
+        text=text,
+        severity="warn",
+        category="tempo",
+        confidence=0.85,
+        risk="MEDIUM",
+        ttl_s=min_remaining,
+        kind="flash_down",
+        reasons=(
+            f"{names} ohne Flash",
+            f"Flash bereit in ~{int(min_remaining)}s",
+            "Gutes Fenster zum Engagen oder Diven",
+        ),
+    )
+
+
 # Rule registry — extend by appending a function. Order doesn't affect
 # ``evaluate``'s output (caller sorts by severity).
 ALL_RULES: tuple[Callable[["LcdaSnapshot"], Recommendation | None], ...] = (
@@ -1537,7 +1598,8 @@ def _suppress_dominated(recs: list[Recommendation]) -> list[Recommendation]:
     # Rule 2 — safety first
     if "numbers_disadv" in kinds:
         _offensive = {"fight", "numbers_adv", "gold_lead", "kill_lead",
-                      "dragon_take", "dragon_free", "baron_take", "baron_free"}
+                      "dragon_take", "dragon_free", "baron_take", "baron_free",
+                      "flash_down"}  # engage window irrelevant when teammates dead
         return [r for r in recs if r.kind not in _offensive]
 
     # Rule 3 — free-window objective absorbs standalone numbers_adv
@@ -1571,6 +1633,7 @@ def evaluate(
     snapshot: "LcdaSnapshot | None",
     *,
     rules: tuple = ALL_RULES,
+    spell_tracker: "SpellTracker | None" = None,
 ) -> list[Recommendation]:
     """Run every rule against ``snapshot`` and return the non-None
     results sorted by severity (alerts first). Pure function — safe
@@ -1578,6 +1641,9 @@ def evaluate(
 
     None snapshot → empty list (pre-game window). Rules that raise
     are silently skipped — a buggy rule must not break the engine.
+
+    ``spell_tracker``: when provided, enables context-aware rules that
+    require user-tracked summoner spell cooldowns (e.g. flash_down).
     """
     if snapshot is None:
         return []
@@ -1589,5 +1655,12 @@ def evaluate(
             continue
         if rec is not None:
             out.append(rec)
+    if spell_tracker is not None:
+        try:
+            flash_rec = rule_enemy_flash_down(snapshot, spell_tracker)
+            if flash_rec is not None:
+                out.append(flash_rec)
+        except Exception:  # noqa: BLE001
+            pass
     out.sort(key=lambda r: _SEVERITY_RANK.get(r.severity, 99))
     return _suppress_dominated(out)
