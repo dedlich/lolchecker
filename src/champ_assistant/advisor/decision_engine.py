@@ -369,6 +369,9 @@ COMBAT_SPELL_ALERT_S = 60.0
 _COMBAT_SPELLS: frozenset[str] = frozenset({
     "Exhaust", "Heal", "Ignite", "Barrier", "Cleanse",
 })
+# Enemy inhibitor respawns 300s after being killed; alert in final 60s.
+INHIB_RESPAWN_S = 300.0
+INHIB_EXPIRY_ALERT_S = 60.0
 # Baron buff (Hand of Baron) lasts 180s; alert in final 60s to push NOW.
 BARON_BUFF_DURATION_S = 180.0
 BARON_BUFF_EXPIRY_ALERT_S = 60.0
@@ -455,6 +458,44 @@ def _active_enemy_inhibitors_down(snapshot: "LcdaSnapshot") -> int:
         1 for e in events if e.get("EventName") == "InhibitorRespawned"
     )
     return max(0, killed - respawned)
+
+
+def _earliest_enemy_inhib_respawn_remaining(snapshot: "LcdaSnapshot") -> float | None:
+    """Seconds until the next enemy inhibitor respawns, or None if none active.
+
+    Each InhibitorKilled event taken by an ally produces an active
+    inhib-down that respawns INHIB_RESPAWN_S (300s) later. Pairs kills
+    with InhibitorRespawned events oldest-first (FIFO — the first killed
+    is the first to respawn). Returns the smallest positive remaining
+    time, or None when no active kill is found.
+    """
+    events = getattr(snapshot, "raw_events", []) or []
+    allies = list(getattr(snapshot, "allies", []) or [])
+    if not events or not allies:
+        return None
+    ally_ids = _player_ids(allies)
+    game_time = float(getattr(snapshot, "game_time", 0.0) or 0.0)
+
+    kill_times = sorted(
+        float(e.get("EventTime") or 0.0)
+        for e in events
+        if e.get("EventName") == "InhibitorKilled"
+        and (e.get("KillerName") or "") in ally_ids
+    )
+    if not kill_times:
+        return None
+
+    respawn_count = sum(1 for e in events if e.get("EventName") == "InhibitorRespawned")
+    active_kills = kill_times[respawn_count:]  # oldest are matched to respawns first
+    if not active_kills:
+        return None
+
+    remaining_times = [
+        INHIB_RESPAWN_S - (game_time - t)
+        for t in active_kills
+    ]
+    positive = [r for r in remaining_times if r > 0]
+    return min(positive) if positive else None
 
 
 def _active_ally_inhibitors_down(snapshot: "LcdaSnapshot") -> int:
@@ -1658,6 +1699,37 @@ def rule_enemy_inhibitor_down(snapshot: "LcdaSnapshot") -> Recommendation | None
     )
 
 
+def rule_enemy_inhib_expiring(snapshot: "LcdaSnapshot") -> Recommendation | None:
+    """Enemy inhibitor is about to respawn — push NOW before it comes back (B4).
+
+    Inhibitors respawn 300s after being killed. Fires in the final
+    INHIB_EXPIRY_ALERT_S (60s) as a last-chance push reminder. Once the
+    inhib is back, the super-minion pressure ends and the siege window
+    closes.
+
+    Suppressed by numbers_disadv and ally_inhib_down — when defending
+    our own base or short-handed, attacking theirs is wrong priority.
+    """
+    remaining = _earliest_enemy_inhib_respawn_remaining(snapshot)
+    if remaining is None or remaining > INHIB_EXPIRY_ALERT_S:
+        return None
+    severity = "alert" if remaining <= 30 else "warn"
+    return Recommendation(
+        text=f"Feind-Inhib respawnt in {int(remaining)}s — JETZT Nexus-Türme!",
+        severity=severity,
+        category="lane",
+        confidence=0.90,
+        risk="LOW",
+        ttl_s=remaining,
+        kind="inhib_expiring",
+        reasons=(
+            f"Enemy Inhibitor respawnt in {int(remaining)}s",
+            "Super-Minion-Pressure endet — Fenster schließt sich",
+            "Nexus-Türme jetzt angreifen oder Vorteil verlieren",
+        ),
+    )
+
+
 def rule_game_ended(snapshot: "LcdaSnapshot") -> Recommendation | None:
     """Surface a final Win/Loss card when the GameEnd event is present.
 
@@ -2024,6 +2096,7 @@ ALL_RULES: tuple[Callable[["LcdaSnapshot"], Recommendation | None], ...] = (
     rule_enemy_herald_danger,
     rule_ally_herald_window,
     rule_enemy_inhibitor_down,
+    rule_enemy_inhib_expiring,
     rule_ally_inhib_down,
     rule_baron_buff_expiring,
     rule_enemy_baron_buff,
@@ -2071,14 +2144,17 @@ def _suppress_dominated(recs: list[Recommendation]) -> list[Recommendation]:
 
     # Rule 2 — safety first
     if "numbers_disadv" in kinds:
-        _offensive = {"fight", "numbers_adv", "gold_lead", "kill_lead",
-                      "dragon_take", "dragon_free", "baron_take", "baron_free",
-                      "flash_down",            # engage window irrelevant when short-handed
-                      "tp_down",               # side-lane freedom irrelevant when short-handed
-                      "combat_spell_down",     # trade windows irrelevant when short-handed
-                      "baron_buff_expiring",   # pushing while outnumbered is still bad
-                      "elder_buff_expiring",   # same — don't fight when short-handed
-                      "ally_herald"}           # don't split to place herald while down
+        _offensive = {
+            "fight", "numbers_adv", "gold_lead", "kill_lead",
+            "dragon_take", "dragon_free", "baron_take", "baron_free",
+            "flash_down",        # engage window irrelevant when short-handed
+            "tp_down",           # side-lane freedom irrelevant when short-handed
+            "combat_spell_down", # trade windows irrelevant when short-handed
+            "baron_buff_expiring",  # pushing while outnumbered is still bad
+            "elder_buff_expiring",  # same — don't fight when short-handed
+            "ally_herald",       # don't split to place herald while down
+            "inhib_expiring",    # don't push their base while short-handed
+        }
         return [r for r in recs if r.kind not in _offensive]
 
     # Rule 3 — free-window objective absorbs standalone numbers_adv
@@ -2106,9 +2182,9 @@ def _suppress_dominated(recs: list[Recommendation]) -> list[Recommendation]:
         recs = [r for r in recs if r.kind not in {"base_exposed", "lane_open"}]
 
     # Rule 8 — ally_inhib_down is a defensive alert; suppress mid-map objective
-    # "take" signals (dragon/baron can wait — first clear the super minion waves).
+    # "take" signals and the inhib_expiring push (defend first, push second).
     if "ally_inhib_down" in kinds:
-        _obj_take_kinds = {"dragon_take", "baron_take", "lane_open"}
+        _obj_take_kinds = {"dragon_take", "baron_take", "lane_open", "inhib_expiring"}
         recs = [r for r in recs if r.kind not in _obj_take_kinds]
 
     return recs

@@ -2187,3 +2187,169 @@ def test_combat_spell_down_suppressed_by_numbers_disadv() -> None:
     ]
     result = _suppress_dominated(recs)
     assert not any(r.kind == "combat_spell_down" for r in result)
+
+
+# ----------------------------------------------------------------------
+# rule_enemy_inhib_expiring (B4 — enemy inhibitor respawn countdown)
+# ----------------------------------------------------------------------
+from champ_assistant.advisor.decision_engine import (  # noqa: E402
+    INHIB_EXPIRY_ALERT_S,
+    INHIB_RESPAWN_S,
+    _earliest_enemy_inhib_respawn_remaining,
+    rule_enemy_inhib_expiring,
+)
+
+
+def _ally_inhib_kill_event(killer: str, event_time: float) -> dict:
+    return {"EventName": "InhibitorKilled", "KillerName": killer, "EventTime": event_time}
+
+
+def _inhib_respawned_event() -> dict:
+    return {"EventName": "InhibitorRespawned"}
+
+
+# --- _earliest_enemy_inhib_respawn_remaining ---
+
+def test_inhib_respawn_remaining_none_when_no_kills() -> None:
+    snap = _Snap(allies=[_Player(champion_name="Jinx")], raw_events=[])
+    assert _earliest_enemy_inhib_respawn_remaining(snap) is None
+
+
+def test_inhib_respawn_remaining_returns_correct_seconds() -> None:
+    """Ally killed inhib at t=400, game_time=600 → 100s remaining (300-200)."""
+    ally = _Player(champion_name="Jinx", summoner_name="Jinx")
+    snap = _Snap(
+        game_time=600.0,
+        allies=[ally],
+        raw_events=[_ally_inhib_kill_event("Jinx", 400.0)],
+    )
+    assert _earliest_enemy_inhib_respawn_remaining(snap) == pytest.approx(100.0)
+
+
+def test_inhib_respawn_remaining_none_when_already_respawned() -> None:
+    ally = _Player(champion_name="Jinx", summoner_name="Jinx")
+    snap = _Snap(
+        game_time=750.0,
+        allies=[ally],
+        raw_events=[
+            _ally_inhib_kill_event("Jinx", 400.0),
+            _inhib_respawned_event(),
+        ],
+    )
+    assert _earliest_enemy_inhib_respawn_remaining(snap) is None
+
+
+def test_inhib_respawn_remaining_returns_nearest_when_two_active() -> None:
+    """Two inhib kills, neither respawned yet → return the one closer to respawn."""
+    ally = _Player(champion_name="Jinx", summoner_name="Jinx")
+    snap = _Snap(
+        game_time=700.0,
+        allies=[ally],
+        raw_events=[
+            _ally_inhib_kill_event("Jinx", 440.0),  # respawns at 740 → 40s left
+            _ally_inhib_kill_event("Jinx", 490.0),  # respawns at 790 → 90s left
+        ],
+    )
+    result = _earliest_enemy_inhib_respawn_remaining(snap)
+    assert result == pytest.approx(40.0)
+
+
+def test_inhib_respawn_remaining_skips_enemy_kills() -> None:
+    """Enemy killing OUR inhib must NOT count."""
+    ally = _Player(champion_name="Jinx", summoner_name="Jinx")
+    enemy = _Player(champion_name="Draven", summoner_name="Draven")
+    snap = _Snap(
+        game_time=600.0,
+        allies=[ally],
+        enemies=[enemy],
+        raw_events=[_ally_inhib_kill_event("Draven", 400.0)],
+    )
+    assert _earliest_enemy_inhib_respawn_remaining(snap) is None
+
+
+# --- rule_enemy_inhib_expiring ---
+
+def test_rule_enemy_inhib_expiring_fires_warn_at_50s() -> None:
+    ally = _Player(champion_name="Jinx", summoner_name="Jinx")
+    kill_time = 600.0 - (INHIB_RESPAWN_S - 50.0)
+    snap = _Snap(
+        game_time=600.0,
+        allies=[ally],
+        raw_events=[_ally_inhib_kill_event("Jinx", kill_time)],
+    )
+    rec = rule_enemy_inhib_expiring(snap)
+    assert rec is not None
+    assert rec.kind == "inhib_expiring"
+    assert rec.severity == "warn"
+    assert "Nexus" in rec.text or "respawnt" in rec.text.lower()
+
+
+def test_rule_enemy_inhib_expiring_alert_at_20s() -> None:
+    ally = _Player(champion_name="Jinx", summoner_name="Jinx")
+    kill_time = 600.0 - (INHIB_RESPAWN_S - 20.0)
+    snap = _Snap(
+        game_time=600.0,
+        allies=[ally],
+        raw_events=[_ally_inhib_kill_event("Jinx", kill_time)],
+    )
+    rec = rule_enemy_inhib_expiring(snap)
+    assert rec is not None
+    assert rec.severity == "alert"
+
+
+def test_rule_enemy_inhib_expiring_silent_when_plenty_of_time() -> None:
+    """120s remaining → still well within respawn window, no alert yet."""
+    ally = _Player(champion_name="Jinx", summoner_name="Jinx")
+    kill_time = 600.0 - (INHIB_RESPAWN_S - 120.0)
+    snap = _Snap(
+        game_time=600.0,
+        allies=[ally],
+        raw_events=[_ally_inhib_kill_event("Jinx", kill_time)],
+    )
+    assert rule_enemy_inhib_expiring(snap) is None
+
+
+def test_rule_enemy_inhib_expiring_silent_after_respawn() -> None:
+    ally = _Player(champion_name="Jinx", summoner_name="Jinx")
+    snap = _Snap(
+        game_time=750.0,
+        allies=[ally],
+        raw_events=[
+            _ally_inhib_kill_event("Jinx", 400.0),
+            _inhib_respawned_event(),
+        ],
+    )
+    assert rule_enemy_inhib_expiring(snap) is None
+
+
+def test_inhib_expiring_in_all_rules() -> None:
+    ally = _Player(champion_name="Jinx", summoner_name="Jinx")
+    kill_time = 600.0 - (INHIB_RESPAWN_S - 30.0)
+    snap = _Snap(
+        game_time=600.0,
+        allies=[ally],
+        raw_events=[_ally_inhib_kill_event("Jinx", kill_time)],
+    )
+    recs = evaluate(snap)
+    assert any(r.kind == "inhib_expiring" for r in recs)
+
+
+def test_inhib_expiring_suppressed_by_numbers_disadv() -> None:
+    recs = [
+        _rec("numbers_disadv", "alert"),
+        _rec("inhib_expiring", "warn"),
+    ]
+    result = _suppress_dominated(recs)
+    assert not any(r.kind == "inhib_expiring" for r in result)
+
+
+def test_inhib_expiring_suppressed_by_ally_inhib_down() -> None:
+    """Defend our base first — don't push theirs while super-minions flood ours."""
+    recs = [
+        _rec("ally_inhib_down", "warn"),
+        _rec("inhib_expiring", "warn"),
+        _rec("dragon_take", "alert"),
+    ]
+    result = _suppress_dominated(recs)
+    assert not any(r.kind == "inhib_expiring" for r in result)
+    assert any(r.kind == "ally_inhib_down" for r in result)
