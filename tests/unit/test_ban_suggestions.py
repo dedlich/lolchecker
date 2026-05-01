@@ -1,10 +1,16 @@
 """Tests for the ban-suggestion engine."""
 from __future__ import annotations
 
-from champ_assistant.advisor.ban_suggestions import suggest_bans
+from champ_assistant.advisor.ban_suggestions import (
+    COUNTER_ALLY_BONUS,
+    COUNTER_MIN_SCORE,
+    suggest_bans,
+)
 from champ_assistant.data.models import (
     ChampSelectSession,
     Champion,
+    CounterEntry,
+    CounterMatrix,
     TeamMember,
     TierEntry,
     TierList,
@@ -256,3 +262,96 @@ def test_role_with_no_splus_still_returns_lane_targets() -> None:
     assert "Darius" not in keys
     assert "LeeSin" not in keys
     assert "Caitlyn" not in keys
+
+
+# ----------------------------------------------------------------------
+# Counter-to-ally signal — COUNTER_ALLY_BONUS
+# ----------------------------------------------------------------------
+
+def _counters(matrix: dict[str, dict[str, list[tuple[str, float]]]]) -> CounterMatrix:
+    """Build a CounterMatrix from a nested dict of
+    {ally_key: {role: [(counter_champ, score), ...]}}."""
+    m: dict[str, dict[str, list[CounterEntry]]] = {}
+    for ally_key, roles in matrix.items():
+        m[ally_key] = {}
+        for role, entries in roles.items():
+            m[ally_key][role] = [
+                CounterEntry(champion=champ, score=score)
+                for champ, score in entries
+            ]
+    return CounterMatrix(matrix=m)
+
+
+def test_counter_to_ally_boosts_ban_score() -> None:
+    """Malphite hard-counters Yasuo → should surface as top ban."""
+    session = ChampSelectSession(phase="BAN_PICK", myTeam=[], theirTeam=[])
+    tiers = _tiers({"MID": [("Ahri", "A"), ("Malphite", "B")]})
+    # Malphite (B tier = 0 score) counters our likely pick Yasuo with score 8.0
+    cm = _counters({"Yasuo": {"MID": [("Malphite", 8.0)]}})
+
+    bans = suggest_bans(
+        session=session,
+        champions=CHAMPIONS,
+        tiers=tiers,
+        my_role="MID",
+        counters=cm,
+        ally_candidate_keys=["Yasuo"],
+        limit=3,
+    )
+    keys = [b.champion_key for b in bans]
+    # Malphite: 0 (B tier filtered) + COUNTER_ALLY_BONUS = 3.0
+    # Ahri: 1.0 (A tier)
+    # → Malphite should rank above Ahri
+    assert keys[0] == "Malphite"
+    assert any("Yasuo" in r for r in bans[0].reasons)
+
+
+def test_counter_below_min_score_is_ignored() -> None:
+    """Weak counters (score < COUNTER_MIN_SCORE) don't get the bonus."""
+    session = ChampSelectSession(phase="BAN_PICK", myTeam=[], theirTeam=[])
+    tiers = _tiers({"MID": [("Ahri", "S")]})
+    cm = _counters({"Yasuo": {"MID": [("Thresh", COUNTER_MIN_SCORE - 0.1)]}})
+
+    bans = suggest_bans(
+        session=session,
+        champions=CHAMPIONS,
+        tiers=tiers,
+        my_role="MID",
+        counters=cm,
+        ally_candidate_keys=["Yasuo"],
+        limit=3,
+    )
+    keys = [b.champion_key for b in bans]
+    # Thresh gets no bonus — Ahri (S = 3.0) should be sole result
+    assert keys == ["Ahri"]
+    assert "Thresh" not in keys
+
+
+def test_counter_ally_graceful_without_counters_arg() -> None:
+    """Calling suggest_bans without counters/ally_candidate_keys still works."""
+    session = ChampSelectSession(phase="BAN_PICK", myTeam=[], theirTeam=[])
+    tiers = _tiers({"TOP": [("Darius", "S")]})
+    bans = suggest_bans(
+        session=session, champions=CHAMPIONS, tiers=tiers, my_role="TOP", limit=1,
+    )
+    assert bans[0].champion_key == "Darius"
+
+
+def test_counter_ally_stacks_with_tier_and_profile() -> None:
+    """All three signals can contribute to the same champion's score."""
+    session = ChampSelectSession(phase="BAN_PICK", myTeam=[], theirTeam=[])
+    tiers = _tiers({"MID": [("Ahri", "S")]})  # Ahri: 3.0
+    cm = _counters({"Yasuo": {"MID": [("Ahri", 7.0)]}})  # Ahri also counters Yasuo
+
+    bans = suggest_bans(
+        session=session,
+        champions=CHAMPIONS,
+        tiers=tiers,
+        my_role="MID",
+        counters=cm,
+        ally_candidate_keys=["Yasuo"],
+        limit=1,
+    )
+    # Ahri: 3.0 (S tier) + 3.0 (counter bonus) = 6.0
+    assert bans[0].champion_key == "Ahri"
+    assert bans[0].score == 3.0 + COUNTER_ALLY_BONUS

@@ -277,12 +277,15 @@ class ChampAssistant:
         self._maybe_fetch_profiles(session)
 
         from .advisor.ban_suggestions import suggest_bans
+        ally_candidate_keys = [s.champion_key for s in suggestions[:5]] if suggestions else []
         bans = suggest_bans(
             session=session,
             champions=self.champions,
             tiers=self.tiers,
             enemy_profiles=self._enemy_profiles_by_cell,  # type: ignore[arg-type]
-            my_role=my_role,  # lane-aware scoring — tier in MY role gets 1.5×
+            my_role=my_role,
+            counters=self.counters,
+            ally_candidate_keys=ally_candidate_keys,
             limit=3,
         )
 

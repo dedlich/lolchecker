@@ -33,11 +33,16 @@ from collections import defaultdict
 from dataclasses import dataclass
 
 from ..data.models import ChampSelectSession
-from ..data.models import Champion, Role, TierList
+from ..data.models import Champion, CounterMatrix, Role, TierList
 from ..profiling.profile import EnemyProfile
 
 TIER_SCORES = {"S+": 5.0, "S": 3.0, "A": 1.0, "B": 0.0, "C": 0.0, "D": 0.0}
 PROFILE_MAIN_BONUS = 4.0
+# Bonus when a ban candidate directly counters one of our likely picks.
+# Each ally pick they counter adds this bonus independently.
+COUNTER_ALLY_BONUS = 3.0
+# Minimum counter score (0-10 scale) to qualify — filters weak partial counters.
+COUNTER_MIN_SCORE = 6.0
 
 
 @dataclass(frozen=True)
@@ -54,6 +59,8 @@ def suggest_bans(
     tiers: TierList,
     enemy_profiles: dict[int, EnemyProfile] | None = None,
     my_role: Role | None = None,
+    counters: CounterMatrix | None = None,
+    ally_candidate_keys: list[str] | None = None,
     limit: int = 3,
 ) -> list[BanSuggestion]:
     """Return up to ``limit`` ban suggestions ranked by combined score.
@@ -61,6 +68,11 @@ def suggest_bans(
     ``my_role`` (the local player's assigned lane) up-weights tier
     scores for that lane so the suggestions adapt session-to-session
     instead of presenting the same global top-3 to every role.
+
+    ``counters`` + ``ally_candidate_keys``: when both are provided, ban
+    candidates that hard-counter our likely picks receive COUNTER_ALLY_BONUS
+    per ally pick they counter (capped to min score COUNTER_MIN_SCORE).
+    This surfaces "Malphite counters your Yasuo" bans that tier alone misses.
     """
     profiles = enemy_profiles or {}
 
@@ -120,7 +132,23 @@ def suggest_bans(
         word = "enemy" if count == 1 else "enemies"
         reasons[champ_key].insert(0, f"Mained by {count} {word}")
 
-    # 3. Rank and slice.
+    # 3. Counter-to-ally contribution.
+    # For each champion the player is likely to pick, find who counters them
+    # and up-weight banning those counters. "Malphite counters Yasuo" → ban Malphite.
+    if counters is not None and ally_candidate_keys:
+        role_for_lookup = my_role or "MID"
+        for ally_key in ally_candidate_keys:
+            for ce in counters.counters_for(ally_key, role_for_lookup):
+                if ce.score < COUNTER_MIN_SCORE:
+                    continue
+                if ce.champion in drafted:
+                    continue
+                scores[ce.champion] += COUNTER_ALLY_BONUS
+                reasons[ce.champion].insert(
+                    0, f"Countered dein {ally_key} (Score {ce.score:.1f})"
+                )
+
+    # 4. Rank and slice.
     ranked = sorted(scores.items(), key=lambda kv: -kv[1])
     out: list[BanSuggestion] = []
     for champ_key, score in ranked:
