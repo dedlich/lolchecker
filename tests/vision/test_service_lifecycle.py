@@ -153,9 +153,10 @@ def test_consecutive_failures_self_disable_threshold() -> None:
 def test_engine_register_clear_sets_anchor() -> None:
     engine = JungleTimelineEngine()
     engine.tick(600.0)  # 10 min in
-    # Before clear: respawning, time_remaining > 0
+    # Before any observed clear: unanchored camps show "alive" sentinel
+    # (predictive timers were removed — only observed clears are shown).
     before = engine.states()["red_buff"]
-    assert before.state == "respawning"
+    assert before.state == "alive"
 
     engine.register_clear("red_buff", 600.0)
     after = engine.states()["red_buff"]

@@ -6,7 +6,7 @@
       "fixed_size": null,
       "layout": null,
       "objectName": "",
-      "stylesheet": "color: #6BBBFF; font-family: SF Mono, Menlo, Consolas, monospace; font-size: 18px; font-weight: 700;",
+      "stylesheet": "color: #6BBBFF; font-family: SF Mono, Menlo, Consolas, monospace; font-size: 22px; font-weight: 700;",
       "text": "0",
       "visible": true
     },
@@ -16,8 +16,8 @@
       "fixed_size": null,
       "layout": null,
       "objectName": "",
-      "stylesheet": "color: #ECEEF1; font-family: SF Mono, Menlo, Consolas, monospace; font-size: 14px; font-weight: 700;",
-      "text": "<span style='color:#7A848F'>0</span>  <span style='color:#7A848F; font-weight:800'>\u00b7 0</span>  <span style='color:#7A848\u2026",
+      "stylesheet": "color: #F2F4F7; font-family: SF Mono, Menlo, Consolas, monospace; font-size: 14px; font-weight: 700;",
+      "text": "<span style='color:#717A86'>0</span>  <span style='color:#717A86; font-weight:800'>\u00b7 0</span>  <span style='color:#717A8\u2026",
       "visible": true
     },
     {
@@ -26,7 +26,7 @@
       "fixed_size": null,
       "layout": null,
       "objectName": "",
-      "stylesheet": "color: #FF6B6B; font-family: SF Mono, Menlo, Consolas, monospace; font-size: 18px; font-weight: 700;",
+      "stylesheet": "color: #FF6B6B; font-family: SF Mono, Menlo, Consolas, monospace; font-size: 22px; font-weight: 700;",
       "text": "0",
       "visible": true
     },
@@ -36,7 +36,7 @@
       "fixed_size": null,
       "layout": null,
       "objectName": "",
-      "stylesheet": "color: #B6BCC4; font-size: 11px;",
+      "stylesheet": "color: #B0B7C2; font-size: 11px;",
       "text": "",
       "visible": true
     },
@@ -46,7 +46,7 @@
       "fixed_size": null,
       "layout": null,
       "objectName": "",
-      "stylesheet": "color: #7A848F; font-family: SF Mono, Menlo, Consolas, monospace; font-size: 11px;",
+      "stylesheet": "color: #717A86; font-family: SF Mono, Menlo, Consolas, monospace; font-size: 11px;",
       "text": "27:00",
       "visible": true
     },
@@ -56,7 +56,7 @@
       "fixed_size": null,
       "layout": null,
       "objectName": "",
-      "stylesheet": "color: #B6BCC4; font-size: 11px;",
+      "stylesheet": "color: #B0B7C2; font-size: 11px;",
       "text": "",
       "visible": true
     }
@@ -74,6 +74,6 @@
     "type": "QVBoxLayout"
   },
   "objectName": "",
-  "stylesheet": "QFrame[panel='true'] { background: qlineargradient(x1:0, y1:0, x2:0, y2:1,  stop:0 rgba(20, 26, 34, 195), stop:1 rgba(10, 14, 20, 195)); border: 1px solid rgba(60, 70, 85, 180); border-radius: 8px; }",
+  "stylesheet": "QFrame[panel='true'] { background: qlineargradient(x1:0, y1:0, x2:0, y2:1,  stop:0 rgba(26, 33, 46, 240),  stop:0.4 rgba(18, 24, 35, 240),  stop:1 rgba(12, 16, 24, 245)); border: 1px solid rgba(60, 70, 85, 180); border-radius: 12px; }",
   "visible": true
 }

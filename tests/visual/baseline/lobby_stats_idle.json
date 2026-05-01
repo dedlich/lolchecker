@@ -41,7 +41,7 @@
           "fixed_size": null,
           "layout": null,
           "objectName": "",
-          "stylesheet": "color: #7A848F; font-size: 10px;",
+          "stylesheet": "color: #717A86; font-size: 10px;",
           "text": "",
           "visible": true
         },
@@ -51,7 +51,7 @@
           "fixed_size": null,
           "layout": null,
           "objectName": "",
-          "stylesheet": "background-color: #1D2530; color: #7A848F; padding: 2px 8px; border-radius: 10px; font-size: 10px; font-weight: 700; letter-spacing: 0.5px;",
+          "stylesheet": "background-color: #1B2433; color: #717A86; padding: 2px 8px; border-radius: 10px; font-size: 10px; font-weight: 700; letter-spacing: 0.5px;",
           "text": "UNRANKED",
           "visible": false
         },
@@ -61,7 +61,17 @@
           "fixed_size": null,
           "layout": null,
           "objectName": "",
-          "stylesheet": "color: #B6BCC4; font-size: 10px;",
+          "stylesheet": "color: #B0B7C2; font-size: 10px;",
+          "text": "",
+          "visible": true
+        },
+        {
+          "children": [],
+          "class": "QLabel",
+          "fixed_size": null,
+          "layout": null,
+          "objectName": "",
+          "stylesheet": "color: #717A86; font-size: 10px; font-family: SF Mono, Menlo, Consolas, monospace;",
           "text": "",
           "visible": true
         }
@@ -113,7 +123,7 @@
           "fixed_size": null,
           "layout": null,
           "objectName": "",
-          "stylesheet": "color: #7A848F; font-size: 10px;",
+          "stylesheet": "color: #717A86; font-size: 10px;",
           "text": "",
           "visible": true
         },
@@ -123,7 +133,7 @@
           "fixed_size": null,
           "layout": null,
           "objectName": "",
-          "stylesheet": "background-color: #1D2530; color: #7A848F; padding: 2px 8px; border-radius: 10px; font-size: 10px; font-weight: 700; letter-spacing: 0.5px;",
+          "stylesheet": "background-color: #1B2433; color: #717A86; padding: 2px 8px; border-radius: 10px; font-size: 10px; font-weight: 700; letter-spacing: 0.5px;",
           "text": "UNRANKED",
           "visible": false
         },
@@ -133,7 +143,17 @@
           "fixed_size": null,
           "layout": null,
           "objectName": "",
-          "stylesheet": "color: #B6BCC4; font-size: 10px;",
+          "stylesheet": "color: #B0B7C2; font-size: 10px;",
+          "text": "",
+          "visible": true
+        },
+        {
+          "children": [],
+          "class": "QLabel",
+          "fixed_size": null,
+          "layout": null,
+          "objectName": "",
+          "stylesheet": "color: #717A86; font-size: 10px; font-family: SF Mono, Menlo, Consolas, monospace;",
           "text": "",
           "visible": true
         }
@@ -185,7 +205,7 @@
           "fixed_size": null,
           "layout": null,
           "objectName": "",
-          "stylesheet": "color: #7A848F; font-size: 10px;",
+          "stylesheet": "color: #717A86; font-size: 10px;",
           "text": "",
           "visible": true
         },
@@ -195,7 +215,7 @@
           "fixed_size": null,
           "layout": null,
           "objectName": "",
-          "stylesheet": "background-color: #1D2530; color: #7A848F; padding: 2px 8px; border-radius: 10px; font-size: 10px; font-weight: 700; letter-spacing: 0.5px;",
+          "stylesheet": "background-color: #1B2433; color: #717A86; padding: 2px 8px; border-radius: 10px; font-size: 10px; font-weight: 700; letter-spacing: 0.5px;",
           "text": "UNRANKED",
           "visible": false
         },
@@ -205,7 +225,17 @@
           "fixed_size": null,
           "layout": null,
           "objectName": "",
-          "stylesheet": "color: #B6BCC4; font-size: 10px;",
+          "stylesheet": "color: #B0B7C2; font-size: 10px;",
+          "text": "",
+          "visible": true
+        },
+        {
+          "children": [],
+          "class": "QLabel",
+          "fixed_size": null,
+          "layout": null,
+          "objectName": "",
+          "stylesheet": "color: #717A86; font-size: 10px; font-family: SF Mono, Menlo, Consolas, monospace;",
           "text": "",
           "visible": true
         }
@@ -257,7 +287,7 @@
           "fixed_size": null,
           "layout": null,
           "objectName": "",
-          "stylesheet": "color: #7A848F; font-size: 10px;",
+          "stylesheet": "color: #717A86; font-size: 10px;",
           "text": "",
           "visible": true
         },
@@ -267,7 +297,7 @@
           "fixed_size": null,
           "layout": null,
           "objectName": "",
-          "stylesheet": "background-color: #1D2530; color: #7A848F; padding: 2px 8px; border-radius: 10px; font-size: 10px; font-weight: 700; letter-spacing: 0.5px;",
+          "stylesheet": "background-color: #1B2433; color: #717A86; padding: 2px 8px; border-radius: 10px; font-size: 10px; font-weight: 700; letter-spacing: 0.5px;",
           "text": "UNRANKED",
           "visible": false
         },
@@ -277,7 +307,17 @@
           "fixed_size": null,
           "layout": null,
           "objectName": "",
-          "stylesheet": "color: #B6BCC4; font-size: 10px;",
+          "stylesheet": "color: #B0B7C2; font-size: 10px;",
+          "text": "",
+          "visible": true
+        },
+        {
+          "children": [],
+          "class": "QLabel",
+          "fixed_size": null,
+          "layout": null,
+          "objectName": "",
+          "stylesheet": "color: #717A86; font-size: 10px; font-family: SF Mono, Menlo, Consolas, monospace;",
           "text": "",
           "visible": true
         }
@@ -329,7 +369,7 @@
           "fixed_size": null,
           "layout": null,
           "objectName": "",
-          "stylesheet": "color: #7A848F; font-size: 10px;",
+          "stylesheet": "color: #717A86; font-size: 10px;",
           "text": "",
           "visible": true
         },
@@ -339,7 +379,7 @@
           "fixed_size": null,
           "layout": null,
           "objectName": "",
-          "stylesheet": "background-color: #1D2530; color: #7A848F; padding: 2px 8px; border-radius: 10px; font-size: 10px; font-weight: 700; letter-spacing: 0.5px;",
+          "stylesheet": "background-color: #1B2433; color: #717A86; padding: 2px 8px; border-radius: 10px; font-size: 10px; font-weight: 700; letter-spacing: 0.5px;",
           "text": "UNRANKED",
           "visible": false
         },
@@ -349,7 +389,17 @@
           "fixed_size": null,
           "layout": null,
           "objectName": "",
-          "stylesheet": "color: #B6BCC4; font-size: 10px;",
+          "stylesheet": "color: #B0B7C2; font-size: 10px;",
+          "text": "",
+          "visible": true
+        },
+        {
+          "children": [],
+          "class": "QLabel",
+          "fixed_size": null,
+          "layout": null,
+          "objectName": "",
+          "stylesheet": "color: #717A86; font-size: 10px; font-family: SF Mono, Menlo, Consolas, monospace;",
           "text": "",
           "visible": true
         }
@@ -376,7 +426,7 @@
       "fixed_size": null,
       "layout": null,
       "objectName": "sectionTitle",
-      "stylesheet": "color: #7A848F; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 1.2px; padding: 8px 0 2px 0;",
+      "stylesheet": "color: #717A86; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 1.2px; padding: 8px 0 2px 0;",
       "text": "Enemies",
       "visible": true
     },
@@ -411,7 +461,7 @@
           "fixed_size": null,
           "layout": null,
           "objectName": "",
-          "stylesheet": "color: #7A848F; font-size: 10px;",
+          "stylesheet": "color: #717A86; font-size: 10px;",
           "text": "",
           "visible": true
         },
@@ -421,7 +471,7 @@
           "fixed_size": null,
           "layout": null,
           "objectName": "",
-          "stylesheet": "background-color: #1D2530; color: #7A848F; padding: 2px 8px; border-radius: 10px; font-size: 10px; font-weight: 700; letter-spacing: 0.5px;",
+          "stylesheet": "background-color: #1B2433; color: #717A86; padding: 2px 8px; border-radius: 10px; font-size: 10px; font-weight: 700; letter-spacing: 0.5px;",
           "text": "UNRANKED",
           "visible": false
         },
@@ -431,7 +481,17 @@
           "fixed_size": null,
           "layout": null,
           "objectName": "",
-          "stylesheet": "color: #B6BCC4; font-size: 10px;",
+          "stylesheet": "color: #B0B7C2; font-size: 10px;",
+          "text": "",
+          "visible": true
+        },
+        {
+          "children": [],
+          "class": "QLabel",
+          "fixed_size": null,
+          "layout": null,
+          "objectName": "",
+          "stylesheet": "color: #717A86; font-size: 10px; font-family: SF Mono, Menlo, Consolas, monospace;",
           "text": "",
           "visible": true
         }
@@ -483,7 +543,7 @@
           "fixed_size": null,
           "layout": null,
           "objectName": "",
-          "stylesheet": "color: #7A848F; font-size: 10px;",
+          "stylesheet": "color: #717A86; font-size: 10px;",
           "text": "",
           "visible": true
         },
@@ -493,7 +553,7 @@
           "fixed_size": null,
           "layout": null,
           "objectName": "",
-          "stylesheet": "background-color: #1D2530; color: #7A848F; padding: 2px 8px; border-radius: 10px; font-size: 10px; font-weight: 700; letter-spacing: 0.5px;",
+          "stylesheet": "background-color: #1B2433; color: #717A86; padding: 2px 8px; border-radius: 10px; font-size: 10px; font-weight: 700; letter-spacing: 0.5px;",
           "text": "UNRANKED",
           "visible": false
         },
@@ -503,7 +563,17 @@
           "fixed_size": null,
           "layout": null,
           "objectName": "",
-          "stylesheet": "color: #B6BCC4; font-size: 10px;",
+          "stylesheet": "color: #B0B7C2; font-size: 10px;",
+          "text": "",
+          "visible": true
+        },
+        {
+          "children": [],
+          "class": "QLabel",
+          "fixed_size": null,
+          "layout": null,
+          "objectName": "",
+          "stylesheet": "color: #717A86; font-size: 10px; font-family: SF Mono, Menlo, Consolas, monospace;",
           "text": "",
           "visible": true
         }
@@ -555,7 +625,7 @@
           "fixed_size": null,
           "layout": null,
           "objectName": "",
-          "stylesheet": "color: #7A848F; font-size: 10px;",
+          "stylesheet": "color: #717A86; font-size: 10px;",
           "text": "",
           "visible": true
         },
@@ -565,7 +635,7 @@
           "fixed_size": null,
           "layout": null,
           "objectName": "",
-          "stylesheet": "background-color: #1D2530; color: #7A848F; padding: 2px 8px; border-radius: 10px; font-size: 10px; font-weight: 700; letter-spacing: 0.5px;",
+          "stylesheet": "background-color: #1B2433; color: #717A86; padding: 2px 8px; border-radius: 10px; font-size: 10px; font-weight: 700; letter-spacing: 0.5px;",
           "text": "UNRANKED",
           "visible": false
         },
@@ -575,7 +645,17 @@
           "fixed_size": null,
           "layout": null,
           "objectName": "",
-          "stylesheet": "color: #B6BCC4; font-size: 10px;",
+          "stylesheet": "color: #B0B7C2; font-size: 10px;",
+          "text": "",
+          "visible": true
+        },
+        {
+          "children": [],
+          "class": "QLabel",
+          "fixed_size": null,
+          "layout": null,
+          "objectName": "",
+          "stylesheet": "color: #717A86; font-size: 10px; font-family: SF Mono, Menlo, Consolas, monospace;",
           "text": "",
           "visible": true
         }
@@ -627,7 +707,7 @@
           "fixed_size": null,
           "layout": null,
           "objectName": "",
-          "stylesheet": "color: #7A848F; font-size: 10px;",
+          "stylesheet": "color: #717A86; font-size: 10px;",
           "text": "",
           "visible": true
         },
@@ -637,7 +717,7 @@
           "fixed_size": null,
           "layout": null,
           "objectName": "",
-          "stylesheet": "background-color: #1D2530; color: #7A848F; padding: 2px 8px; border-radius: 10px; font-size: 10px; font-weight: 700; letter-spacing: 0.5px;",
+          "stylesheet": "background-color: #1B2433; color: #717A86; padding: 2px 8px; border-radius: 10px; font-size: 10px; font-weight: 700; letter-spacing: 0.5px;",
           "text": "UNRANKED",
           "visible": false
         },
@@ -647,7 +727,17 @@
           "fixed_size": null,
           "layout": null,
           "objectName": "",
-          "stylesheet": "color: #B6BCC4; font-size: 10px;",
+          "stylesheet": "color: #B0B7C2; font-size: 10px;",
+          "text": "",
+          "visible": true
+        },
+        {
+          "children": [],
+          "class": "QLabel",
+          "fixed_size": null,
+          "layout": null,
+          "objectName": "",
+          "stylesheet": "color: #717A86; font-size: 10px; font-family: SF Mono, Menlo, Consolas, monospace;",
           "text": "",
           "visible": true
         }
@@ -699,7 +789,7 @@
           "fixed_size": null,
           "layout": null,
           "objectName": "",
-          "stylesheet": "color: #7A848F; font-size: 10px;",
+          "stylesheet": "color: #717A86; font-size: 10px;",
           "text": "",
           "visible": true
         },
@@ -709,7 +799,7 @@
           "fixed_size": null,
           "layout": null,
           "objectName": "",
-          "stylesheet": "background-color: #1D2530; color: #7A848F; padding: 2px 8px; border-radius: 10px; font-size: 10px; font-weight: 700; letter-spacing: 0.5px;",
+          "stylesheet": "background-color: #1B2433; color: #717A86; padding: 2px 8px; border-radius: 10px; font-size: 10px; font-weight: 700; letter-spacing: 0.5px;",
           "text": "UNRANKED",
           "visible": false
         },
@@ -719,7 +809,17 @@
           "fixed_size": null,
           "layout": null,
           "objectName": "",
-          "stylesheet": "color: #B6BCC4; font-size: 10px;",
+          "stylesheet": "color: #B0B7C2; font-size: 10px;",
+          "text": "",
+          "visible": true
+        },
+        {
+          "children": [],
+          "class": "QLabel",
+          "fixed_size": null,
+          "layout": null,
+          "objectName": "",
+          "stylesheet": "color: #717A86; font-size: 10px; font-family: SF Mono, Menlo, Consolas, monospace;",
           "text": "",
           "visible": true
         }
@@ -754,6 +854,6 @@
     "type": "QVBoxLayout"
   },
   "objectName": "",
-  "stylesheet": "QFrame[panel='true'] { background: qlineargradient(x1:0, y1:0, x2:0, y2:1,  stop:0 rgba(20, 26, 34, 195), stop:1 rgba(10, 14, 20, 195)); border: 1px solid rgba(60, 70, 85, 180); border-radius: 8px; } QFrame[role='row'] {  background-color: rgba(45, 55, 70, 130);  border-radius: 4px; }",
+  "stylesheet": "QFrame[panel='true'] { background: qlineargradient(x1:0, y1:0, x2:0, y2:1,  stop:0 rgba(26, 33, 46, 240),  stop:0.4 rgba(18, 24, 35, 240),  stop:1 rgba(12, 16, 24, 245)); border: 1px solid rgba(60, 70, 85, 180); border-radius: 12px; } QFrame[role='row'] {  background-color: rgba(45, 55, 70, 130);  border-radius: 4px; }",
   "visible": true
 }
