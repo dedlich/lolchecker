@@ -11,10 +11,10 @@ import logging
 import logging.handlers
 import os
 import sys
+from collections.abc import Callable
 from pathlib import Path
 
 import qasync
-from collections.abc import Callable
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QSurfaceFormat
 from PyQt6.QtWidgets import QApplication
@@ -52,7 +52,7 @@ def _log_startup_summary(perf_module) -> None:  # type: ignore[no-untyped-def]
         total = records[-1].elapsed_ms
         log = logging.getLogger("champ_assistant.startup")
         log.info("startup_complete total=%.0fms phases=[%s]", total, summary)
-    except Exception:  # noqa: BLE001 — diagnostics must never crash
+    except Exception:  # diagnostics must never crash
         pass
 
 
@@ -233,7 +233,7 @@ def _safe_start(name: str, fn: Callable[[], None]) -> bool:
         fn()
         log.info("subsystem started: %s", name)
         return True
-    except Exception:  # noqa: BLE001 — subsystem must not crash the app
+    except Exception:  # subsystem must not crash the app
         log.exception("subsystem start failed: %s — continuing degraded", name)
         return False
 
@@ -313,7 +313,7 @@ def _run_with_ui(args: argparse.Namespace) -> int:
     from champ_assistant.state_store import StateStore
     store = StateStore()
     # Low Resource Mode caps the repaint cadence to ~10 FPS — well below
-    # human perception of stutter at the cost of saving ~3× the CPU on
+    # human perception of stutter at the cost of saving ~3x the CPU on
     # idle frames. Default 30 FPS otherwise.
     _scheduler_fps = 10 if persisted.low_resource_mode else RenderScheduler.DEFAULT_MAX_FPS
     scheduler = RenderScheduler(max_fps=_scheduler_fps)
@@ -627,7 +627,7 @@ def _run_with_ui(args: argparse.Namespace) -> int:
                     "revision": cur.revision,
                 },
             }
-        except Exception:  # noqa: BLE001 — collector must be tolerant
+        except Exception:  # collector must be tolerant
             return {}
 
     def _on_uncaught(exc_type, exc_value, exc_tb) -> None:
