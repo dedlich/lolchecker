@@ -102,7 +102,7 @@ def test_visible_then_not_visible_two_frames_emits() -> None:
     region_order = list(DEFAULT_CAPTURE_REGIONS.keys())
     for cycle_idx in range(3):
         for camp_id in region_order:
-            if camp_id == "red_buff" and cycle_idx == 0:
+            if camp_id == "order_red_buff" and cycle_idx == 0:
                 frames.append(red_visible)
             else:
                 frames.append(grey)
@@ -119,7 +119,7 @@ def test_visible_then_not_visible_two_frames_emits() -> None:
 
     assert len(received) == 1
     camp_id, _gt, confidence = received[0]
-    assert camp_id == "red_buff"
+    assert camp_id == "order_red_buff"
     assert confidence == 1.0
 
 
@@ -155,11 +155,11 @@ def test_engine_register_clear_sets_anchor() -> None:
     engine.tick(600.0)  # 10 min in
     # Before any observed clear: unanchored camps show "alive" sentinel
     # (predictive timers were removed — only observed clears are shown).
-    before = engine.states()["red_buff"]
+    before = engine.states()["order_red_buff"]
     assert before.state == "alive"
 
-    engine.register_clear("red_buff", 600.0)
-    after = engine.states()["red_buff"]
+    engine.register_clear("order_red_buff", 600.0)
+    after = engine.states()["order_red_buff"]
     # Anchor was set; next_spawn = 600 + 300 = 900.
     assert after.next_spawn_at == 900.0
 
@@ -172,14 +172,14 @@ def test_engine_register_clear_rejects_bogus_camp_id() -> None:
     engine.register_clear("not_a_real_camp", 600.0)
     engine.register_clear("", 600.0)
     # Engine still healthy.
-    assert "red_buff" in engine.states()
+    assert "order_red_buff" in engine.states()
 
 
 def test_engine_register_clear_rejects_negative_time() -> None:
     engine = JungleTimelineEngine()
     engine.tick(600.0)
     before_anchor = dict(engine._observed_clears)
-    engine.register_clear("red_buff", -100.0)
+    engine.register_clear("order_red_buff", -100.0)
     assert engine._observed_clears == before_anchor
 
 
@@ -188,5 +188,5 @@ def test_engine_register_clear_rejects_nan() -> None:
     engine = JungleTimelineEngine()
     engine.tick(600.0)
     before_anchor = dict(engine._observed_clears)
-    engine.register_clear("red_buff", math.nan)
+    engine.register_clear("order_red_buff", math.nan)
     assert engine._observed_clears == before_anchor

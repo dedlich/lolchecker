@@ -157,7 +157,7 @@ def test_tick_notifies_subscribers() -> None:
     engine.tick(120.0)
     engine.tick(140.0)
     assert len(received) == 2
-    assert "red_buff" in received[0]
+    assert "order_red_buff" in received[0]
 
 
 # --------------------------------------------------------------------------
@@ -182,8 +182,8 @@ def test_anchored_camp_emits_real_countdown() -> None:
     drives the timer — that's the trustworthy half of the engine."""
     engine = JungleTimelineEngine()
     engine.tick(120.0)
-    engine.register_clear("red_buff", game_time=120.0)
-    state = engine.states()["red_buff"]
+    engine.register_clear("order_red_buff", game_time=120.0)
+    state = engine.states()["order_red_buff"]
     # Red Buff respawns 5:00 (300s) after kill → spawn at 420s.
     # At game_time=120, 300s remaining (some grace tolerance).
     assert state.next_spawn_at == 420.0
@@ -191,14 +191,14 @@ def test_anchored_camp_emits_real_countdown() -> None:
 
 
 def test_unrelated_camps_stay_hidden_after_one_anchor() -> None:
-    """Registering a clear on red_buff must NOT also surface predictive
-    timers for blue_buff/gromp/etc. Each camp gates independently."""
+    """Registering a clear on order_red_buff must NOT also surface predictive
+    timers for other camps. Each camp gates independently."""
     engine = JungleTimelineEngine()
     engine.tick(60.0)
-    engine.register_clear("red_buff", game_time=60.0)
+    engine.register_clear("order_red_buff", game_time=60.0)
     states = engine.states()
     for camp_id, state in states.items():
-        if camp_id == "red_buff":
+        if camp_id == "order_red_buff":
             assert state.state == "respawning"
         else:
             assert state.state == "alive"

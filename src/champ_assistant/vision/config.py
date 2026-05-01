@@ -42,46 +42,62 @@ class CaptureRegion:
 
 
 # --------------------------------------------------------------------------
-# Color profiles — calibrated for the canonical SR minimap icons. Values
-# are deliberately conservative (high sat/val mins, narrow hue band) to
-# bias toward false-NEGATIVE rather than false-positive — a missed
-# clear leaves the deterministic engine cycle as-is, a false detection
-# would corrupt the timer.
+# Color profiles — one profile per camp TYPE (both sides share the same
+# icon color). Calibrated for SR minimap icons; deliberately conservative
+# to bias false-NEGATIVE over false-positive.
 # --------------------------------------------------------------------------
+_RED_BUFF  = ColorProfile(hue_min=0,   hue_max=10,  sat_min=150, val_min=150)
+_BLUE_BUFF = ColorProfile(hue_min=100, hue_max=130, sat_min=150, val_min=150)
+_SCUTTLE   = ColorProfile(hue_min=40,  hue_max=60,  sat_min=140, val_min=140)
+_GROMP     = ColorProfile(hue_min=55,  hue_max=80,  sat_min=120, val_min=120)
+_KRUGS     = ColorProfile(hue_min=10,  hue_max=30,  sat_min=100, val_min=100)
+_WOLVES    = ColorProfile(hue_min=100, hue_max=130, sat_min=80,  val_min=110)
+_RAPTORS   = ColorProfile(hue_min=5,   hue_max=20,  sat_min=140, val_min=140)
+
 CAMP_COLOR_PROFILES: Final[dict[str, ColorProfile]] = {
-    # Red Buff: bright orange-red icon
-    "red_buff": ColorProfile(hue_min=0, hue_max=10, sat_min=150, val_min=150),
-    # Blue Buff: saturated blue icon
-    "blue_buff": ColorProfile(hue_min=100, hue_max=130, sat_min=150, val_min=150),
-    # Scuttle: yellow/gold
-    "scuttle": ColorProfile(hue_min=40, hue_max=60, sat_min=140, val_min=140),
-    # Gromp: green-ish
-    "gromp": ColorProfile(hue_min=55, hue_max=80, sat_min=120, val_min=120),
-    # Krugs: brown/tan — low-saturation profile, less reliable
-    "krugs": ColorProfile(hue_min=10, hue_max=30, sat_min=100, val_min=100),
-    # Wolves: blue-grey
-    "wolves": ColorProfile(hue_min=100, hue_max=130, sat_min=80, val_min=110),
-    # Raptors: orange-red, distinguishable from Red Buff via position
-    "raptors": ColorProfile(hue_min=5, hue_max=20, sat_min=140, val_min=140),
+    "order_red_buff":  _RED_BUFF,
+    "order_blue_buff": _BLUE_BUFF,
+    "order_gromp":     _GROMP,
+    "order_krugs":     _KRUGS,
+    "order_raptors":   _RAPTORS,
+    "order_wolves":    _WOLVES,
+    "order_scuttle":   _SCUTTLE,
+    "chaos_red_buff":  _RED_BUFF,
+    "chaos_blue_buff": _BLUE_BUFF,
+    "chaos_gromp":     _GROMP,
+    "chaos_krugs":     _KRUGS,
+    "chaos_raptors":   _RAPTORS,
+    "chaos_wolves":    _WOLVES,
+    "chaos_scuttle":   _SCUTTLE,
 }
 
 
 # --------------------------------------------------------------------------
-# Default capture rects — placeholder values targeting 1080p with a
-# default minimap. Real users WILL need to override these via settings
-# once we expose them; for the first experimental iteration these are
-# baseline defaults the developer can tune locally.
-# Coords assume the minimap is in the bottom-right (League default for
-# Blue side player). Each region is 24×24 around the camp icon.
+# Default capture rects — 1080p, default minimap (bottom-right).
+# Minimap assumed at approx (1720, 880) with 200×200 px extent.
+# Derived from normalized CAMP_POSITIONS via:
+#   screen_x = minimap_left + norm_x * minimap_w - 12
+#   screen_y = minimap_top  + norm_y * minimap_h - 12
+# Each region is 24×24 around the camp icon center. Users will need to
+# recalibrate for non-1080p or non-default minimap sizes via settings.
 # --------------------------------------------------------------------------
 DEFAULT_CAPTURE_REGIONS: Final[dict[str, CaptureRegion]] = {
-    "red_buff":  CaptureRegion(left=1670, top=982, width=24, height=24),
-    "blue_buff": CaptureRegion(left=1832, top=820, width=24, height=24),
-    "gromp":     CaptureRegion(left=1815, top=850, width=24, height=24),
-    "krugs":     CaptureRegion(left=1700, top=995, width=24, height=24),
-    "raptors":   CaptureRegion(left=1730, top=920, width=24, height=24),
-    "wolves":    CaptureRegion(left=1790, top=865, width=24, height=24),
-    "scuttle":   CaptureRegion(left=1770, top=900, width=24, height=24),
+    # Order side (blue side) — bottom-left quadrant of minimap
+    "order_blue_buff": CaptureRegion(left=1752, top=1018, width=24, height=24),
+    "order_red_buff":  CaptureRegion(left=1784, top=1040, width=24, height=24),
+    "order_gromp":     CaptureRegion(left=1736, top=994,  width=24, height=24),
+    "order_wolves":    CaptureRegion(left=1758, top=994,  width=24, height=24),
+    "order_raptors":   CaptureRegion(left=1788, top=1022, width=24, height=24),
+    "order_krugs":     CaptureRegion(left=1768, top=1054, width=24, height=24),
+    "order_scuttle":   CaptureRegion(left=1794, top=1008, width=24, height=24),
+    # Chaos side (red side) — top-right quadrant of minimap
+    "chaos_blue_buff": CaptureRegion(left=1864, top=958,  width=24, height=24),
+    "chaos_red_buff":  CaptureRegion(left=1832, top=936,  width=24, height=24),
+    "chaos_gromp":     CaptureRegion(left=1880, top=982,  width=24, height=24),
+    "chaos_wolves":    CaptureRegion(left=1858, top=982,  width=24, height=24),
+    "chaos_raptors":   CaptureRegion(left=1828, top=954,  width=24, height=24),
+    "chaos_krugs":     CaptureRegion(left=1848, top=922,  width=24, height=24),
+    "chaos_scuttle":   CaptureRegion(left=1822, top=968,  width=24, height=24),
 }
 
 

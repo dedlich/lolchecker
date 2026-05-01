@@ -21,14 +21,12 @@ What it does NOT do
   * No new top-level windows. Always a child widget.
   * No allocations in paintEvent — colors and fonts are cached.
 
-Scuttle divergence from the original spec
-------------------------------------------
-The spec listed ``scuttle_top`` + ``scuttle_bot`` as separate entries.
-Our ``JungleTimelineEngine`` tracks scuttle as a single camp (the two
-spawns alternate; the engine doesn't model the alternation). Rather
-than fake a top/bot split we'd then have to keep in sync with the
-engine, we render scuttle once at the river center. Engine-side
-scuttle alternation is a separate task if it's ever needed.
+Camp layout
+-----------
+Both Order (blue side) and Chaos (red side) camps are tracked — 14
+total (7 per side). order_scuttle anchors to the top-river spawn
+position and chaos_scuttle to the bot-river position; this gives the
+two scuttle camps their natural split-river placement on the minimap.
 """
 from __future__ import annotations
 
@@ -46,42 +44,64 @@ if TYPE_CHECKING:
 
 
 # Canonical camp positions on Summoner's Rift, normalized 0..1
-# (origin = top-left corner of the minimap area).
-# Buffs are corner-anchored (bot-left = blue side red, top-right = red
-# side blue); small camps follow the standard SR jungle layout.
+# (origin = top-left of the minimap image; Order base is bottom-left,
+# Chaos base is top-right). Coordinates derived from the in-game
+# minimap with both sides represented (14 camps total).
 CAMP_POSITIONS: dict[str, tuple[float, float]] = {
-    "red_buff":  (0.18, 0.82),
-    "blue_buff": (0.82, 0.18),
-    "gromp":     (0.78, 0.28),
-    "krugs":     (0.25, 0.90),
-    "raptors":   (0.35, 0.70),
-    "wolves":    (0.70, 0.35),
-    "scuttle":   (0.50, 0.50),  # river center — single entry in the engine
+    # Order side (blue side) — bottom-left jungle
+    "order_blue_buff": (0.22, 0.65),
+    "order_red_buff":  (0.38, 0.76),
+    "order_gromp":     (0.14, 0.53),
+    "order_wolves":    (0.25, 0.53),
+    "order_raptors":   (0.40, 0.67),
+    "order_krugs":     (0.30, 0.83),
+    "order_scuttle":   (0.43, 0.60),   # top-river scuttle spawn
+    # Chaos side (red side) — top-right jungle
+    "chaos_blue_buff": (0.78, 0.35),
+    "chaos_red_buff":  (0.62, 0.24),
+    "chaos_gromp":     (0.86, 0.47),
+    "chaos_wolves":    (0.75, 0.47),
+    "chaos_raptors":   (0.60, 0.33),
+    "chaos_krugs":     (0.70, 0.17),
+    "chaos_scuttle":   (0.57, 0.40),   # bot-river scuttle spawn
 }
 
-# Single-letter glyph drawn inside each camp marker. Lets the user
-# identify camps without hovering for a tooltip.
+# Single-letter glyph drawn inside each camp marker.
 CAMP_GLYPHS: dict[str, str] = {
-    "red_buff":  "R",
-    "blue_buff": "B",
-    "gromp":     "G",
-    "krugs":     "K",
-    "raptors":   "P",   # P for raptoRs — R is taken by Red Buff
-    "wolves":    "W",
-    "scuttle":   "S",
+    "order_red_buff":  "R",
+    "order_blue_buff": "B",
+    "order_gromp":     "G",
+    "order_krugs":     "K",
+    "order_raptors":   "P",   # P for raptoRs — R is taken by Red Buff
+    "order_wolves":    "W",
+    "order_scuttle":   "S",
+    "chaos_red_buff":  "R",
+    "chaos_blue_buff": "B",
+    "chaos_gromp":     "G",
+    "chaos_krugs":     "K",
+    "chaos_raptors":   "P",
+    "chaos_wolves":    "W",
+    "chaos_scuttle":   "S",
 }
 
-# Per-camp marker tint. Buffs get their canonical colors; small
-# camps stay neutral grey so they don't compete for attention; scuttle
-# gets the river's blue-cyan tint.
+# Per-camp marker tint. Buff camps get their canonical colors; small
+# camps stay neutral so they don't compete for attention; scuttle gets
+# the river's tint. Both sides share the same color scheme by camp type.
 CAMP_COLORS: dict[str, str] = {
-    "red_buff":  styles.DANGER,
-    "blue_buff": styles.ACCENT,
-    "gromp":     styles.TEXT_MUTED,
-    "krugs":     styles.TEXT_MUTED,
-    "raptors":   styles.TEXT_MUTED,
-    "wolves":    styles.TEXT_MUTED,
-    "scuttle":   styles.TIER_A,
+    "order_red_buff":  styles.DANGER,
+    "order_blue_buff": styles.ACCENT,
+    "order_gromp":     styles.TEXT_MUTED,
+    "order_krugs":     styles.TEXT_MUTED,
+    "order_raptors":   styles.TEXT_MUTED,
+    "order_wolves":    styles.TEXT_MUTED,
+    "order_scuttle":   styles.TIER_A,
+    "chaos_red_buff":  styles.DANGER,
+    "chaos_blue_buff": styles.ACCENT,
+    "chaos_gromp":     styles.TEXT_MUTED,
+    "chaos_krugs":     styles.TEXT_MUTED,
+    "chaos_raptors":   styles.TEXT_MUTED,
+    "chaos_wolves":    styles.TEXT_MUTED,
+    "chaos_scuttle":   styles.TIER_A,
 }
 
 # Marker pixel size (radius). Picked so seven non-overlapping circles

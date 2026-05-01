@@ -8,7 +8,6 @@ import pytest
 # Headless rendering on macOS / CI — must be set before any QApplication import.
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from champ_assistant.advisor.composition import CompositionGap  # noqa: E402
 from champ_assistant.advisor.picks import PickSuggestion  # noqa: E402
 from champ_assistant.data.models import (  # noqa: E402
     ChampSelectSession,
@@ -16,7 +15,6 @@ from champ_assistant.data.models import (  # noqa: E402
     TeamMember,
 )
 from champ_assistant.ui.overlay import MainOverlay  # noqa: E402
-from champ_assistant.ui.pick_card import PickCard  # noqa: E402
 from champ_assistant.ui.view_model import SessionView  # noqa: E402
 
 
@@ -31,7 +29,8 @@ def test_window_creates(overlay) -> None:  # type: ignore[no-untyped-def]
     assert overlay.windowTitle() == "Champ Assistant"
     assert overlay.size().width() == 640
     assert overlay.size().height() == 720
-    assert len(overlay.enemy_rows) == 5
+    # Enemy panel was replaced by the two-column pick/ban layout.
+    assert len(overlay.enemy_rows) == 0
 
 
 def test_initial_status_is_disconnected(overlay) -> None:  # type: ignore[no-untyped-def]
@@ -44,7 +43,9 @@ def test_update_view_sets_connection_state(overlay) -> None:  # type: ignore[no-
     assert overlay.status_bar.state == "connected"
 
 
-def test_update_view_renders_enemies() -> None:
+def test_update_view_with_session_does_not_crash() -> None:
+    """update_view with a populated SessionView (including enemy data) must not
+    raise even though the visual enemy-row panel was removed."""
     overlay = MainOverlay()
     session = ChampSelectSession(
         phase="BAN_PICK",
@@ -67,36 +68,26 @@ def test_update_view_renders_enemies() -> None:
             ],
         },
     )
-    overlay.update_view(view)
-
-    rows = overlay.enemy_rows
-    assert "Garen" in rows[0]._champion_label.text()
-    assert "TOP" in rows[0]._role_button.text()
-    assert "Darius" in rows[0]._counters_label.text()
-
-    assert "Lee Sin" in rows[1]._champion_label.text()
-    # Slot 2-4 stay as placeholder
-    assert rows[2]._champion_label.text() == EnemyRow_PLACEHOLDER()
+    overlay.update_view(view)  # must not raise
+    assert overlay.status_bar.state == "connected"
     overlay.deleteLater()
 
 
-def EnemyRow_PLACEHOLDER() -> str:
-    from champ_assistant.ui.enemy_row import EnemyRow
-    return EnemyRow.PLACEHOLDER
-
-
-def test_update_view_renders_pick_cards(qtbot) -> None:  # type: ignore[no-untyped-def]
+def test_update_view_renders_pick_rows(qtbot) -> None:  # type: ignore[no-untyped-def]
+    """picks_counter / picks_synergy populate the two-column pick panel."""
     overlay = MainOverlay()
     qtbot.addWidget(overlay)
     view = SessionView(
         connection_state="connected",
-        suggestions=[
+        picks_counter=[
             PickSuggestion(
                 champion_key="Darius",
                 score=87.5,
                 tier="S+",
                 reasons=["S+ tier in TOP", "counters Garen (8.0)"],
             ),
+        ],
+        picks_synergy=[
             PickSuggestion(
                 champion_key="Camille",
                 score=72.0,
@@ -106,29 +97,24 @@ def test_update_view_renders_pick_cards(qtbot) -> None:  # type: ignore[no-untyp
         ],
     )
     overlay.update_view(view)
-
-    # Find PickCard children
-    cards = overlay.findChildren(PickCard)
-    assert len(cards) == 2
-    assert cards[0].suggestion.champion_key == "Darius"
+    # Panel is not hidden when there are counter/synergy picks.
+    assert not overlay._picks_row.isHidden()
 
 
 def test_update_view_clears_picks_on_empty(qtbot) -> None:  # type: ignore[no-untyped-def]
     overlay = MainOverlay()
     qtbot.addWidget(overlay)
-    # First with suggestions
+    # First with picks
     overlay.update_view(
         SessionView(
-            suggestions=[
-                PickSuggestion(champion_key="X", score=50, tier="A", reasons=[]),
-            ]
+            picks_counter=[PickSuggestion(champion_key="X", score=50, tier="A", reasons=[])],
         )
     )
-    assert len(overlay.findChildren(PickCard)) == 1
-    # Then empty
-    overlay.update_view(SessionView(suggestions=[]))
+    assert not overlay._picks_row.isHidden()
+    # Then empty — panel hides
+    overlay.update_view(SessionView())
     qtbot.wait(10)  # let deleteLater process
-    assert len(overlay.findChildren(PickCard)) == 0
+    assert overlay._picks_row.isHidden()
 
 
 def test_hotkeys_are_registered(qtbot) -> None:  # type: ignore[no-untyped-def]

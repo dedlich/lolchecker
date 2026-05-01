@@ -58,17 +58,27 @@ class CampSpec:
     respawn_s: float       # cooldown after a kill until next spawn
 
 
-# Canonical jungle timings. Small-camp respawn is the standardized 2:15
-# approximation the spec calls for; Buff camps are 5:00; Scuttle first
-# spawns at 3:15 and respawns 2:30 after each kill.
+# Canonical jungle timings — 14 camps (7 per side). Small-camp respawn is
+# the standardized 2:15 approximation; Buff camps 5:00; Scuttle first
+# spawns at 3:15 and respawns 2:30 after each kill. Both sides share
+# identical timing; the IDs carry the team prefix for minimap placement.
 JUNGLE_CAMPS: tuple[CampSpec, ...] = (
-    CampSpec("red_buff",  "Red Buff",  90.0,  300.0),
-    CampSpec("blue_buff", "Blue Buff", 90.0,  300.0),
-    CampSpec("gromp",     "Gromp",     90.0,  135.0),
-    CampSpec("krugs",     "Krugs",     90.0,  135.0),
-    CampSpec("raptors",   "Raptors",   90.0,  135.0),
-    CampSpec("wolves",    "Wolves",    90.0,  135.0),
-    CampSpec("scuttle",   "Scuttle",   195.0, 150.0),
+    # Order side (blue side) — bottom-left jungle on SR minimap
+    CampSpec("order_red_buff",  "Order Red",     90.0,  300.0),
+    CampSpec("order_blue_buff", "Order Blue",    90.0,  300.0),
+    CampSpec("order_gromp",     "Order Gromp",   90.0,  135.0),
+    CampSpec("order_krugs",     "Order Krugs",   90.0,  135.0),
+    CampSpec("order_raptors",   "Order Raptors", 90.0,  135.0),
+    CampSpec("order_wolves",    "Order Wolves",  90.0,  135.0),
+    CampSpec("order_scuttle",   "Scuttle Top",   195.0, 150.0),
+    # Chaos side (red side) — top-right jungle on SR minimap
+    CampSpec("chaos_red_buff",  "Chaos Red",     90.0,  300.0),
+    CampSpec("chaos_blue_buff", "Chaos Blue",    90.0,  300.0),
+    CampSpec("chaos_gromp",     "Chaos Gromp",   90.0,  135.0),
+    CampSpec("chaos_krugs",     "Chaos Krugs",   90.0,  135.0),
+    CampSpec("chaos_raptors",   "Chaos Raptors", 90.0,  135.0),
+    CampSpec("chaos_wolves",    "Chaos Wolves",  90.0,  135.0),
+    CampSpec("chaos_scuttle",   "Scuttle Bot",   195.0, 150.0),
 )
 
 

@@ -140,8 +140,8 @@ def test_layer_accepts_clicks_for_register_clear(qt_app) -> None:  # type: ignor
     layer = MapOverlayLayer(engine)
     layer.resize(200, 200)
 
-    # Click on the red_buff anchor (0.18, 0.82) → pixel (36, 164).
-    nx, ny = CAMP_POSITIONS["red_buff"]
+    # Click on the order_red_buff anchor → pixel from normalized position.
+    nx, ny = CAMP_POSITIONS["order_red_buff"]
     point = QPointF(nx * 200, ny * 200)
     event = QMouseEvent(
         QMouseEvent.Type.MouseButtonPress, point,
@@ -150,8 +150,8 @@ def test_layer_accepts_clicks_for_register_clear(qt_app) -> None:  # type: ignor
     )
     layer.mousePressEvent(event)
 
-    # Engine should now have a real respawn countdown for red_buff.
-    state = engine.states()["red_buff"]
+    # Engine should now have a real respawn countdown for order_red_buff.
+    state = engine.states()["order_red_buff"]
     assert state.state == "respawning"
     assert state.next_spawn_at > 0
 
@@ -245,12 +245,14 @@ def test_every_camp_has_marker_metadata() -> None:
         assert spec.id in CAMP_COLORS, f"missing color: {spec.id}"
 
 
-def test_camp_glyphs_are_unique() -> None:
-    """Each camp's single-letter glyph must be distinct so the user
-    can tell which marker they're clicking. Defends against e.g.
-    accidentally collapsing 'Red Buff' and 'Raptors' to the same R."""
-    glyphs = list(CAMP_GLYPHS.values())
-    assert len(glyphs) == len(set(glyphs)), f"duplicate glyphs: {glyphs}"
+def test_camp_glyphs_are_unique_per_side() -> None:
+    """Order-side glyphs are distinct and chaos-side glyphs are distinct.
+    Both sides intentionally share the same letter per camp type (R=Red,
+    B=Blue, …) — the position on the minimap disambiguates them visually."""
+    order_glyphs = [g for k, g in CAMP_GLYPHS.items() if k.startswith("order_")]
+    chaos_glyphs  = [g for k, g in CAMP_GLYPHS.items() if k.startswith("chaos_")]
+    assert len(order_glyphs) == len(set(order_glyphs)), f"duplicate order glyphs: {order_glyphs}"
+    assert len(chaos_glyphs)  == len(set(chaos_glyphs)),  f"duplicate chaos glyphs: {chaos_glyphs}"
 
 
 def test_marker_radius_fits_in_smallest_panel() -> None:
