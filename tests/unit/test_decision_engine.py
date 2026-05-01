@@ -699,6 +699,7 @@ from champ_assistant.advisor.decision_engine import (
     _enemy_turrets_down,
     rule_lane_pressure,
     rule_ace_detected,
+    rule_enemy_base_exposed,
 )
 
 
@@ -867,3 +868,55 @@ def test_suppress_ace_keeps_safety_and_lane_open() -> None:
     result_kinds = {r.kind for r in result}
     assert "ace" in result_kinds
     assert "lane_open" in result_kinds
+
+
+# ----------------------------------------------------------------------
+# rule_enemy_base_exposed — inhibitor tier tracking
+# ----------------------------------------------------------------------
+
+def test_enemy_base_exposed_fires_when_outer_inner_inhib_down() -> None:
+    snap = _Snap(
+        active_team="ORDER",
+        raw_events=[
+            _turret_killed_event("Turret_TChaos_L0_P1_Base"),
+            _turret_killed_event("Turret_TChaos_L0_P2_Base"),
+            _turret_killed_event("Turret_TChaos_L0_P3_Base"),
+        ],
+    )
+    rec = rule_enemy_base_exposed(snap)
+    assert rec is not None
+    assert "Bot" in rec.text
+    assert rec.severity == "alert"
+    assert rec.kind == "base_exposed"
+
+
+def test_enemy_base_exposed_silent_when_only_two_turrets_down() -> None:
+    snap = _Snap(
+        active_team="ORDER",
+        raw_events=[
+            _turret_killed_event("Turret_TChaos_L2_P1_Base"),
+            _turret_killed_event("Turret_TChaos_L2_P2_Base"),
+        ],
+    )
+    assert rule_enemy_base_exposed(snap) is None
+
+
+def test_enemy_turrets_down_counts_inhib_when_tiers_param_includes_p3() -> None:
+    snap = _Snap(
+        active_team="ORDER",
+        raw_events=[
+            _turret_killed_event("Turret_TChaos_L1_P1_Base"),
+            _turret_killed_event("Turret_TChaos_L1_P2_Base"),
+            _turret_killed_event("Turret_TChaos_L1_P3_Base"),
+        ],
+    )
+    result = _enemy_turrets_down(snap, tiers=("P1", "P2", "P3"))
+    assert result == {"Mid": 3}
+
+
+def test_suppress_base_exposed_absorbs_lane_open() -> None:
+    recs = [_rec("base_exposed", "alert"), _rec("lane_open", "warn")]
+    result = _suppress_dominated(recs)
+    result_kinds = {r.kind for r in result}
+    assert "base_exposed" in result_kinds
+    assert "lane_open" not in result_kinds

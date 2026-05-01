@@ -1023,6 +1023,7 @@ async def _run_lcda_watcher(
     from champ_assistant.ui.insight_panel import InsightPanel as _InsightPanelType
     from champ_assistant.ui.recommendation_panel import RecommendationPanel
     _last_recommendation: list[str] = [""]
+    _last_game_result: list[str] = [""]   # track last known result to log on end
     _decision_log = logging.getLogger("champ_assistant.decisions")
     _rec_panel: RecommendationPanel | None = next(
         (w for w in floating_consumers if isinstance(w, RecommendationPanel)),
@@ -1056,6 +1057,13 @@ async def _run_lcda_watcher(
             diagnostics.record_event_latency_ms(
                 (_time.monotonic() - arrived) * 1000.0
             )
+        # Game-end detection: log result when LCDA transitions to None.
+        result = getattr(snap, "game_result", "") or ""
+        if result:
+            _last_game_result[0] = result
+        elif snap is None and _last_game_result[0]:
+            log.info("game_ended result=%s", _last_game_result[0])
+            _last_game_result[0] = ""
         # Decision engine pass — log when the top rec changes (so the
         # log doesn't flood) and push the full sorted list into the
         # floating panel for live on-screen display. Also keep the

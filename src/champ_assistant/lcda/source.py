@@ -56,6 +56,9 @@ class LcdaSnapshot:
     enemy_team: str = ""
     ally_aggregate: TeamAggregate | None = None
     enemy_aggregate: TeamAggregate | None = None
+    # "Win", "Lose", or "" when game is still in progress.
+    # Populated from the GameEnd event in raw_events.
+    game_result: str = ""
 
 
 SnapshotCallback = Callable[[LcdaSnapshot | None], Awaitable[None] | None]
@@ -163,6 +166,7 @@ class LcdaSource:
             aggregate_team(all_players, list(events), enemy_team)
             if enemy_team else None
         )
+        game_result = _extract_game_result(events)
         return LcdaSnapshot(
             game_time=game_time,
             game_mode=str(game.get("gameMode") or ""),
@@ -178,6 +182,7 @@ class LcdaSource:
             enemy_team=enemy_team,
             ally_aggregate=ally_agg,
             enemy_aggregate=enemy_agg,
+            game_result=game_result,
         )
 
     @staticmethod
@@ -189,6 +194,14 @@ class LcdaSource:
 
     def close(self) -> None:
         self._closed = True
+
+
+def _extract_game_result(events: list[dict]) -> str:
+    """Return "Win", "Lose", or "" from the first GameEnd event found."""
+    for evt in reversed(events):
+        if evt.get("EventName") == "GameEnd":
+            return str(evt.get("Result") or "")
+    return ""
 
 
 async def _maybe_await(value: object) -> None:

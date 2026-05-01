@@ -10,7 +10,7 @@ import httpx
 import pytest
 
 from champ_assistant.lcda.client import LcdaClient
-from champ_assistant.lcda.source import LcdaSnapshot, LcdaSource
+from champ_assistant.lcda.source import LcdaSnapshot, LcdaSource, _extract_game_result
 
 FIXTURE_DIR = Path(__file__).resolve().parents[1] / "fixtures" / "lcda"
 
@@ -108,3 +108,81 @@ async def test_run_loops_until_close() -> None:
     await asyncio.wait_for(task, timeout=1.0)
     await client.aclose()
     assert counter["n"] >= 1
+
+
+# ----------------------------------------------------------------------
+# _extract_game_result — game-end detection
+# ----------------------------------------------------------------------
+
+def test_extract_game_result_win() -> None:
+    events = [{"EventName": "GameEnd", "EventTime": 1800.0, "Result": "Win"}]
+    assert _extract_game_result(events) == "Win"
+
+
+def test_extract_game_result_lose() -> None:
+    events = [
+        {"EventName": "DragonKill", "EventTime": 300.0},
+        {"EventName": "GameEnd", "EventTime": 1800.0, "Result": "Lose"},
+    ]
+    assert _extract_game_result(events) == "Lose"
+
+
+def test_extract_game_result_empty_when_no_game_end() -> None:
+    events = [
+        {"EventName": "DragonKill", "EventTime": 300.0},
+        {"EventName": "BaronKill", "EventTime": 900.0},
+    ]
+    assert _extract_game_result(events) == ""
+
+
+def test_extract_game_result_empty_list() -> None:
+    assert _extract_game_result([]) == ""
+
+
+@pytest.mark.asyncio
+async def test_snapshot_carries_game_result_win() -> None:
+    payload = _load("allgamedata_midgame.json")
+    import copy
+    payload = copy.deepcopy(payload)
+    payload.setdefault("events", {}).setdefault("Events", []).append(
+        {"EventName": "GameEnd", "EventTime": 1800.0, "Result": "Win"}
+    )
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json=payload)
+
+    client = LcdaClient(transport=httpx.MockTransport(handler))
+    received: list[LcdaSnapshot | None] = []
+
+    async def cb(snap: LcdaSnapshot | None) -> None:
+        received.append(snap)
+
+    source = LcdaSource(client, cb, poll_interval=0.0)
+    await source._tick()
+    await client.aclose()
+
+    snap = received[0]
+    assert snap is not None
+    assert snap.game_result == "Win"
+
+
+@pytest.mark.asyncio
+async def test_snapshot_game_result_empty_without_game_end_event() -> None:
+    payload = _load("allgamedata_midgame.json")
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json=payload)
+
+    client = LcdaClient(transport=httpx.MockTransport(handler))
+    received: list[LcdaSnapshot | None] = []
+
+    async def cb(snap: LcdaSnapshot | None) -> None:
+        received.append(snap)
+
+    source = LcdaSource(client, cb, poll_interval=0.0)
+    await source._tick()
+    await client.aclose()
+
+    snap = received[0]
+    assert snap is not None
+    assert snap.game_result == ""

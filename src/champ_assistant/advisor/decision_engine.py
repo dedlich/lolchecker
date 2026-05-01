@@ -379,12 +379,17 @@ def _parse_turret_name(name: str) -> tuple[str, str, str] | None:
     return (side, lane, tier) if (side and lane and tier) else None
 
 
-def _enemy_turrets_down(snapshot: "LcdaSnapshot") -> dict[str, int]:
-    """Count enemy outer+inner turrets destroyed per lane (from raw_events).
+def _enemy_turrets_down(
+    snapshot: "LcdaSnapshot",
+    tiers: tuple[str, ...] = ("P1", "P2"),
+) -> dict[str, int]:
+    """Count enemy turrets destroyed per lane (from raw_events).
 
-    Returns {"Bot": n, "Mid": n, "Top": n}. Only P1/P2 (outer/inner) count;
-    inhibitor and nexus turrets indicate a different game state handled
-    separately. Returns empty dict when team identity is unknown.
+    Returns {"Bot": n, "Mid": n, "Top": n}.
+    ``tiers`` controls which tier codes to count:
+      P1=Outer, P2=Inner, P3=Inhibitor, P4=Nexus
+    Default counts only outer+inner; pass ("P1","P2","P3") for base exposure.
+    Returns empty dict when team identity is unknown.
     """
     events = getattr(snapshot, "raw_events", []) or []
     active_team = (getattr(snapshot, "active_team", "") or "").upper()
@@ -399,7 +404,7 @@ def _enemy_turrets_down(snapshot: "LcdaSnapshot") -> dict[str, int]:
         if parsed is None:
             continue
         side, lane, tier = parsed
-        if side != enemy_side or tier not in ("P1", "P2"):
+        if side != enemy_side or tier not in tiers:
             continue
         label = _LANE_DISPLAY.get(lane, lane)
         counts[label] = counts.get(label, 0) + 1
@@ -1157,6 +1162,38 @@ def rule_fight_opportunity(snapshot: "LcdaSnapshot") -> Recommendation | None:
         )
 
 
+def rule_enemy_base_exposed(snapshot: "LcdaSnapshot") -> Recommendation | None:
+    """Enemy inhibitor turret(s) down → base exposed, push for GG.
+
+    Fires when at least one lane has all three outer/inner/inhib turrets
+    fallen, meaning our minions are now pushing into the base and an inhib
+    kill creates super-minions. Higher-priority than lane_open.
+    """
+    active_team = (getattr(snapshot, "active_team", "") or "")
+    if not active_team:
+        return None
+    full_counts = _enemy_turrets_down(snapshot, tiers=("P1", "P2", "P3"))
+    exposed = [lane for lane, n in full_counts.items() if n >= 3]
+    if not exposed:
+        return None
+    lanes_str = " + ".join(sorted(exposed))
+    gold = _team_gold_diff(snapshot)
+    return Recommendation(
+        text=f"{lanes_str}-Inhib offen — Basis-Angriff, GG forcen!",
+        severity="alert",
+        category="lane",
+        confidence=0.88,
+        risk="LOW",
+        ttl_s=90.0,
+        kind="base_exposed",
+        reasons=(
+            f"Enemy {lanes_str}: Outer + Inner + Inhib-Turm gefallen",
+            "Inhib-Kill = Super-Minions dauerhafter Pressure",
+            f"Gold-Diff: {gold:+d}",
+        ),
+    )
+
+
 def rule_lane_pressure(snapshot: "LcdaSnapshot") -> Recommendation | None:
     """Enemy outer or inner turrets down → push that lane for objectives.
 
@@ -1252,7 +1289,8 @@ ALL_RULES: tuple[Callable[["LcdaSnapshot"], Recommendation | None], ...] = (
     rule_kill_lead_snowball,
     rule_kill_deficit_defensive,
     rule_late_game_group,
-    # Lane pressure — structural map-state (turrets).
+    # Lane/base pressure — structural map-state (turrets).
+    rule_enemy_base_exposed,
     rule_lane_pressure,
 )
 
@@ -1308,6 +1346,11 @@ def _suppress_dominated(recs: list[Recommendation]) -> list[Recommendation]:
     _obj_take = {"dragon_take", "dragon_free", "baron_take", "baron_free"}
     if kinds & _obj_take:
         recs = [r for r in recs if r.kind != "fight_bad"]
+
+    # Rule 6 — base_exposed absorbs lane_open for the same lane context;
+    # suppress generic lane_open cards when a base-exposure alert is present.
+    if "base_exposed" in kinds:
+        recs = [r for r in recs if r.kind != "lane_open"]
 
     return recs
 
