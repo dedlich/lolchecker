@@ -1154,6 +1154,22 @@ async def _hydrate_champions_and_icons(
             except Exception:
                 log.exception("tier_refresh_error")
 
+            # Attach Lolalytics counter fetcher (Tier 2.5 — free, fast).
+            try:
+                from champ_assistant.data.lolalytics_counters import (
+                    LolalyticsCounterFetcher,
+                )
+                lolalytics_cache = cache_dir / "lolalytics_counters"
+                lolalytics_cache.mkdir(parents=True, exist_ok=True)
+                lol_fetcher = LolalyticsCounterFetcher(
+                    lolalytics_cache, champions, patch=patch
+                )
+                if assistant._runtime_counters is not None:
+                    assistant._runtime_counters.set_lolalytics(lol_fetcher)
+                    log.info("lolalytics_counter_fetcher_attached")
+            except Exception:
+                log.exception("lolalytics_counter_fetcher_error")
+
             keys = sorted({c.key for c in champions.values()})
             log.info("icon_prefetch_start patch=%s keys=%d", patch, len(keys))
             icons_bytes = await dd.prefetch_icons(patch, keys)

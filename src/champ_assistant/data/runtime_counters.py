@@ -99,7 +99,13 @@ Rules:
 
 
 class RuntimeCounterStore:
-    """Async-safe lookup with dedup, persistent cache, and graceful no-key fallback."""
+    """Async-safe lookup with dedup, persistent cache, and graceful no-key fallback.
+
+    Resolution order inside ``get()``:
+      1. Disk cache (any previously stored result)
+      2. Lolalytics pre-fetcher if one was set via ``set_lolalytics()``
+      3. LLM fetch (requires API key)
+    """
 
     def __init__(
         self,
@@ -134,12 +140,21 @@ class RuntimeCounterStore:
         self._owns_client = client is None
         self._client = client or httpx.AsyncClient(timeout=timeout)
         self._inflight: dict[tuple[str, str], asyncio.Task[list[CounterEntry]]] = {}
+        self._lolalytics: object | None = None  # LolalyticsCounterFetcher, set post-init
 
     # -- Sync surface ----------------------------------------------------
 
     @property
     def enabled(self) -> bool:
         return bool(self.api_key)
+
+    def set_lolalytics(self, fetcher: object) -> None:
+        """Attach a LolalyticsCounterFetcher as Tier 2.5 in the resolution chain.
+
+        Called from _hydrate_champions_and_icons once the champion map is ready.
+        Accepts ``object`` to avoid a circular import; duck-typed at call site.
+        """
+        self._lolalytics = fetcher
 
     def set_patch(self, patch: str) -> None:
         """Switch the cache namespace when Data Dragon reports a new patch.
@@ -181,6 +196,26 @@ class RuntimeCounterStore:
             self._inflight.pop(key, None)
 
     async def _fetch(self, enemy_key: str, role: Role) -> list[CounterEntry]:
+        # Tier 2.5 — Lolalytics (fast, free, no API key required).
+        if self._lolalytics is not None:
+            try:
+                lolalytics_result: list[CounterEntry] = await self._lolalytics.fetch(  # type: ignore[attr-defined]
+                    enemy_key, role
+                )
+                if lolalytics_result:
+                    self.cache.set(
+                        self._cache_key(enemy_key, role),
+                        lolalytics_result,
+                        expire=self.cache_ttl,
+                    )
+                    return lolalytics_result
+            except Exception:  # noqa: BLE001
+                logger.debug("lolalytics_prefetch_error enemy=%s role=%s", enemy_key, role)
+
+        # Tier 3 — LLM fallback.
+        if not self.enabled:
+            return []
+
         prompt = (
             f"Counters against {enemy_key} in {role}? "
             "Return a JSON object with field 'counters' containing 5 counter picks."
