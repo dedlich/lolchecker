@@ -36,6 +36,7 @@ class Diagnostics(QObject):
         self._timer.timeout.connect(self._log)
         self._scheduler = None  # type: ignore[var-annotated]
         self._vision = None  # type: ignore[var-annotated]
+        self._health_monitor = None  # type: ignore[var-annotated]
         self._event_latencies_ms: list[float] = []
         self._state_update_ms: list[float] = []
         self._last_log = time.monotonic()
@@ -58,6 +59,11 @@ class Diagnostics(QObject):
         """Optional: hook the vision-observation service so its counters
         appear in the periodic [DIAG] line. No-op if vision is disabled."""
         self._vision = vision_service
+
+    def attach_health_monitor(self, health_monitor) -> None:  # type: ignore[no-untyped-def]
+        """Attach the process-wide HealthMonitor so unhealthy services are
+        surfaced in the periodic [DIAG] log line."""
+        self._health_monitor = health_monitor
 
     def record_event_latency_ms(self, latency_ms: float) -> None:
         """Caller invokes this when an LCU/LCDA event finishes processing,
@@ -109,9 +115,17 @@ class Diagnostics(QObject):
                 )
             except Exception:  # noqa: BLE001 — diagnostics must never raise
                 vision_part = ""
+        health_part = ""
+        if self._health_monitor is not None:
+            try:
+                unhealthy = self._health_monitor.all_unhealthy()
+                if unhealthy:
+                    health_part = f" unhealthy={','.join(unhealthy)}"
+            except Exception:  # noqa: BLE001
+                health_part = ""
         logger.info(
-            "diagnostics cpu=%.1f%% mem=%.0fMB fps=%.2f evt_lat=%.1fms upd_dt=%.2fms%s",
-            cpu, mem_mb, fps, avg_evt, avg_upd, vision_part,
+            "diagnostics cpu=%.1f%% mem=%.0fMB fps=%.2f evt_lat=%.1fms upd_dt=%.2fms%s%s",
+            cpu, mem_mb, fps, avg_evt, avg_upd, vision_part, health_part,
         )
         self._event_latencies_ms.clear()
         self._state_update_ms.clear()

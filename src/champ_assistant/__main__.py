@@ -322,6 +322,8 @@ def _run_with_ui(args: argparse.Namespace) -> int:
     lifecycle.register("diagnostics", diagnostics.stop)
     diagnostics.attach_scheduler(scheduler)
     diagnostics.attach_store(store)
+    from champ_assistant import health_monitor as _health_global
+    diagnostics.attach_health_monitor(_health_global.monitor())
 
     # Performance baseline (charter step A1 — Fastest). Records named
     # phase timestamps from process start so we can audit cold-start
@@ -1011,12 +1013,24 @@ async def _run_lcda_watcher(
     diagnostics = getattr(overlay, "_diagnostics", None)
     scheduler = getattr(overlay, "_scheduler", None)
 
-    # Health monitor — track LCDA pipeline reliability (charter C2).
-    # Failures + recoveries flow into the per-service registry; the
-    # restart hook lives at the source level (LcdaSource owns its own
-    # reconnect logic, so the monitor only triggers a logged signal).
+    # Health monitor — track LCDA pipeline reliability (charter C2 + C5).
+    # On consecutive store-commit failures the recovery callback clears
+    # in-game state so the UI returns to idle; the next successful poll
+    # naturally re-populates it. LcdaSource handles LCDA-unreachable
+    # internally (backoff + retry); the callback only fires when the
+    # state-commit layer itself is stuck.
     from champ_assistant import health_monitor as _health
-    _health.monitor().register_service("lcda_pipeline")
+
+    def _recover_lcda_pipeline() -> None:
+        if store is not None:
+            try:
+                store.update(lcda_snapshot=None, phase="idle", game_time=0.0)
+            except Exception:  # noqa: BLE001
+                log.exception("lcda_recovery_state_reset_failed")
+
+    _health.monitor().register_service(
+        "lcda_pipeline", restart_callback=_recover_lcda_pipeline,
+    )
 
     # Decision engine (charter B1) — runs once per snapshot, logs the
     # top recommendation AND pushes the full sorted list into the
