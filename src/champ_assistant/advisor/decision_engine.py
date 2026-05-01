@@ -356,7 +356,59 @@ def _enemy_drake_stack_count(snapshot: "LcdaSnapshot") -> int:
     )
 
 
+HERALD_USAGE_WINDOW_S = 180.0   # enemy has ~3 min to place the herald after pickup
+
 _LANE_DISPLAY: dict[str, str] = {"L0": "Bot", "L1": "Mid", "L2": "Top"}
+
+
+def _enemy_herald_pickup(snapshot: "LcdaSnapshot") -> tuple[float, float] | None:
+    """Return (pickup_game_time, remaining_window_s) if enemy picked up herald
+    and the 3-minute usage window hasn't expired, else None.
+
+    Walks HeraldKill events to find the last one taken by an enemy player.
+    Only returns a result within HERALD_USAGE_WINDOW_S seconds of pickup.
+    """
+    events = getattr(snapshot, "raw_events", []) or []
+    enemies = list(getattr(snapshot, "enemies", []) or [])
+    if not events or not enemies:
+        return None
+    enemy_ids = _player_ids(enemies)
+    herald_kills = [e for e in events if e.get("EventName") == "HeraldKill"]
+    if not herald_kills:
+        return None
+    last = herald_kills[-1]
+    if (last.get("KillerName") or "") not in enemy_ids:
+        return None
+    pickup_t = float(last.get("EventTime") or 0.0)
+    game_time = getattr(snapshot, "game_time", 0.0)
+    remaining = HERALD_USAGE_WINDOW_S - (game_time - pickup_t)
+    if remaining <= 0:
+        return None
+    return (pickup_t, remaining)
+
+
+def _active_enemy_inhibitors_down(snapshot: "LcdaSnapshot") -> int:
+    """Count enemy inhibitor buildings currently destroyed.
+
+    Uses KillerName matching against ally ids to identify enemy inhibitor
+    kills. Subtracts InhibitorRespawned events (no team on those, so we
+    treat all respawns as restoring one enemy inhibitor — conservative and
+    correct when only one team's inhibs are down).
+    """
+    events = getattr(snapshot, "raw_events", []) or []
+    allies = list(getattr(snapshot, "allies", []) or [])
+    if not events or not allies:
+        return 0
+    ally_ids = _player_ids(allies)
+    killed = sum(
+        1 for e in events
+        if e.get("EventName") == "InhibitorKilled"
+        and (e.get("KillerName") or "") in ally_ids
+    )
+    respawned = sum(
+        1 for e in events if e.get("EventName") == "InhibitorRespawned"
+    )
+    return max(0, killed - respawned)
 
 
 def _parse_turret_name(name: str) -> tuple[str, str, str] | None:
@@ -1319,6 +1371,59 @@ def rule_ace_detected(snapshot: "LcdaSnapshot") -> Recommendation | None:
     )
 
 
+def rule_enemy_herald_danger(snapshot: "LcdaSnapshot") -> Recommendation | None:
+    """Enemy picked up Rift Herald → tower-push wave incoming.
+
+    Only fires within HERALD_USAGE_WINDOW_S (3 min) of pickup so the warning
+    auto-expires once the herald has almost certainly been placed.
+    """
+    pickup = _enemy_herald_pickup(snapshot)
+    if pickup is None:
+        return None
+    _, remaining = pickup
+    return Recommendation(
+        text=f"Enemy Herald ({int(remaining)}s) — TOP-Push! Ward River!",
+        severity="warn",
+        category="lane",
+        confidence=0.85,
+        risk="MEDIUM",
+        ttl_s=remaining,
+        kind="enemy_herald",
+        reasons=(
+            "Gegner pickupte Rift Herald",
+            f"Verbleibendes Fenster: ~{int(remaining)}s",
+            "Herald → TOP/MID-Tower = frühe Gold-Plates",
+            "Ward Top-River + Tri-Bush vor dem Push",
+        ),
+    )
+
+
+def rule_enemy_inhibitor_down(snapshot: "LcdaSnapshot") -> Recommendation | None:
+    """One or more enemy inhibitor buildings are dead → Super-Minions active.
+
+    Unlike base_exposed (inhibitor turret fallen), this fires only after the
+    actual inhibitor structure is destroyed, signalling super-minion pressure
+    is already live.
+    """
+    count = _active_enemy_inhibitors_down(snapshot)
+    if count <= 0:
+        return None
+    return Recommendation(
+        text=f"{count}x Feind-Inhib DOWN — Super-Minions spawnen! Nexus-Angriff!",
+        severity="alert" if count >= 2 else "warn",
+        category="lane",
+        confidence=0.90,
+        risk="LOW",
+        ttl_s=90.0,
+        kind="inhib_down",
+        reasons=(
+            f"{count} enemy inhibitor(s) zerstört",
+            "Super-Minions = dauerhafter Minion-Pressure",
+            "Pushe mit Welle für Nexus-Türme",
+        ),
+    )
+
+
 def rule_game_ended(snapshot: "LcdaSnapshot") -> Recommendation | None:
     """Surface a final Win/Loss card when the GameEnd event is present.
 
@@ -1385,7 +1490,9 @@ ALL_RULES: tuple[Callable[["LcdaSnapshot"], Recommendation | None], ...] = (
     rule_kill_lead_snowball,
     rule_kill_deficit_defensive,
     rule_late_game_group,
-    # Lane/base pressure — structural map-state (turrets).
+    # Lane/base pressure — structural map-state (turrets + inhibs + herald).
+    rule_enemy_herald_danger,
+    rule_enemy_inhibitor_down,
     rule_enemy_base_exposed,
     rule_lane_pressure,
 )
@@ -1451,6 +1558,11 @@ def _suppress_dominated(recs: list[Recommendation]) -> list[Recommendation]:
     # suppress generic lane_open cards when a base-exposure alert is present.
     if "base_exposed" in kinds:
         recs = [r for r in recs if r.kind != "lane_open"]
+
+    # Rule 7 — inhib_down (building destroyed) supersedes base_exposed
+    # (turret just fell). The state has advanced past base_exposed.
+    if "inhib_down" in kinds:
+        recs = [r for r in recs if r.kind not in {"base_exposed", "lane_open"}]
 
     return recs
 

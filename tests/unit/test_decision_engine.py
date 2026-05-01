@@ -699,10 +699,15 @@ from champ_assistant.advisor.decision_engine import (
     _parse_turret_name,
     _enemy_turrets_down,
     _kill_streak,
+    _enemy_herald_pickup,
+    _active_enemy_inhibitors_down,
     rule_lane_pressure,
     rule_ace_detected,
     rule_enemy_base_exposed,
+    rule_enemy_herald_danger,
+    rule_enemy_inhibitor_down,
     rule_game_ended,
+    HERALD_USAGE_WINDOW_S,
 )
 
 
@@ -1027,3 +1032,151 @@ def test_suppress_game_end_drops_all_others() -> None:
     result = _suppress_dominated(recs)
     assert len(result) == 1
     assert result[0].kind == "game_end"
+
+
+# ----------------------------------------------------------------------
+# Herald tracking — _enemy_herald_pickup + rule_enemy_herald_danger
+# ----------------------------------------------------------------------
+
+def _herald_kill_event(killer: str, event_time: float = 500.0) -> dict:
+    return {"EventName": "HeraldKill", "KillerName": killer, "EventTime": event_time}
+
+
+def test_enemy_herald_pickup_returns_remaining_when_enemy_took_herald() -> None:
+    enemy = _Player(summoner_name="EnemyP", champion_name="Vi")
+    snap = _Snap(
+        game_time=550.0,
+        enemies=[enemy],
+        raw_events=[_herald_kill_event("Vi", event_time=500.0)],
+    )
+    result = _enemy_herald_pickup(snap)
+    assert result is not None
+    pickup_t, remaining = result
+    assert pickup_t == 500.0
+    assert abs(remaining - (HERALD_USAGE_WINDOW_S - 50.0)) < 0.5
+
+
+def test_enemy_herald_pickup_returns_none_when_ally_took_herald() -> None:
+    ally = _Player(summoner_name="Me", champion_name="Jarvan IV")
+    enemy = _Player(summoner_name="EnemyP", champion_name="Vi")
+    snap = _Snap(
+        game_time=550.0,
+        allies=[ally],
+        enemies=[enemy],
+        raw_events=[_herald_kill_event("Jarvan IV", event_time=500.0)],
+    )
+    assert _enemy_herald_pickup(snap) is None
+
+
+def test_enemy_herald_pickup_returns_none_after_window_expires() -> None:
+    enemy = _Player(champion_name="Vi")
+    snap = _Snap(
+        game_time=700.0,  # 200s after pickup — past HERALD_USAGE_WINDOW_S=180
+        enemies=[enemy],
+        raw_events=[_herald_kill_event("Vi", event_time=500.0)],
+    )
+    assert _enemy_herald_pickup(snap) is None
+
+
+def test_rule_enemy_herald_danger_fires_within_window() -> None:
+    enemy = _Player(champion_name="Hecarim", summoner_name="EnemyJG")
+    snap = _Snap(
+        game_time=560.0,
+        enemies=[enemy],
+        raw_events=[_herald_kill_event("Hecarim", event_time=500.0)],
+    )
+    rec = rule_enemy_herald_danger(snap)
+    assert rec is not None
+    assert "Herald" in rec.text
+    assert rec.kind == "enemy_herald"
+
+
+def test_rule_enemy_herald_danger_silent_when_no_herald() -> None:
+    snap = _Snap(enemies=[_Player(champion_name="Vi")], raw_events=[])
+    assert rule_enemy_herald_danger(snap) is None
+
+
+# ----------------------------------------------------------------------
+# Inhibitor tracking — _active_enemy_inhibitors_down + rule
+# ----------------------------------------------------------------------
+
+def _inhib_killed_event(killer: str) -> dict:
+    return {"EventName": "InhibitorKilled", "KillerName": killer, "EventTime": 1800.0}
+
+
+def _inhib_respawned_event() -> dict:
+    return {"EventName": "InhibitorRespawned", "EventTime": 2300.0}
+
+
+def test_active_enemy_inhibitors_down_counts_ally_kills() -> None:
+    ally = _Player(champion_name="Jinx", summoner_name="Carry")
+    snap = _Snap(
+        allies=[ally],
+        raw_events=[
+            _inhib_killed_event("Jinx"),
+            _inhib_killed_event("Jinx"),
+        ],
+    )
+    assert _active_enemy_inhibitors_down(snap) == 2
+
+
+def test_active_enemy_inhibitors_down_subtracts_respawns() -> None:
+    ally = _Player(champion_name="Jinx")
+    snap = _Snap(
+        allies=[ally],
+        raw_events=[
+            _inhib_killed_event("Jinx"),
+            _inhib_respawned_event(),
+        ],
+    )
+    assert _active_enemy_inhibitors_down(snap) == 0
+
+
+def test_active_enemy_inhibitors_down_ignores_enemy_kills() -> None:
+    """Enemy killing OUR inhibitor — not counted."""
+    ally = _Player(champion_name="Jinx")
+    snap = _Snap(
+        allies=[ally],
+        raw_events=[_inhib_killed_event("Vi")],  # Vi is not in allies
+    )
+    assert _active_enemy_inhibitors_down(snap) == 0
+
+
+def test_rule_enemy_inhibitor_down_fires_when_active() -> None:
+    ally = _Player(champion_name="Jinx")
+    snap = _Snap(
+        allies=[ally],
+        raw_events=[_inhib_killed_event("Jinx")],
+    )
+    rec = rule_enemy_inhibitor_down(snap)
+    assert rec is not None
+    assert "Inhib" in rec.text
+    assert rec.kind == "inhib_down"
+
+
+def test_rule_enemy_inhibitor_down_silent_when_respawned() -> None:
+    ally = _Player(champion_name="Jinx")
+    snap = _Snap(
+        allies=[ally],
+        raw_events=[_inhib_killed_event("Jinx"), _inhib_respawned_event()],
+    )
+    assert rule_enemy_inhibitor_down(snap) is None
+
+
+# ----------------------------------------------------------------------
+# Suppression: inhib_down supersedes base_exposed + lane_open
+# ----------------------------------------------------------------------
+
+def test_suppress_inhib_down_removes_base_exposed_and_lane_open() -> None:
+    recs = [
+        _rec("inhib_down", "warn"),
+        _rec("base_exposed", "alert"),
+        _rec("lane_open", "info"),
+        _rec("fight", "alert"),
+    ]
+    result = _suppress_dominated(recs)
+    result_kinds = {r.kind for r in result}
+    assert "inhib_down" in result_kinds
+    assert "base_exposed" not in result_kinds
+    assert "lane_open" not in result_kinds
+    assert "fight" in result_kinds  # fight stays
