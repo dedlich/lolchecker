@@ -111,6 +111,114 @@ def build_item_set(
     }
 
 
+def build_item_set_from_result(
+    *,
+    champion_key: str,
+    champion_id: int,
+    build_result: object,
+) -> dict[str, Any] | None:
+    """Build an LCU item-set payload from a ``BuildResult`` produced by
+    the Meraki-based build engine. Uses item IDs directly — no ITEM_IDS
+    lookup required. Returns None when the result has no scoreable items."""
+    from ..advisor.build_engine import BuildResult
+    if not isinstance(build_result, BuildResult):
+        return None
+
+    blocks: list[dict[str, Any]] = []
+
+    if build_result.starter_id:
+        blocks.append(_block("Starting Items", [build_result.starter_id]))
+
+    core_ids = [s.item_id for s in build_result.core_items if s.item_id]
+    if core_ids:
+        blocks.append(_block("Core Build", core_ids))
+
+    if build_result.boots_id:
+        blocks.append(_block("Boots", [build_result.boots_id]))
+
+    sit_ids = [s.item_id for s in build_result.situational_items if s.item_id]
+    if sit_ids:
+        blocks.append(_block("Situational", sit_ids))
+
+    if not blocks:
+        return None
+
+    return {
+        "title": f"{SET_TITLE_PREFIX}: {champion_key}",
+        "type": "custom",
+        "associatedChampions": [champion_id] if champion_id > 0 else [],
+        "associatedMaps": [],
+        "blocks": blocks,
+        "uid": f"champ-assistant-{champion_key}-{int(time.time())}",
+        "sortrank": 1,
+        "startedFrom": "blank",
+        "preferredItemSlots": [],
+    }
+
+
+async def apply_item_set_from_result(
+    client: LcuClient,
+    *,
+    champion_key: str,
+    champion_id: int,
+    build_result: object,
+) -> dict[str, Any] | None:
+    """Push a Meraki-derived BuildResult as an LCU item set (blueprint).
+
+    Replaces any prior Champ Assistant sets for this champion with four
+    blocks: Starting / Core Build / Boots / Situational. Returns the
+    written set on success, None when nothing was written.
+    """
+    new_set = build_item_set_from_result(
+        champion_key=champion_key,
+        champion_id=champion_id,
+        build_result=build_result,
+    )
+    if new_set is None:
+        return None
+
+    summoner = await current_summoner(client)
+    if summoner is None:
+        raise LcuClientError("current summoner unknown")
+    summoner_id = summoner.get("summonerId")
+    account_id = summoner.get("accountId")
+    if not summoner_id:
+        raise LcuClientError("current summoner has no summonerId")
+
+    existing_payload: dict[str, Any] = {"accountId": account_id, "itemSets": []}
+    try:
+        response = await client.get(
+            f"/lol-item-sets/v1/item-sets/{summoner_id}/sets"
+        )
+        response.raise_for_status()
+        existing_payload = response.json() or existing_payload
+    except (LcuClientError, ValueError) as exc:
+        logger.info("read_item_sets_failed: %s — starting from scratch", exc)
+
+    sets = list(existing_payload.get("itemSets") or [])
+    sets = [
+        s for s in sets
+        if not (
+            isinstance(s, dict)
+            and isinstance(s.get("title"), str)
+            and s["title"].startswith(SET_TITLE_PREFIX)
+        )
+    ]
+    sets.append(new_set)
+
+    put_response = await client.request(
+        "PUT",
+        f"/lol-item-sets/v1/item-sets/{summoner_id}/sets",
+        json={"accountId": account_id, "itemSets": sets},
+    )
+    put_response.raise_for_status()
+    logger.info(
+        "apply_item_set_from_result written summoner=%s title=%r blocks=%d",
+        summoner_id, new_set["title"], len(new_set["blocks"]),
+    )
+    return new_set
+
+
 async def apply_item_set(
     client: LcuClient,
     *,

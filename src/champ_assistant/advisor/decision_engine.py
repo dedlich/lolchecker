@@ -2904,6 +2904,66 @@ ALL_RULES: tuple[Callable[["LcdaSnapshot"], Recommendation | None], ...] = (
 _SEVERITY_RANK = {"alert": 0, "warn": 1, "info": 2}
 
 
+# ─── Situational Build Rule ───────────────────────────────────────────────────
+
+def rule_situational_build(
+    snapshot: "LcdaSnapshot",
+    build_result: object,
+) -> Recommendation | None:
+    """Recommend situational items based on game state and enemy team comp.
+
+    Fires after the first 2 minutes when enemy champions are confirmed.
+    ``build_result`` is a ``BuildResult`` from the build engine; passed in
+    by ``evaluate`` so the rule stays pure — no async I/O.
+
+    Suppressed early game and when no situational items are computed.
+    """
+    from ..advisor.build_engine import BuildResult  # local import avoids circular
+
+    if not isinstance(build_result, BuildResult):
+        return None
+
+    game_time = float(getattr(snapshot, "game_time", 0.0) or 0.0)
+    if game_time < 120.0:
+        return None
+
+    situational = build_result.situational_items
+    if not situational:
+        return None
+
+    # Pick the top 3 situational items and build a concise recommendation.
+    top = situational[:3]
+
+    # Collect context-driven reasons (lines that mention enemy comp adjustments).
+    context_lines = [
+        r for s in top
+        for r in s.reasons
+        if any(kw in r for kw in ("Gegner", "Sustain", "Tank", "Penetration", "Golddefizit"))
+    ]
+
+    item_list = " / ".join(s.item_name for s in top)
+    if context_lines:
+        headline = context_lines[0]
+        text = f"Situational: {item_list} — {headline}"
+    else:
+        text = f"Situational Items: {item_list}"
+
+    all_reasons = tuple(
+        r for s in top for r in s.reasons[:2]
+    )
+
+    return Recommendation(
+        text=text,
+        severity="info",
+        category="lane",
+        confidence=0.80,
+        risk="LOW",
+        ttl_s=120.0,
+        kind="situational_build",
+        reasons=all_reasons,
+    )
+
+
 def _suppress_dominated(recs: list[Recommendation]) -> list[Recommendation]:
     """Remove recommendations made redundant by more specific ones.
 
@@ -3031,6 +3091,7 @@ def evaluate(
     *,
     rules: tuple = ALL_RULES,
     spell_tracker: "SpellTracker | None" = None,
+    situational_build: object = None,
 ) -> list[Recommendation]:
     """Run every rule against ``snapshot`` and return the non-None
     results sorted by severity (alerts first). Pure function — safe
@@ -3041,6 +3102,10 @@ def evaluate(
 
     ``spell_tracker``: when provided, enables context-aware rules that
     require user-tracked summoner spell cooldowns (e.g. flash_down).
+
+    ``situational_build``: a ``BuildResult`` from the build engine.
+    When provided, fires ``rule_situational_build`` with item recs
+    adjusted for the live enemy team composition.
     """
     if snapshot is None:
         return []
@@ -3064,5 +3129,12 @@ def evaluate(
                     out.append(rec)
             except Exception:  # noqa: BLE001
                 pass
+    if situational_build is not None:
+        try:
+            rec = rule_situational_build(snapshot, situational_build)
+            if rec is not None:
+                out.append(rec)
+        except Exception:  # noqa: BLE001
+            pass
     out.sort(key=lambda r: _SEVERITY_RANK.get(r.severity, 99))
     return _suppress_dominated(out)

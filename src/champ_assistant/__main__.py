@@ -749,7 +749,13 @@ def _run_with_ui(args: argparse.Namespace) -> int:
     store.subscribe(_track_phase_changes)
 
     lcda_task = loop.create_task(
-        _run_lcda_watcher(overlay, floating), name="lcda-watcher"
+        _run_lcda_watcher(
+            overlay, floating,
+            champions=assistant.champions,
+            tags=assistant.tags,
+            cache_dir=args.data_dir.parent / "ddragon_cache",
+        ),
+        name="lcda-watcher",
     )
     lifecycle.register("lcda_task", lcda_task.cancel)
 
@@ -995,6 +1001,10 @@ def _run_with_ui(args: argparse.Namespace) -> int:
 async def _run_lcda_watcher(
     overlay: MainOverlay,
     floating_consumers: list[object],
+    *,
+    champions: dict | None = None,
+    tags: object = None,
+    cache_dir: Path | None = None,
 ) -> None:
     """Background task that polls LCDA and routes snapshots through the
     StateStore. The store's listeners then drive overlay + floating-widget
@@ -1003,6 +1013,12 @@ async def _run_lcda_watcher(
     LCDA is only reachable while a match is loaded. The source already
     handles the alive/stale transition; we just commit each snapshot to
     the store and let pub/sub do the dispatch.
+
+    ``champions``: DataDragon champions dict (int-id → Champion). Used to
+    map LCDA display names to Meraki URL keys for build recommendations.
+    ``tags``: TagsData, used to classify enemies for game-context scoring.
+    ``cache_dir``: Meraki disk-cache directory. Build engine is disabled
+    when None (e.g. dry-run or missing dir).
     """
     import time as _time
 
@@ -1050,6 +1066,131 @@ async def _run_lcda_watcher(
         None,
     )
 
+    # Build engine — fetches Meraki data on champion change and maintains a
+    # BuildResult that evaluate() uses for situational item recommendations.
+    # Disabled when cache_dir is None or the Meraki fetch fails.
+    _build_result: list[object] = [None]        # mutable single-element wrapper
+    _build_champion: list[str] = [""]           # last champion we built for
+    _build_log = logging.getLogger("champ_assistant.build_engine")
+    # name_to_key: DataDragon display name → Meraki URL key (e.g. "Miss Fortune" → "MissFortune")
+    _name_to_key: dict[str, str] = (
+        {c.name: c.key for c in (champions or {}).values()} if champions else {}
+    )
+
+    async def _maybe_update_build(snap: object) -> None:
+        """Compute (or reuse cached) build result for the current champion."""
+        if cache_dir is None or snap is None:
+            return
+        # Identify the local player's champion from LCDA.
+        active_summoner = str(getattr(snap, "active_summoner", "") or "")
+        allies = list(getattr(snap, "allies", []) or [])
+        local_champ_display = next(
+            (
+                str(getattr(p, "champion_name", "") or "")
+                for p in allies
+                if str(getattr(p, "summoner_name", "") or "") == active_summoner
+            ),
+            "",
+        )
+        if not local_champ_display or local_champ_display == _build_champion[0]:
+            return  # same champion — reuse existing build result
+        _build_champion[0] = local_champ_display
+        _build_result[0] = None  # clear stale result immediately
+        meraki_key = _name_to_key.get(local_champ_display, local_champ_display.replace(" ", ""))
+        _build_log.info("build_engine_starting champion=%s key=%s", local_champ_display, meraki_key)
+        try:
+            from champ_assistant.advisor.build_engine import (
+                GameContext,
+                detect_archetype,
+                recommend_items,
+            )
+            from champ_assistant.advisor.build_adapter import (
+                SUSTAIN_KEYS,
+                damage_profile_for_tags,
+            )
+            from champ_assistant.data.meraki import MerakiClient, MerakiError
+            meraki_cache = cache_dir / "meraki"
+            meraki_cache.mkdir(parents=True, exist_ok=True)
+            async with MerakiClient(meraki_cache) as mc:
+                champion_dict = await mc.fetch_champion(meraki_key)
+                items_dict = await mc.fetch_items()
+            # Build game context from current enemy team.
+            enemies = list(getattr(snap, "allies", []) or [])  # recalculate after await
+            enemies = list(getattr(snap, "enemies", []) or [])
+            ap_count = ad_count = sustain_count = tank_count = 0
+            for enemy in enemies:
+                champ_name = str(getattr(enemy, "champion_name", "") or "")
+                champ_tags = tags.tags_for(champ_name) if tags is not None else []
+                profile = damage_profile_for_tags(champ_tags)
+                if "AP" in profile:
+                    ap_count += 1
+                if "AD" in profile:
+                    ad_count += 1
+                if champ_name in SUSTAIN_KEYS:
+                    sustain_count += 1
+                if "Tank" in champ_tags:
+                    tank_count += 1
+            allies_val = sum(int(getattr(a, "items_value", 0) or 0) for a in (getattr(snap, "allies", []) or []))
+            enemies_val = sum(int(getattr(e, "items_value", 0) or 0) for e in enemies)
+            context = GameContext(
+                enemy_ap_count=ap_count,
+                enemy_ad_count=ad_count,
+                enemy_sustain_count=sustain_count,
+                enemy_tank_count=tank_count,
+                game_time_s=float(getattr(snap, "game_time", 0.0) or 0.0),
+                player_behind=(enemies_val - allies_val) > 3000,
+            )
+            archetype = detect_archetype(champion_dict)
+            result = recommend_items(champion_dict, items_dict, archetype, context)
+            _build_result[0] = result
+            _build_log.info(
+                "build_engine_done champion=%s play_style=%s core=%d situational=%d",
+                local_champ_display, archetype.play_style,
+                len(result.core_items), len(result.situational_items),
+            )
+            # Push the build as an LCU item set (game blueprint).
+            # The LCU is only reachable when League is running; failures
+            # here are non-fatal — the recommendation panel still shows.
+            asyncio.ensure_future(_push_blueprint(meraki_key, result))
+        except MerakiError as exc:
+            _build_log.warning("build_engine_meraki_error champion=%s: %s", local_champ_display, exc)
+        except Exception:
+            _build_log.exception("build_engine_failed champion=%s", local_champ_display)
+
+    async def _push_blueprint(champion_key: str, build_result: object) -> None:
+        """Push BuildResult as an LCU item-set blueprint (fire-and-forget)."""
+        from champ_assistant.lcu.client import LcuClient, LcuClientError
+        from champ_assistant.lcu.item_sets import apply_item_set_from_result
+        from champ_assistant.lcu.lockfile import (
+            LockfileNotFound,
+            find_lockfile,
+            parse_lockfile,
+        )
+        try:
+            lockfile_path = find_lockfile()
+            lockfile = parse_lockfile(lockfile_path)
+        except LockfileNotFound:
+            _build_log.debug("blueprint_push_skipped: lockfile not found (client not running)")
+            return
+        champ_id = next(
+            (c.id for c in (champions or {}).values() if c.key == champion_key),
+            0,
+        )
+        try:
+            async with LcuClient(lockfile) as lcu:
+                result = await apply_item_set_from_result(
+                    lcu,
+                    champion_key=champion_key,
+                    champion_id=champ_id,
+                    build_result=build_result,
+                )
+                if result is not None:
+                    _build_log.info("blueprint_pushed champion=%s", champion_key)
+        except LcuClientError as exc:
+            _build_log.warning("blueprint_push_failed champion=%s: %s", champion_key, exc)
+        except Exception:
+            _build_log.exception("blueprint_push_error champion=%s", champion_key)
+
     async def on_snapshot(snap: object) -> None:
         arrived = _time.monotonic()
         try:
@@ -1085,10 +1226,16 @@ async def _run_lcda_watcher(
         # floating panel for live on-screen display. Also keep the
         # InsightPanel's internal "latest top" up-to-date so the
         # Ctrl+Alt+I hotkey always opens with the current rec.
+        # Update build engine if champion changed (debounced by champion name).
+        try:
+            await _maybe_update_build(snap)
+        except Exception:
+            log.exception("maybe_update_build_failed")
         try:
             recs = _decisions.evaluate(
                 snap,
                 spell_tracker=overlay.summoner_tracker.tracker(),
+                situational_build=_build_result[0],
             )
             top = recs[0].text if recs else ""
             if top and top != _last_recommendation[0]:
