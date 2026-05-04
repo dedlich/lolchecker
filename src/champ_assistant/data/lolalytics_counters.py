@@ -241,7 +241,7 @@ class LolalyticsCounterFetcher:
             "tier": self._tier,
             "region": self._region,
             "lane": lane,
-            "hv": "3",
+            "hv": "4",
         }
 
         try:
@@ -254,6 +254,10 @@ class LolalyticsCounterFetcher:
                 "lolalytics_counter_fetch_failed enemy=%s role=%s err=%s",
                 enemy_key, role, exc,
             )
+            # Cache empty result on 404 (dead endpoint) or 429 (rate limited)
+            # so repeated champ-select polls don't keep hammering the API.
+            if isinstance(exc, httpx.HTTPStatusError) and exc.response.status_code in (404, 429):
+                self._cache.set(self._cache_key(enemy_key, role), [], expire=300)
             return []
 
         rows = _extract_matchup_rows(payload)

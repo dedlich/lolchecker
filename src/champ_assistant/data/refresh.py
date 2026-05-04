@@ -142,7 +142,7 @@ async def _fetch_lane(
         "tier": tier,
         "region": region,
         "lane": lane,
-        "hv": "3",
+        "hv": "4",
     }
     try:
         resp = await client.get(LOLALYTICS_BASE, params=params, headers=_HEADERS)

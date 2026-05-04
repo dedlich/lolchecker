@@ -1193,9 +1193,19 @@ async def _run_lcda_watcher(
                     build_result=build_result,
                 )
                 if result is not None:
-                    _build_log.info("blueprint_pushed champion=%s", champion_key)
+                    blocks = result.get("blocks") or []
+                    total_items = sum(len(b.get("items") or []) for b in blocks)
+                    _build_log.info(
+                        "blueprint_pushed champion=%s blocks=%d items=%d",
+                        champion_key, len(blocks), total_items,
+                    )
+                else:
+                    _build_log.error(
+                        "blueprint_push_empty champion=%s — build_item_set_from_result returned None",
+                        champion_key,
+                    )
         except LcuClientError as exc:
-            _build_log.warning("blueprint_push_failed champion=%s: %s", champion_key, exc)
+            _build_log.error("blueprint_push_failed champion=%s: %s", champion_key, exc)
         except Exception:
             _build_log.exception("blueprint_push_error champion=%s", champion_key)
 
@@ -1273,6 +1283,8 @@ async def _run_lcda_watcher(
         except Exception:
             log.exception("lcda_overlay_update_failed")
         for widget in floating_consumers:
+            if not hasattr(widget, "update_snapshot"):
+                continue
             try:
                 widget.update_snapshot(new.lcda_snapshot)  # type: ignore[attr-defined]
             except Exception:

@@ -254,6 +254,10 @@ class RuntimeCounterStore:
                 extra={"enemy": enemy_key, "role": role,
                        "error_type": type(exc).__name__},
             )
+            # Cache empty result on 429 so back-to-back retries don't worsen
+            # the rate limit. Use a short TTL so it recovers after a few minutes.
+            if isinstance(exc, httpx.HTTPStatusError) and exc.response.status_code == 429:
+                self.cache.set(self._cache_key(enemy_key, role), [], expire=300)
             return []
         except Exception:  # noqa: BLE001
             logger.exception("llm_unexpected_error provider=%s", self.provider.name)

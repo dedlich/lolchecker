@@ -111,6 +111,13 @@ def build_item_set(
     }
 
 
+def _resolve_id(item_id: int, item_name: str) -> int:
+    """Return item_id when valid, or fall back to ITEM_IDS name lookup."""
+    if item_id:
+        return item_id
+    return ITEM_IDS.get(item_name, 0)
+
+
 def build_item_set_from_result(
     *,
     champion_key: str,
@@ -118,39 +125,63 @@ def build_item_set_from_result(
     build_result: object,
 ) -> dict[str, Any] | None:
     """Build an LCU item-set payload from a ``BuildResult`` produced by
-    the Meraki-based build engine. Uses item IDs directly — no ITEM_IDS
-    lookup required. Returns None when the result has no scoreable items."""
+    the Meraki-based build engine. Falls back to ITEM_IDS name lookup when
+    item_id is 0. Returns None when the result has no scoreable items."""
     from ..advisor.build_engine import BuildResult
     if not isinstance(build_result, BuildResult):
         return None
 
     blocks: list[dict[str, Any]] = []
 
-    if build_result.starter_id:
-        blocks.append(_block("Starting Items", [build_result.starter_id]))
+    starter_id = build_result.starter_id or 0
+    boots_id = build_result.boots_id or 0
+    if not starter_id and build_result.starter_name:
+        starter_id = ITEM_IDS.get(build_result.starter_name, 0)
+    if not boots_id and build_result.boots_name:
+        boots_id = ITEM_IDS.get(build_result.boots_name, 0)
+
+    if starter_id:
+        blocks.append(_block("Starting Items", [starter_id]))
 
     # Build Order: exactly 6 item slots (boots counts as one slot).
     # With boots: item1 → boots → items 2-5 = 6 total.
     # Without boots (Cassiopeia): all 6 core items.
     core_list = list(build_result.core_items)
     ordered_ids: list[int] = []
-    if build_result.boots_id:
+    if boots_id:
         slot_items = core_list[:5]  # 5 items + boots = 6 slots
-        if slot_items and slot_items[0].item_id:
-            ordered_ids.append(slot_items[0].item_id)
-        ordered_ids.append(build_result.boots_id)
-        ordered_ids.extend(s.item_id for s in slot_items[1:] if s.item_id)
+        if slot_items:
+            rid = _resolve_id(slot_items[0].item_id, slot_items[0].item_name)
+            if rid:
+                ordered_ids.append(rid)
+        ordered_ids.append(boots_id)
+        ordered_ids.extend(
+            rid for s in slot_items[1:]
+            for rid in [_resolve_id(s.item_id, s.item_name)] if rid
+        )
     else:
-        ordered_ids.extend(s.item_id for s in core_list[:6] if s.item_id)
+        ordered_ids.extend(
+            rid for s in core_list[:6]
+            for rid in [_resolve_id(s.item_id, s.item_name)] if rid
+        )
 
     if ordered_ids:
         blocks.append(_block("Build Order", ordered_ids))
 
-    sit_ids = [s.item_id for s in build_result.situational_items if s.item_id]
+    sit_ids = [
+        rid for s in build_result.situational_items
+        for rid in [_resolve_id(s.item_id, s.item_name)] if rid
+    ]
     if sit_ids:
         blocks.append(_block("Situational", sit_ids))
 
     if not blocks:
+        logger.error(
+            "build_item_set_from_result_empty champion=%s — no resolvable item IDs "
+            "(core=%d sit=%d boots_id=%s starter_id=%s)",
+            champion_key, len(core_list), len(build_result.situational_items),
+            boots_id, starter_id,
+        )
         return None
 
     return {

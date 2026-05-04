@@ -810,7 +810,12 @@ def recommend_items(
     The top-6 scored items become core; items 7-12 become situational.
     Boots and starter Doran's item are selected separately.
     """
-    all_items = list(items.values())
+    # Ensure each item dict has "id" populated from the dict key (Meraki embeds
+    # it but guard against format drift where the field is missing or zero).
+    all_items = [
+        ({**v, "id": int(k)} if not int(v.get("id") or 0) and k.isdigit() else v)
+        for k, v in items.items()
+    ]
 
     # Only score completed Summoner's Rift items (ranked 5v5).
     # tier=1: starters/components/trinkets — excluded.
