@@ -380,11 +380,15 @@ def test_rabadon_passive_boosts_ap_mage() -> None:
     assert any("Rabadon" in r for r in s.reasons)
 
 
-def test_grievous_wounds_static_bonus_for_mage() -> None:
+def test_grievous_wounds_no_static_bonus_without_context() -> None:
+    """GW items must NOT get a free bonus — only context (sustain enemies) should boost them."""
     arch = _mage_arch()
-    s = score_item(_gw_item(), arch)
-    assert any("Grievous" in r for r in s.reasons)
-    assert s.score > 0
+    gw = _gw_item()
+    no_ctx = score_item(gw, arch)
+    with_ctx = score_item(gw, arch, GameContext(enemy_sustain_count=1))
+    assert not any("Grievous" in r for r in no_ctx.reasons)
+    assert any("Sustain-Gegner" in r for r in with_ctx.reasons)
+    assert with_ctx.score > no_ctx.score
 
 
 # ─── recommend_items ─────────────────────────────────────────────────────────

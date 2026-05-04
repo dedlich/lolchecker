@@ -594,11 +594,6 @@ def score_item(
             if kw("unmake", "abyssal"):
                 score += 45; reasons.append("AP reduction aura (Abyssal Mask)")
 
-    if (dt == "magic" or (dt == "physical" and ps == "assassin")) and kw(
-        "grievous", "morello", "chainsword", "executioner"
-    ):
-        score += 25; reasons.append("Grievous Wounds — counters heavy healer comps")
-
     # ── Irrelevant-stat penalties ─────────────────────────────────────────
     has_ad = _flat(stats.get("attackDamage")) > 0
     has_leth = _flat(stats.get("lethality")) > 0
