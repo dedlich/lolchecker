@@ -465,7 +465,7 @@ def score_item(
         return any(w in pn or w in il or w in desc for w in words)
 
     if dt == "magic" and kw("magical opus", "rabadon"):
-        score += 50; reasons.append("AP amplifier +35% bonus AP (Rabadon's)")
+        score += 90; reasons.append("AP amplifier +35% bonus AP (Rabadon's)")
 
     if dt == "magic" and kw("stasis", "zhonya"):
         bonus = (
@@ -476,7 +476,7 @@ def score_item(
         score += bonus; reasons.append("Stasis active — survive burst while diving/channeling")
 
     if "apAssassin" in attrs and not is_ranged and kw("gunblade"):
-        score += 40; reasons.append("Hybrid AP/AD + Omnivamp für melee AP-Assassinen (Gunblade)")
+        score += 65; reasons.append("Hybrid AP/AD + Omnivamp für melee AP-Assassinen (Gunblade)")
 
     if "apAssassin" in attrs and not is_ranged and kw("rocketbelt"):
         score += 50; reasons.append("Dash-Active: gap-closer für melee AP-Assassinen (Rocketbelt)")
