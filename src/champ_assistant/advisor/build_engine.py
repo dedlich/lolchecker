@@ -24,6 +24,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from champ_assistant.data.champion_scaling import ChampionScalingProfile
+
 
 # ─── Archetype constants ──────────────────────────────────────────────────────
 
@@ -244,6 +246,7 @@ def score_item(
     item: dict,
     archetype: ChampionArchetype,
     context: GameContext | None = None,
+    scaling: ChampionScalingProfile | None = None,
 ) -> ScoredItem:
     """Score one item for the given archetype (+ optional live game context).
 
@@ -379,6 +382,21 @@ def score_item(
                 score += 45; reasons.append("Stacking magic pen + sustain (Riftmaker)")
             if "void staff" in il:
                 score += 15; reasons.append("40% magic pen essential vs MR-stacking enemies")
+
+    # ── Hybrid ability scaling ────────────────────────────────────────────
+    # For AP-type champions with significant AD-scaling abilities (Akali, Corki,
+    # Kayle…), items that provide AD directly amplify their damage. Give them a
+    # proportional bonus instead of ignoring the stat entirely.
+    if scaling is not None and dt == "magic" and ps != "support":
+        phys_ratio = scaling.ad_ratio + scaling.bonus_ad_ratio
+        if phys_ratio >= 30.0:
+            ad = _flat(stats.get("attackDamage"))
+            if ad > 0:
+                # Normalized weight: 100% physical ratio → +0.30 multiplier, cap 0.45
+                weight = min(phys_ratio / 333.0, 0.45)
+                bonus = ad * weight
+                score += bonus
+                reasons.append(f"+{ad:.0f} AD ({phys_ratio:.0f}% physical ability ratio)")
 
     # ── Tank / Bruiser ────────────────────────────────────────────────────
     if ps in ("tank", "bruiser"):
@@ -608,7 +626,12 @@ def score_item(
         if dt == "physical" and not any([has_ad, has_leth, has_crit, has_apen, has_as]):
             score -= 40
         if dt == "magic" and not any([has_ap, has_mpen_pct, has_mpen_flat]):
-            score -= 60
+            # Hybrid champions: AD items contribute via their ability scaling —
+            # reduce the penalty instead of discarding them entirely.
+            if scaling is not None and scaling.is_hybrid and has_ad:
+                score -= 20
+            else:
+                score -= 60
 
     # ── Game context adjustments (situational scoring) ────────────────────
     if context is not None and score > 0:
@@ -716,6 +739,60 @@ def _select_starter(archetype: ChampionArchetype, all_items: list[dict]) -> str 
     return str(item.get("name")) if item else None
 
 
+# ─── Item synergy pairs ───────────────────────────────────────────────────────
+# When both items in a pair appear in the top-25 candidate pool, each item gets
+# a bonus applied before the core/situational split — capturing item combos that
+# are stronger together than the sum of their individual stat scores.
+ITEM_SYNERGIES: dict[frozenset[str], float] = {
+    # DoT stacking — Liandry proc on slow/immobilize
+    frozenset({"Liandry's Torment", "Rylai's Crystal Scepter"}): 30.0,
+    frozenset({"Liandry's Torment", "Blackfire Torch"}):         25.0,
+    frozenset({"Liandry's Torment", "Demonic Embrace"}):         20.0,
+    frozenset({"Liandry's Torment", "Malignance"}):              15.0,
+    # Double-burn battlemage
+    frozenset({"Malignance", "Blackfire Torch"}):                20.0,
+    # On-hit conversion — Guinsoo doubles proc frequency
+    frozenset({"Guinsoo's Rageblade", "Kraken Slayer"}):         30.0,
+    frozenset({"Guinsoo's Rageblade", "Blade of The Ruined King"}): 25.0,
+    frozenset({"Guinsoo's Rageblade", "Wit's End"}):             15.0,
+    # Crit synergy
+    frozenset({"Infinity Edge", "Kraken Slayer"}):               20.0,
+    frozenset({"Infinity Edge", "Phantom Dancer"}):              15.0,
+    # AP burst combo
+    frozenset({"Hextech Gunblade", "Shadowflame"}):              15.0,
+    frozenset({"Shadowflame", "Luden's Companion"}):             15.0,
+    # AP skirmisher sustain
+    frozenset({"Riftmaker", "Demonic Embrace"}):                 20.0,
+    frozenset({"Riftmaker", "Rylai's Crystal Scepter"}):         15.0,
+    # Bruiser mitigation combo
+    frozenset({"Sterak's Gage", "Death's Dance"}):               20.0,
+    frozenset({"Jak'Sho, The Protean", "Heartsteel"}):           20.0,
+    # Enchanter double-heal
+    frozenset({"Moonstone Renewer", "Staff of Flowing Water"}):  20.0,
+}
+
+
+# ─── Purchase-order sort ─────────────────────────────────────────────────────
+
+def _buy_order_key(scored: ScoredItem, name_to_item: dict[str, dict]) -> float:
+    """Return a sort key so core items are ordered cheapest-efficient-first.
+
+    Base key is score/price (gold efficiency). Two late-game penalties:
+    - % penetration items (Void Staff, Lord Dominik's) — only scale once
+      enemies have 100+ MR/armor, so you want them 4th-6th.
+    - Rabadon's Deathcap — % AP amplifier, always the very last buy.
+    """
+    item = name_to_item.get(scored.item_name, {})
+    stats = item.get("stats") or {}
+    price = max(int(((item.get("shop") or {}).get("prices") or {}).get("total", 0) or 0), 1000)
+    key = scored.score / price
+    if _pct(stats.get("magicPenetration")) >= 25 or _pct(stats.get("armorPenetration")) >= 15:
+        key -= 0.020
+    if "rabadon" in (item.get("name") or "").lower():
+        key -= 0.030
+    return key
+
+
 # ─── Main recommendation function ────────────────────────────────────────────
 
 def recommend_items(
@@ -723,6 +800,7 @@ def recommend_items(
     items: dict,
     archetype: ChampionArchetype,
     context: GameContext | None = None,
+    scaling: ChampionScalingProfile | None = None,
 ) -> BuildResult:
     """Score all items for this archetype and return a BuildResult.
 
@@ -750,20 +828,48 @@ def recommend_items(
         and not item.get("requiredChampion")
     ]
 
-    scored = [score_item(item, archetype, context) for item in completed]
+    scored = [score_item(item, archetype, context, scaling) for item in completed]
     scored = sorted(
         (s for s in scored if s.score > 0),
         key=lambda s: s.score,
         reverse=True,
     )
 
-    # Build a name→id lookup from the Meraki items dict for boots/starter ID resolution.
+    # ── Synergy pass ──────────────────────────────────────────────────────
+    # Take the top-25 candidates and boost items whose synergy partners also
+    # appear in that pool. Re-sort once after applying all bonuses so the
+    # best synergy combos float up into core.
+    if scored:
+        candidate_names: set[str] = {s.item_name for s in scored[:25]}
+        synergy_adjusted: list[ScoredItem] = []
+        for s in scored[:25]:
+            bonus = 0.0
+            bonus_reasons: list[str] = []
+            for pair, boost in ITEM_SYNERGIES.items():
+                if s.item_name in pair:
+                    partner = next(iter(pair - {s.item_name}))
+                    if partner in candidate_names:
+                        bonus += boost
+                        bonus_reasons.append(f"Synergy {partner} (+{boost:.0f})")
+            if bonus > 0:
+                s = ScoredItem(
+                    s.item_id, s.item_name,
+                    s.score + bonus,
+                    s.reasons + tuple(bonus_reasons),
+                )
+            synergy_adjusted.append(s)
+        synergy_adjusted.sort(key=lambda s: s.score, reverse=True)
+        scored = synergy_adjusted + scored[25:]
+
+    # Build name→id and name→raw-item lookups for boots/starter and buy-order sort.
     _name_to_id: dict[str, int] = {}
+    _name_to_item_data: dict[str, dict] = {}
     for _raw_item in all_items:
         _n = _raw_item.get("name") or ""
         _id_str = str(_raw_item.get("id") or 0)
         if _n and _id_str.isdigit():
             _name_to_id[_n] = int(_id_str)
+            _name_to_item_data[_n] = _raw_item
 
     # Boots — matched by name substring from the full item list (not just
     # completed tier-2 items, because boots straddle tiers by patch).
@@ -800,10 +906,14 @@ def recommend_items(
         if len(core) >= 6 and len(situational) >= 6:
             break
 
+    core_ordered = sorted(
+        core, key=lambda s: _buy_order_key(s, _name_to_item_data), reverse=True,
+    )
+
     return BuildResult(
         champion_name=str(champion.get("name") or ""),
         archetype=archetype,
-        core_items=tuple(core),
+        core_items=tuple(core_ordered),
         situational_items=tuple(situational),
         boots_name=boots_name,
         boots_id=boots_id,

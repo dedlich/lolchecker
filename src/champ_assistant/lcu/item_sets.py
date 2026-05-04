@@ -129,12 +129,22 @@ def build_item_set_from_result(
     if build_result.starter_id:
         blocks.append(_block("Starting Items", [build_result.starter_id]))
 
-    core_ids = [s.item_id for s in build_result.core_items if s.item_id]
-    if core_ids:
-        blocks.append(_block("Core Build", core_ids))
-
+    # Build Order: exactly 6 item slots (boots counts as one slot).
+    # With boots: item1 → boots → items 2-5 = 6 total.
+    # Without boots (Cassiopeia): all 6 core items.
+    core_list = list(build_result.core_items)
+    ordered_ids: list[int] = []
     if build_result.boots_id:
-        blocks.append(_block("Boots", [build_result.boots_id]))
+        slot_items = core_list[:5]  # 5 items + boots = 6 slots
+        if slot_items and slot_items[0].item_id:
+            ordered_ids.append(slot_items[0].item_id)
+        ordered_ids.append(build_result.boots_id)
+        ordered_ids.extend(s.item_id for s in slot_items[1:] if s.item_id)
+    else:
+        ordered_ids.extend(s.item_id for s in core_list[:6] if s.item_id)
+
+    if ordered_ids:
+        blocks.append(_block("Build Order", ordered_ids))
 
     sit_ids = [s.item_id for s in build_result.situational_items if s.item_id]
     if sit_ids:

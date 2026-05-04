@@ -1,3 +1,3 @@
 """LoL Champ Select Assistant."""
 
-__version__ = "1.10.24"
+__version__ = "1.10.25"

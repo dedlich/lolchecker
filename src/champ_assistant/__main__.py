@@ -1104,6 +1104,7 @@ async def _run_lcda_watcher(
                 detect_archetype,
                 recommend_items,
             )
+            from champ_assistant.data.champion_scaling import extract_scaling_profile
             from champ_assistant.advisor.build_adapter import (
                 SUSTAIN_KEYS,
                 damage_profile_for_tags,
@@ -1141,7 +1142,8 @@ async def _run_lcda_watcher(
                 player_behind=(enemies_val - allies_val) > 3000,
             )
             archetype = detect_archetype(champion_dict)
-            result = recommend_items(champion_dict, items_dict, archetype, context)
+            scaling = extract_scaling_profile(champion_dict)
+            result = recommend_items(champion_dict, items_dict, archetype, context, scaling=scaling)
             _build_result[0] = result
             _build_log.info(
                 "build_engine_done champion=%s play_style=%s core=%d situational=%d",

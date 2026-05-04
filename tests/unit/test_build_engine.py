@@ -591,7 +591,8 @@ def test_build_item_set_from_result_has_correct_title() -> None:
     assert payload["associatedChampions"] == [103]
 
 
-def test_build_item_set_from_result_four_blocks() -> None:
+def test_build_item_set_from_result_three_blocks() -> None:
+    """Blueprint has Starting Items / Build Order / Situational (boots inline)."""
     from champ_assistant.lcu.item_sets import build_item_set_from_result
     result = _make_build_result()
     payload = build_item_set_from_result(
@@ -600,9 +601,27 @@ def test_build_item_set_from_result_four_blocks() -> None:
     assert payload is not None
     block_types = {b["type"] for b in payload["blocks"]}
     assert "Starting Items" in block_types
-    assert "Core Build" in block_types
-    assert "Boots" in block_types
+    assert "Build Order" in block_types
     assert "Situational" in block_types
+    assert "Boots" not in block_types
+    assert "Core Build" not in block_types
+
+
+def test_build_item_set_from_result_boots_inline_at_index_1() -> None:
+    """Boots is second slot; total Build Order length = 6 (5 core + boots)."""
+    from champ_assistant.lcu.item_sets import build_item_set_from_result
+    core_six = [(2001 + i, f"Core {i}") for i in range(6)]
+    result = _make_build_result(core=core_six, boots_id=3020)
+    payload = build_item_set_from_result(
+        champion_key="Ahri", champion_id=103, build_result=result
+    )
+    assert payload is not None
+    build_order_block = next(b for b in payload["blocks"] if b["type"] == "Build Order")
+    ids = [item["id"] for item in build_order_block["items"]]
+    assert len(ids) == 6           # exactly 6 slots
+    assert ids[0] == "2001"        # first core item
+    assert ids[1] == "3020"        # boots at position 2
+    assert "2006" not in ids       # 6th core item dropped (boots takes that slot)
 
 
 def test_build_item_set_from_result_item_ids_as_strings() -> None:
@@ -618,14 +637,24 @@ def test_build_item_set_from_result_item_ids_as_strings() -> None:
 
 
 def test_build_item_set_from_result_no_boots_when_none() -> None:
+    """When boots_id is None, Build Order block must not contain a boots slot."""
     from champ_assistant.lcu.item_sets import build_item_set_from_result
-    result = _make_build_result(boots_name=None, boots_id=None)
+    result = _make_build_result(
+        boots_name=None,
+        boots_id=None,
+        core=[(2001, "Core A"), (2002, "Core B")],
+    )
     payload = build_item_set_from_result(
         champion_key="Cassiopeia", champion_id=69, build_result=result
     )
     assert payload is not None
     block_types = {b["type"] for b in payload["blocks"]}
     assert "Boots" not in block_types
+    # Build Order should still exist with all 6 core items (no boots slot)
+    assert "Build Order" in block_types
+    build_order_block = next(b for b in payload["blocks"] if b["type"] == "Build Order")
+    ids = [item["id"] for item in build_order_block["items"]]
+    assert ids == ["2001", "2002"]  # only 2 core items provided in fixture
 
 
 def test_build_item_set_from_result_returns_none_when_no_items() -> None:
@@ -729,3 +758,170 @@ def test_evaluate_without_situational_build_has_no_such_rec() -> None:
     recs = evaluate(snap)
     kinds = [r.kind for r in recs]
     assert "situational_build" not in kinds
+
+
+# ─── champion_scaling / extract_scaling_profile ───────────────────────────────
+
+def _akali_meraki_stub() -> dict:
+    """Minimal Meraki champion dict for Akali with Q ability data."""
+    return {
+        "key": "Akali",
+        "name": "Akali",
+        "abilities": {
+            "Q": [
+                {
+                    "name": "Five Point Strike",
+                    "effects": [
+                        {
+                            "leveling": [
+                                {
+                                    "attribute": "Magic Damage",
+                                    "modifiers": [
+                                        {"values": [65, 65, 65, 65, 65], "units": ["% AD"] * 5},
+                                        {"values": [60, 60, 60, 60, 60], "units": ["% AP"] * 5},
+                                    ],
+                                }
+                            ]
+                        }
+                    ],
+                }
+            ],
+            "P": [{"name": "Assassin's Mark", "effects": []}],
+        },
+    }
+
+
+def test_extract_scaling_profile_detects_ap_and_ad() -> None:
+    from champ_assistant.data.champion_scaling import extract_scaling_profile
+    profile = extract_scaling_profile(_akali_meraki_stub())
+    assert profile.champion_key == "Akali"
+    assert profile.ap_ratio == pytest.approx(60.0)
+    assert profile.ad_ratio == pytest.approx(65.0)
+    assert profile.is_hybrid is True
+
+
+def test_extract_scaling_profile_primary_ap_when_ap_dominates() -> None:
+    from champ_assistant.data.champion_scaling import extract_scaling_profile
+    pure_ap_champ = {
+        "key": "Lux",
+        "abilities": {
+            "Q": [{"name": "Light Binding", "effects": [
+                {"leveling": [{"attribute": "Magic Damage",
+                               "modifiers": [{"values": [100], "units": ["% AP"]}]}]}
+            ]}],
+        },
+    }
+    profile = extract_scaling_profile(pure_ap_champ)
+    assert profile.primary_scaling == "ap"
+    assert profile.is_hybrid is False
+
+
+def test_extract_scaling_profile_handles_missing_abilities() -> None:
+    from champ_assistant.data.champion_scaling import extract_scaling_profile
+    profile = extract_scaling_profile({"key": "X", "name": "X"})
+    assert profile.ap_ratio == 0.0
+    assert profile.ad_ratio == 0.0
+    assert profile.is_hybrid is False
+
+
+def test_extract_scaling_profile_ignores_non_damage_attrs() -> None:
+    """Movement speed / duration scaling must not pollute the AP/AD totals."""
+    from champ_assistant.data.champion_scaling import extract_scaling_profile
+    champ = {
+        "key": "Y",
+        "abilities": {
+            "W": [{"name": "Sprint", "effects": [
+                {"leveling": [
+                    {"attribute": "Bonus Movement Speed",
+                     "modifiers": [{"values": [30], "units": ["% AP"]}]},
+                    {"attribute": "Slow Duration",
+                     "modifiers": [{"values": [20], "units": ["% AP"]}]},
+                ]}
+            ]}],
+        },
+    }
+    profile = extract_scaling_profile(champ)
+    assert profile.ap_ratio == 0.0  # movement-speed scaling should not count
+
+
+# ─── hybrid scoring in score_item ─────────────────────────────────────────────
+
+def test_hybrid_scaling_boosts_ad_item_for_hybrid_mage() -> None:
+    """An AD item should score higher for a hybrid champion than a pure AP mage."""
+    from champ_assistant.data.champion_scaling import ChampionScalingProfile
+    arch = _mage_arch()
+    pure_scaling = ChampionScalingProfile(
+        champion_key="Pure", ap_ratio=200.0, ad_ratio=0.0, bonus_ad_ratio=0.0,
+        heal_ap_ratio=0.0, is_hybrid=False, primary_scaling="ap",
+    )
+    hybrid_scaling = ChampionScalingProfile(
+        champion_key="Hybrid", ap_ratio=200.0, ad_ratio=150.0, bonus_ad_ratio=0.0,
+        heal_ap_ratio=0.0, is_hybrid=True, primary_scaling="ap",
+    )
+    ad_item = _item(name="Hybrid Sword", stats={"attackDamage": {"flat": 40.0}, "abilityPower": {"flat": 40.0}})
+    s_pure   = score_item(ad_item, arch, scaling=pure_scaling)
+    s_hybrid = score_item(ad_item, arch, scaling=hybrid_scaling)
+    assert s_hybrid.score > s_pure.score
+    assert any("physical ability ratio" in r for r in s_hybrid.reasons)
+
+
+def test_hybrid_penalty_reduced_for_ad_only_item() -> None:
+    """A pure AD item (no AP) should get -20 penalty on a hybrid mage, not -60."""
+    from champ_assistant.data.champion_scaling import ChampionScalingProfile
+    arch = _mage_arch()
+    hybrid_scaling = ChampionScalingProfile(
+        champion_key="H", ap_ratio=100.0, ad_ratio=100.0, bonus_ad_ratio=0.0,
+        heal_ap_ratio=0.0, is_hybrid=True, primary_scaling="hybrid",
+    )
+    no_scaling = None
+    pure_ad = _ad_item(name="AD Only", ad=50.0)
+    s_no_sc  = score_item(pure_ad, arch, scaling=no_scaling)
+    s_hybrid = score_item(pure_ad, arch, scaling=hybrid_scaling)
+    # Hybrid should penalize less → higher score
+    assert s_hybrid.score > s_no_sc.score
+
+
+# ─── item synergy post-processing ─────────────────────────────────────────────
+
+def test_synergy_boosts_liandry_when_rylai_in_pool() -> None:
+    """When both Liandry's and Rylai's are in the top-25, each gets a synergy bonus."""
+    champ = _champ(
+        key="Malzahar",
+        roles=["BATTLEMAGE", "MAGE"],
+        positions=["MIDDLE"],
+        attack_type="RANGED",
+        adaptive_type="MAGIC_DAMAGE",
+    )
+    arch = detect_archetype(champ)
+    items: dict[str, dict] = {}
+    # Liandry's Torment
+    items["3152"] = {
+        "id": 3152, "name": "Liandry's Torment", "tier": 3, "removed": False,
+        "requiredChampion": "",
+        "shop": {"purchasable": True, "prices": {"total": 3000}},
+        "stats": {"abilityPower": {"flat": 90.0}, "health": {"flat": 300.0}},
+        "passives": [{"name": "torment", "effects": ""}],
+    }
+    # Rylai's Crystal Scepter
+    items["3116"] = {
+        "id": 3116, "name": "Rylai's Crystal Scepter", "tier": 3, "removed": False,
+        "requiredChampion": "",
+        "shop": {"purchasable": True, "prices": {"total": 2600}},
+        "stats": {"abilityPower": {"flat": 75.0}, "health": {"flat": 350.0}},
+        "passives": [{"name": "rimefrost", "effects": ""}],
+    }
+    # Fill pool with weaker items
+    for i in range(20):
+        iid = 4000 + i
+        items[str(iid)] = {
+            "id": iid, "name": f"Filler {i}", "tier": 3, "removed": False,
+            "requiredChampion": "",
+            "shop": {"purchasable": True, "prices": {"total": 2600}},
+            "stats": {"abilityPower": {"flat": float(30 + i)}},
+            "passives": [],
+        }
+    result = recommend_items(champ, items, arch)
+    core_names = {s.item_name for s in result.core_items}
+    # Both synergy partners must appear in core (synergy should keep them together)
+    assert "Liandry's Torment" in core_names
+    assert "Rylai's Crystal Scepter" in core_names
