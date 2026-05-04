@@ -739,13 +739,17 @@ def recommend_items(
     """
     all_items = list(items.values())
 
-    # Only score completed Summoner's Rift items.
-    # All standard SR items have id < 10000 — ARAM variants (44xxxx) and
-    # Ornn upgrades (22xxxx) are excluded by this filter alone.
+    # Only score completed Summoner's Rift items (ranked 5v5).
+    # tier=1: starters/components/trinkets — excluded.
+    # tier=2: intermediate components and boots — excluded here; boots are
+    #         selected separately via _BOOT_KEYWORDS on all_items below.
+    # tier=3: completed legendary items — the only ones we recommend.
+    # tier=4: transform items (Muramana, Seraph's) — purchasable=False, excluded.
+    # id < 10000: ARAM augments (220000+) and special items already excluded.
     completed = [
         item for item in all_items
         if int(item.get("id") or 0) < 10_000
-        and int(item.get("tier") or 0) >= 2
+        and int(item.get("tier") or 0) >= 3
         and not item.get("removed")
         and (item.get("shop") or {}).get("purchasable", True)
         and not item.get("requiredChampion")
