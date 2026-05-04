@@ -135,127 +135,35 @@ def extract_zip(zip_path: Path, dest_dir: Path) -> None:
         zf.extractall(dest_dir)
 
 
-SIDECAR_BAT_TEMPLATE = r"""@echo off
-REM Champ Assistant in-app updater - waits for parent app to exit, swaps files,
-REM relaunches, verifies the new exe is running, self-deletes.
-REM Designed to run silent (CREATE_NO_WINDOW) - no console pops up. All output
-REM goes into LAST_LOG so the next app start can surface failures to the UI.
-chcp 65001 >nul
-setlocal enabledelayedexpansion
-
-set PARENT_PID=%~1
-set STAGED_DIR=%~2
-set INSTALL_DIR=%~3
-set LAST_LOG=%~4
-
-REM Wipe the previous run's log so we can detect "the bat ran" vs "stale".
-> "%LAST_LOG%" echo [updater] %DATE% %TIME% start. parent_pid=%PARENT_PID%
->> "%LAST_LOG%" echo [updater] install_dir=%INSTALL_DIR%
->> "%LAST_LOG%" echo [updater] staged_dir=%STAGED_DIR%
-
-REM Use ping for sleeping: works in windowless/console-less sessions on all
-REM Windows versions. timeout /t N /nobreak can exit immediately when the
-REM process has no attached console (CREATE_NO_WINDOW), racing robocopy into
-REM a still-locked exe. ping -n N+1 gives ~N seconds regardless.
-
-:waitloop
-tasklist /FI "PID eq %PARENT_PID%" 2>nul | find "%PARENT_PID%" >nul
-if not errorlevel 1 (
-    ping -n 2 127.0.0.1 >nul 2>&1
-    goto waitloop
-)
->> "%LAST_LOG%" echo [updater] %DATE% %TIME% parent process gone
-
-REM Windows holds the .exe lock for ~1-2s after process exit; let it release.
-ping -n 4 127.0.0.1 >nul 2>&1
-
->> "%LAST_LOG%" echo [updater] %DATE% %TIME% running robocopy
-robocopy "%STAGED_DIR%" "%INSTALL_DIR%" /MIR /R:5 /W:2 /NFL /NDL /NJH /NJS >> "%LAST_LOG%" 2>&1
-set RC=%errorlevel%
->> "%LAST_LOG%" echo [updater] %DATE% %TIME% robocopy exit=%RC%
-
-if %RC% GEQ 8 (
-    >> "%LAST_LOG%" echo [updater] FAIL: robocopy could not swap files. Antivirus or running process holding files.
-    exit /b 1
-)
-
-REM Pre-warm: open the new exe for read so any antivirus on-access scan
-REM completes before we try to launch. Avoids the "exe starts then dies"
-REM scenario when Defender is mid-scan.
->nul 2>&1 type "%INSTALL_DIR%\__EXE__"
-
->> "%LAST_LOG%" echo [updater] %DATE% %TIME% launching %INSTALL_DIR%\__EXE__
-start "" /D "%INSTALL_DIR%" "%INSTALL_DIR%\__EXE__"
-if errorlevel 1 (
-    >> "%LAST_LOG%" echo [updater] FAIL: start command returned errorlevel
-    exit /b 2
-)
-
-REM Verify the new process actually came up. PyInstaller bootloader can
-REM crash silently if a DLL got AV-quarantined; without this check the bat
-REM would happily delete itself and the user sees nothing.
-ping -n 5 127.0.0.1 >nul 2>&1
-tasklist /FI "IMAGENAME eq __EXE__" 2>nul | find /I "__EXE__" >nul
-if errorlevel 1 (
-    >> "%LAST_LOG%" echo [updater] FAIL: __EXE__ not running after 4s. Likely AV quarantine or DLL load failure.
-    exit /b 3
-)
-
->> "%LAST_LOG%" echo [updater] %DATE% %TIME% SUCCESS: new exe is running
-
-REM clean up staging + self-delete (success path only)
-rmdir /S /Q "%STAGED_DIR%" 2>nul
-(goto) 2>nul & del "%~f0"
-"""
-
-
-def write_sidecar_bat(
-    bat_path: Path,
-    *,
-    parent_pid: int,
-    staged_dir: Path,
-    install_directory: Path,
-    exe_name: str = EXE_NAME,
-) -> Path:
-    """Render the sidecar swap script. Returns ``bat_path``."""
-    body = SIDECAR_BAT_TEMPLATE.replace("__EXE__", exe_name)
-    bat_path.parent.mkdir(parents=True, exist_ok=True)
-    bat_path.write_text(body, encoding="ascii")
-    # The bat will be invoked as: bat parent_pid staged_dir install_dir
-    logger.info(
-        "sidecar_written path=%s pid=%d staged=%s install=%s",
-        bat_path, parent_pid, staged_dir, install_directory,
-    )
-    return bat_path
-
-
 def update_log_path() -> Path:
-    """Where the bat writes its diagnostic output. The app reads this on
-    next startup to surface "your last update failed" status to the user."""
+    """Where the bootstrap installer writes its diagnostic output."""
     if sys.platform.startswith("win"):
         base = os.environ.get("LOCALAPPDATA") or str(Path.home() / "AppData" / "Local")
         return Path(base) / "ChampAssistant" / "logs" / "last-update.log"
     return Path.home() / ".champ-assistant" / "logs" / "last-update.log"
 
 
-def launch_sidecar(
-    bat_path: Path,
-    *,
-    parent_pid: int,
+def launch_bootstrap_installer(
     staged_dir: Path,
+    *,
     install_directory: Path,
+    parent_pid: int,
+    exe_name: str = EXE_NAME,
 ) -> None:
-    """Spawn the sidecar bat fully detached, with no visible console window.
+    """Launch the newly extracted exe in bootstrap mode so it installs itself.
 
-    Important: ``CREATE_NO_WINDOW`` and ``DETACHED_PROCESS`` are mutually
-    exclusive per the Win32 docs - combining them silently falls back to
-    a default console (which is why v0.11.4's "silent" mode wasn't).
-    Use CREATE_NO_WINDOW alone, plus a startupinfo with SW_HIDE so older
-    Windows versions also respect the hidden window request.
+    The staged exe starts immediately (while the current app is still alive),
+    receives the old app's PID, waits for it to exit via WaitForSingleObject,
+    then copies staged_dir → install_directory using shutil and relaunches from
+    the install directory.
 
-    All bat output goes to ``update_log_path()`` and is read on next app
-    start so failures aren't invisible.
+    This avoids all .bat / cmd.exe quoting issues — it's just a direct
+    subprocess.Popen of a real exe that we already know works (CI validated it).
     """
+    staged_exe = staged_dir / exe_name
+    if not staged_exe.is_file():
+        raise FileNotFoundError(f"Staged exe not found: {staged_exe}")
+
     creationflags = 0
     startupinfo = None
     if sys.platform.startswith("win"):
@@ -263,38 +171,28 @@ def launch_sidecar(
             getattr(subprocess, "CREATE_NO_WINDOW", 0)
             | getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
         )
-        # Belt-and-suspenders: explicitly tell Windows to hide whatever
-        # window cmd.exe might try to spawn. Required on some Win10 builds
-        # where CREATE_NO_WINDOW alone isn't honoured for batch files.
         startupinfo = subprocess.STARTUPINFO()
         startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
         startupinfo.wShowWindow = 0  # SW_HIDE
+
     log_path = update_log_path()
     log_path.parent.mkdir(parents=True, exist_ok=True)
 
-    # Always invoke via 'cmd.exe /c CALL bat args...' rather than the bare .bat
-    # path. Python's subprocess on Windows prepends 'cmd /c' internally for .bat
-    # files, but its quoting of a bare path followed by arguments is fragile when
-    # paths contain spaces — cmd.exe's '/c "…"' stripping logic can eat quotes
-    # and leave the bat file unlaunched. Explicit CALL avoids that entirely.
-    if sys.platform.startswith("win"):
-        cmd = [
-            "cmd.exe", "/c", "CALL",
-            str(bat_path),
-            str(parent_pid),
-            str(staged_dir),
-            str(install_directory),
-            str(log_path),
-        ]
-    else:
-        cmd = [str(bat_path), str(parent_pid), str(staged_dir), str(install_directory), str(log_path)]
-
+    logger.info(
+        "bootstrap_installer_launched staged=%s install=%s pid=%d",
+        staged_dir, install_directory, parent_pid,
+    )
     subprocess.Popen(
-        cmd,
+        [
+            str(staged_exe),
+            "--bootstrap-staged", str(staged_dir),
+            "--bootstrap-install", str(install_directory),
+            "--bootstrap-parent-pid", str(parent_pid),
+        ],
         creationflags=creationflags,
         startupinfo=startupinfo,
         close_fds=True,
-        cwd=str(install_directory),
+        cwd=str(staged_dir),
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
     )
@@ -355,7 +253,7 @@ async def apply_update(
     progress: Callable[[str], None] | None = None,
     repo: str = DEFAULT_REPO,
 ) -> None:
-    """Download → extract → write sidecar → launch sidecar.
+    """Download → extract → launch bootstrap installer → (caller quits app).
 
     Caller is responsible for quitting the app *after* this returns. Raises
     on any download/extract failure so the UI can surface an error.
@@ -379,7 +277,6 @@ async def apply_update(
     zip_path = base / RELEASE_ASSET_NAME
     staged_dir = base / "staged"
     if staged_dir.exists():
-        # leftovers from a prior aborted run
         import shutil
         shutil.rmtree(staged_dir, ignore_errors=True)
 
@@ -396,18 +293,9 @@ async def apply_update(
     emit("Entpacke…")
     extract_zip(zip_path, staged_dir)
 
-    bat_path = base / "apply-update.bat"
-    write_sidecar_bat(
-        bat_path,
-        parent_pid=os.getpid(),
-        staged_dir=staged_dir,
-        install_directory=install_directory,
-    )
-
     emit("Starte Update…")
-    launch_sidecar(
-        bat_path,
-        parent_pid=os.getpid(),
-        staged_dir=staged_dir,
+    launch_bootstrap_installer(
+        staged_dir,
         install_directory=install_directory,
+        parent_pid=os.getpid(),
     )

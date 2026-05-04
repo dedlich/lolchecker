@@ -16,7 +16,7 @@ from champ_assistant.update_check import (
     extract_zip,
     fetch_latest_release,
     is_newer,
-    write_sidecar_bat,
+    launch_bootstrap_installer,
 )
 
 LATEST_URL = "https://api.github.com/repos/dedlich/lolchecker/releases/latest"
@@ -155,25 +155,14 @@ def test_extract_zip_unpacks_contents(tmp_path: Path) -> None:
     assert (out / "_internal" / "data" / "counters.json").read_bytes() == b"{}"
 
 
-def test_write_sidecar_bat_renders_template(tmp_path: Path) -> None:
-    bat = tmp_path / "apply-update.bat"
-    write_sidecar_bat(
-        bat,
-        parent_pid=12345,
-        staged_dir=tmp_path / "staged",
-        install_directory=tmp_path / "install",
-        exe_name="champ-assistant.exe",
-    )
-    body = bat.read_text(encoding="ascii")
-    # Sidecar must wait for the parent exe, swap files via robocopy with
-    # retries on file locks, relaunch with explicit /D working directory,
-    # and self-delete.
-    assert "tasklist" in body
-    assert "robocopy" in body
-    assert "/R:5" in body
-    assert '/D "%INSTALL_DIR%"' in body
-    assert '"%INSTALL_DIR%\\champ-assistant.exe"' in body
-    assert "del \"%~f0\"" in body
+def test_launch_bootstrap_installer_raises_when_exe_missing(tmp_path: Path) -> None:
+    """launch_bootstrap_installer raises if the staged exe doesn't exist."""
+    with pytest.raises(FileNotFoundError, match="Staged exe not found"):
+        launch_bootstrap_installer(
+            tmp_path / "staged",
+            install_directory=tmp_path / "install",
+            parent_pid=0,
+        )
 
 
 @pytest.mark.asyncio
@@ -183,10 +172,9 @@ async def test_apply_update_end_to_end(
 ) -> None:
     """End-to-end: builds a fake release zip, serves it, runs apply_update.
 
-    Stubs out launch_sidecar so the test doesn't actually spawn a process.
-    Verifies the staged dir + bat were written correctly.
+    Stubs out launch_bootstrap_installer so the test doesn't spawn a process.
+    Verifies the staged dir was populated correctly.
     """
-    # Build a fake release zip in memory
     fake_release = tmp_path / "fake-release.zip"
     with zipfile.ZipFile(fake_release, "w") as zf:
         zf.writestr("champ-assistant.exe", b"new-exe-bytes")
@@ -200,20 +188,13 @@ async def test_apply_update_end_to_end(
     install.mkdir()
     staging = tmp_path / "staging"
     progress_msgs: list[str] = []
-    spawned: list[tuple[Path, int, Path, Path]] = []
+    spawned: list[dict] = []
 
-    def fake_launch(bat_path: Path, **kwargs: object) -> None:
-        spawned.append(
-            (
-                bat_path,
-                kwargs["parent_pid"],  # type: ignore[arg-type]
-                kwargs["staged_dir"],  # type: ignore[arg-type]
-                kwargs["install_directory"],  # type: ignore[arg-type]
-            )
-        )
+    def fake_launch(staged_dir: Path, **kwargs: object) -> None:
+        spawned.append({"staged_dir": staged_dir, **kwargs})
 
     monkeypatch.setattr(
-        "champ_assistant.update_check.launch_sidecar", fake_launch
+        "champ_assistant.update_check.launch_bootstrap_installer", fake_launch
     )
 
     await apply_update(
@@ -223,8 +204,9 @@ async def test_apply_update_end_to_end(
         progress=progress_msgs.append,
     )
 
-    # Verify staging contains extracted contents and bat was rendered.
+    # Staged dir must contain extracted exe and bootstrap was called.
     assert (staging / "staged" / "champ-assistant.exe").read_bytes() == b"new-exe-bytes"
-    assert (staging / "apply-update.bat").exists()
-    assert spawned and spawned[0][0] == staging / "apply-update.bat"
-    assert progress_msgs  # user-facing progress fired
+    assert spawned
+    assert spawned[0]["staged_dir"] == staging / "staged"
+    assert spawned[0]["install_directory"] == install
+    assert progress_msgs
