@@ -153,16 +153,21 @@ REM Wipe the previous run's log so we can detect "the bat ran" vs "stale".
 >> "%LAST_LOG%" echo [updater] install_dir=%INSTALL_DIR%
 >> "%LAST_LOG%" echo [updater] staged_dir=%STAGED_DIR%
 
+REM Use ping for sleeping: works in windowless/console-less sessions on all
+REM Windows versions. timeout /t N /nobreak can exit immediately when the
+REM process has no attached console (CREATE_NO_WINDOW), racing robocopy into
+REM a still-locked exe. ping -n N+1 gives ~N seconds regardless.
+
 :waitloop
 tasklist /FI "PID eq %PARENT_PID%" 2>nul | find "%PARENT_PID%" >nul
 if not errorlevel 1 (
-    timeout /t 1 /nobreak >nul
+    ping -n 2 127.0.0.1 >nul 2>&1
     goto waitloop
 )
 >> "%LAST_LOG%" echo [updater] %DATE% %TIME% parent process gone
 
 REM Windows holds the .exe lock for ~1-2s after process exit; let it release.
-timeout /t 3 /nobreak >nul
+ping -n 4 127.0.0.1 >nul 2>&1
 
 >> "%LAST_LOG%" echo [updater] %DATE% %TIME% running robocopy
 robocopy "%STAGED_DIR%" "%INSTALL_DIR%" /MIR /R:5 /W:2 /NFL /NDL /NJH /NJS >> "%LAST_LOG%" 2>&1
@@ -189,7 +194,7 @@ if errorlevel 1 (
 REM Verify the new process actually came up. PyInstaller bootloader can
 REM crash silently if a DLL got AV-quarantined; without this check the bat
 REM would happily delete itself and the user sees nothing.
-timeout /t 4 /nobreak >nul
+ping -n 5 127.0.0.1 >nul 2>&1
 tasklist /FI "IMAGENAME eq __EXE__" 2>nul | find /I "__EXE__" >nul
 if errorlevel 1 (
     >> "%LAST_LOG%" echo [updater] FAIL: __EXE__ not running after 4s. Likely AV quarantine or DLL load failure.
@@ -266,18 +271,32 @@ def launch_sidecar(
         startupinfo.wShowWindow = 0  # SW_HIDE
     log_path = update_log_path()
     log_path.parent.mkdir(parents=True, exist_ok=True)
-    subprocess.Popen(
-        [
+
+    # Always invoke via 'cmd.exe /c CALL bat args...' rather than the bare .bat
+    # path. Python's subprocess on Windows prepends 'cmd /c' internally for .bat
+    # files, but its quoting of a bare path followed by arguments is fragile when
+    # paths contain spaces — cmd.exe's '/c "…"' stripping logic can eat quotes
+    # and leave the bat file unlaunched. Explicit CALL avoids that entirely.
+    if sys.platform.startswith("win"):
+        cmd = [
+            "cmd.exe", "/c", "CALL",
             str(bat_path),
             str(parent_pid),
             str(staged_dir),
             str(install_directory),
             str(log_path),
-        ],
+        ]
+    else:
+        cmd = [str(bat_path), str(parent_pid), str(staged_dir), str(install_directory), str(log_path)]
+
+    subprocess.Popen(
+        cmd,
         creationflags=creationflags,
         startupinfo=startupinfo,
         close_fds=True,
         cwd=str(install_directory),
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
     )
 
 
