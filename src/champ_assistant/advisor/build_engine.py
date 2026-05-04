@@ -465,7 +465,7 @@ def score_item(
         return any(w in pn or w in il or w in desc for w in words)
 
     if dt == "magic" and kw("magical opus", "rabadon"):
-        score += 90; reasons.append("AP amplifier +35% bonus AP (Rabadon's)")
+        score += 70; reasons.append("AP amplifier +35% bonus AP (Rabadon's)")
 
     if dt == "magic" and kw("stasis", "zhonya"):
         bonus = (
