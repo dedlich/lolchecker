@@ -1139,6 +1139,170 @@ def rule_level_deficit(snapshot: "LcdaSnapshot") -> Recommendation | None:
     )
 
 
+# ---------------------------------------------------------------------------
+# CS deficit and lane-level-advantage rules
+# ---------------------------------------------------------------------------
+
+# Minimum game-time before CS efficiency has enough data to be meaningful.
+CS_MIN_GAME_TIME_S = 240.0         # 4 min
+# Suppress in late game where grouping unavoidably drops CS/min.
+CS_LATE_SUPPRESS_S = 1680.0        # 28 min
+# Target farm rate for lane players (emerald+ average).
+CS_EXPECTED_PER_MIN = 8.0
+# How far below expected before we fire.
+CS_INFO_DEFICIT = 2.0              # info  (< 6.0/min when expected 8.0)
+CS_WARN_DEFICIT = 3.5              # warn  (< 4.5/min when expected 8.0)
+# Long TTL so the rule fires once per ~2 ticks, not every 2 s tick.
+CS_DEFICIT_TTL_S = 120.0
+# Positions exempt from CS checks.
+_NON_CS_POSITIONS: frozenset[str] = frozenset({"UTILITY", "JUNGLE"})
+
+# Lane-level advantage thresholds (laning phase only).
+LANE_LEVEL_ADV_THRESHOLD = 2      # 2-level edge = real advantage
+LANE_LEVEL_DOM_THRESHOLD = 3      # 3-level edge = dominance
+LANE_PHASE_CUTOFF_S = 1200.0      # 20 min
+
+
+def _active_player(snapshot: "LcdaSnapshot") -> object | None:
+    """Return the active player's LivePlayer record from the allies list."""
+    name = getattr(snapshot, "active_summoner", "") or ""
+    if not name:
+        return None
+    for p in (getattr(snapshot, "allies", []) or []):
+        if getattr(p, "summoner_name", "") == name:
+            return p
+    return None
+
+
+def rule_cs_deficit(snapshot: "LcdaSnapshot") -> Recommendation | None:
+    """Warn when the active laner's CS/min is significantly below the
+    expected farming rate (≈8 CS/min for lane roles). Excludes supports
+    and junglers who have different gold income paths. Suppressed before
+    4 min (not enough waves) and after 28 min (grouping reduces farm).
+    """
+    game_time = getattr(snapshot, "game_time", 0.0)
+    if game_time < CS_MIN_GAME_TIME_S or game_time >= CS_LATE_SUPPRESS_S:
+        return None
+
+    player = _active_player(snapshot)
+    if player is None:
+        return None
+
+    position = (getattr(player, "position", "") or "").upper()
+    if position in _NON_CS_POSITIONS:
+        return None
+
+    cs = getattr(player, "creep_score", 0)
+    if not isinstance(cs, int) or cs < 0:
+        return None
+
+    cs_per_min = cs / (game_time / 60.0)
+    deficit = CS_EXPECTED_PER_MIN - cs_per_min
+    if deficit < CS_INFO_DEFICIT:
+        return None
+
+    severity = "warn" if deficit >= CS_WARN_DEFICIT else "info"
+    min_elapsed = int(game_time / 60)
+    expected_cs = int(CS_EXPECTED_PER_MIN * min_elapsed)
+
+    return Recommendation(
+        text=f"CS-Rückstand: {cs}/{expected_cs} ({cs_per_min:.1f}/min) — farme mehr Wellen",
+        severity=severity,
+        category="lane",
+        confidence=0.75,
+        risk="LOW",
+        ttl_s=CS_DEFICIT_TTL_S,
+        kind="cs_deficit",
+        reasons=(
+            f"{cs_per_min:.1f} CS/min (Ziel: {CS_EXPECTED_PER_MIN:.0f}/min)",
+            f"Minute {min_elapsed}: {cs} CS, erwartet ~{expected_cs}",
+        ),
+    )
+
+
+def rule_lane_level_advantage(snapshot: "LcdaSnapshot") -> Recommendation | None:
+    """Surface a meaningful level edge in the active player's lane matchup.
+
+    Level 2+ lead over the lane opponent is a reliable all-in / trade
+    window that many players miss. Level 2+ deficit is an additional
+    safety reminder on top of the team-average rule_level_deficit.
+    Only fires during the laning phase (< 20 min) and only when LCDA
+    exposes position data for both players so the matchup is unambiguous.
+    """
+    game_time = getattr(snapshot, "game_time", 0.0)
+    if game_time >= LANE_PHASE_CUTOFF_S:
+        return None
+
+    player = _active_player(snapshot)
+    if player is None:
+        return None
+
+    position = (getattr(player, "position", "") or "").upper()
+    if not position or position in _NON_CS_POSITIONS:
+        return None
+
+    # Find the enemy at the same position — LCDA sets position for all 10.
+    enemies = list(getattr(snapshot, "enemies", []) or [])
+    lane_opp = next(
+        (e for e in enemies if (getattr(e, "position", "") or "").upper() == position),
+        None,
+    )
+    if lane_opp is None:
+        return None
+
+    my_level = int(getattr(player, "level", 0) or 0)
+    opp_level = int(getattr(lane_opp, "level", 0) or 0)
+    diff = my_level - opp_level
+
+    if abs(diff) < LANE_LEVEL_ADV_THRESHOLD:
+        return None
+
+    opp_name = getattr(lane_opp, "champion_name", "") or "Gegner"
+
+    if diff >= LANE_LEVEL_DOM_THRESHOLD:
+        return Recommendation(
+            text=f"Level-Dominanz +{diff} vs {opp_name} — All-in erzwingen",
+            severity="warn",
+            category="lane",
+            confidence=0.82,
+            risk="LOW",
+            ttl_s=25.0,
+            kind="lane_level_adv",
+            reasons=(
+                f"Du: Level {my_level}, {opp_name}: Level {opp_level}",
+                f"+{diff} Level = statistisch gewonnener All-in",
+            ),
+        )
+    if diff >= LANE_LEVEL_ADV_THRESHOLD:
+        return Recommendation(
+            text=f"Level-Vorteil +{diff} vs {opp_name} — Trade-Fenster",
+            severity="info",
+            category="lane",
+            confidence=0.75,
+            risk="LOW",
+            ttl_s=20.0,
+            kind="lane_level_adv",
+            reasons=(
+                f"Du: Level {my_level}, {opp_name}: Level {opp_level}",
+                "Level-Edge: Trade erzwingen oder Turm-Plates nehmen",
+            ),
+        )
+    # diff <= -LANE_LEVEL_ADV_THRESHOLD → enemy level lead
+    return Recommendation(
+        text=f"Level-Nachteil {diff} vs {opp_name} — Safe farmen",
+        severity="warn",
+        category="lane",
+        confidence=0.80,
+        risk="HIGH",
+        ttl_s=20.0,
+        kind="lane_level_disadv",
+        reasons=(
+            f"Du: Level {my_level}, {opp_name}: Level {opp_level}",
+            f"{diff} Level = {opp_name} gewinnt jeden Trade",
+        ),
+    )
+
+
 def rule_baron_priority(snapshot: "LcdaSnapshot") -> Recommendation | None:
     """Baron up soon AND we have resources → set up vision + group.
     Baron's window is wider than drake (45s vs 30s) because the prep
@@ -2873,8 +3037,10 @@ ALL_RULES: tuple[Callable[["LcdaSnapshot"], Recommendation | None], ...] = (
     rule_gold_lead_push,
     rule_far_behind_safe,
     rule_level_deficit,
+    rule_lane_level_advantage,
     rule_kill_lead_snowball,
     rule_kill_deficit_defensive,
+    rule_cs_deficit,
     rule_late_game_group,
     # Post-soul pressure — fires for 2 minutes after securing Dragon Soul.
     rule_dragon_soul_pressure,
@@ -3020,6 +3186,8 @@ def _suppress_dominated(recs: list[Recommendation]) -> list[Recommendation]:
             "jungler_down",      # push suggestion irrelevant when short-handed
             "enemy_soul_point",  # drake denial requires going aggro — not when short-handed
             "power_spike",       # "fight now!" irrelevant when team is short-handed
+            "cs_deficit",        # farming advice irrelevant while team is down
+            "lane_level_adv",    # lane trades irrelevant when short-handed
         }
         return [r for r in recs if r.kind not in _offensive]
 
@@ -3056,6 +3224,8 @@ def _suppress_dominated(recs: list[Recommendation]) -> list[Recommendation]:
             "dragon_soul", "ally_hornguard", "void_grub_contest",
             "jungler_down",      # don't push while defending super-minions
             "enemy_soul_point",  # drake denial requires committing — not when base is open
+            "cs_deficit",        # farming advice irrelevant while defending base
+            "lane_level_adv",    # lane-trade window irrelevant while base is open
             # NOTE: ally_inhib_respawning intentionally coexists with ally_inhib_down:
             # "defend now + inhib back in 30s" are complementary, not conflicting.
         }

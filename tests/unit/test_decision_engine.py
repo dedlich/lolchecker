@@ -8,12 +8,19 @@ import pytest
 
 from champ_assistant.advisor.decision_engine import (
     BARON_PRIORITY_WINDOW_S,
+    CS_EXPECTED_PER_MIN,
+    CS_INFO_DEFICIT,
+    CS_LATE_SUPPRESS_S,
+    CS_MIN_GAME_TIME_S,
+    CS_WARN_DEFICIT,
     DRAKE_PRIORITY_WINDOW_S,
     GOLD_DEFICIT_THRESHOLD,
     GOLD_LEAD_THRESHOLD,
     HERALD_LATE_GAME_S,
     KILL_DEFICIT_THRESHOLD,
     KILL_LEAD_THRESHOLD,
+    LANE_LEVEL_ADV_THRESHOLD,
+    LANE_PHASE_CUTOFF_S,
     LATE_GAME_S,
     LEVEL_GAP_THRESHOLD,
     Recommendation,
@@ -25,6 +32,7 @@ from champ_assistant.advisor.decision_engine import (
     rule_baron_give_up,
     rule_baron_priority,
     rule_baron_window,
+    rule_cs_deficit,
     rule_drake_give_up,
     rule_drake_priority,
     rule_dragon_window,
@@ -34,6 +42,7 @@ from champ_assistant.advisor.decision_engine import (
     rule_herald_priority,
     rule_kill_deficit_defensive,
     rule_kill_lead_snowball,
+    rule_lane_level_advantage,
     rule_late_game_group,
     rule_level_deficit,
     rule_numbers_advantage,
@@ -3634,3 +3643,223 @@ def test_window_closing_in_evaluate() -> None:
     )
     recs = evaluate(snap)
     assert any(r.kind == "window_closing" for r in recs)
+
+
+# -------------------------------------------------------------------------
+# rule_cs_deficit
+# -------------------------------------------------------------------------
+
+@dataclass
+class _PlayerCS:
+    """Minimal LivePlayer-like stub for CS/level/position tests."""
+    summoner_name: str = "Me"
+    champion_name: str = ""
+    team: str = "ORDER"
+    level: int = 8
+    is_alive: bool = True
+    respawn_timer: float = 0.0
+    creep_score: int = 80
+    position: str = "TOP"
+    items_value: int = 0
+    spell_one: object = None
+    spell_two: object = None
+
+
+@dataclass
+class _SnapCS:
+    """Snapshot stub for cs_deficit and lane_level_advantage tests."""
+    game_time: float = 600.0          # 10 min
+    active_summoner: str = "Me"
+    allies: list = field(default_factory=list)
+    enemies: list = field(default_factory=list)
+    ally_aggregate: _Aggregate = field(default_factory=_Aggregate)
+    enemy_aggregate: _Aggregate = field(default_factory=_Aggregate)
+    objectives: list = field(default_factory=list)
+    raw_events: list = field(default_factory=list)
+    active_team: str = ""
+    active_level: int = 8
+    active_items: int = 0
+    new_spikes: list = field(default_factory=list)
+    game_result: str = ""
+
+
+def _lane_snap(
+    *,
+    game_time: float = 600.0,
+    cs: int = 80,
+    position: str = "TOP",
+    active_name: str = "Me",
+) -> _SnapCS:
+    """Build a minimal snapshot for CS/level tests."""
+    return _SnapCS(
+        game_time=game_time,
+        active_summoner=active_name,
+        allies=[_PlayerCS(summoner_name=active_name, creep_score=cs, position=position)],
+    )
+
+
+def test_cs_deficit_fires_info_when_mildly_behind() -> None:
+    """5 min, 20 CS → 4.0/min vs expected 8.0 → info (deficit 4.0 > CS_INFO_DEFICIT)."""
+    snap = _lane_snap(game_time=300.0, cs=20)
+    rec = rule_cs_deficit(snap)
+    assert rec is not None
+    assert rec.kind == "cs_deficit"
+    assert rec.category == "lane"
+
+
+def test_cs_deficit_fires_warn_when_severely_behind() -> None:
+    """10 min, 20 CS → 2.0/min, deficit 6.0 ≥ CS_WARN_DEFICIT → warn."""
+    snap = _lane_snap(game_time=600.0, cs=20)
+    rec = rule_cs_deficit(snap)
+    assert rec is not None
+    assert rec.severity == "warn"
+
+
+def test_cs_deficit_silent_when_on_pace() -> None:
+    """10 min, 80 CS → 8.0/min = expected → no deficit."""
+    snap = _lane_snap(game_time=600.0, cs=80)
+    rec = rule_cs_deficit(snap)
+    assert rec is None
+
+
+def test_cs_deficit_silent_before_min_game_time() -> None:
+    """< 4 min: not enough data → always silent."""
+    snap = _lane_snap(game_time=CS_MIN_GAME_TIME_S - 1.0, cs=0)
+    assert rule_cs_deficit(snap) is None
+
+
+def test_cs_deficit_silent_after_late_suppress() -> None:
+    """≥ 28 min: grouping naturally kills CS/min → suppress."""
+    snap = _lane_snap(game_time=CS_LATE_SUPPRESS_S, cs=100)
+    assert rule_cs_deficit(snap) is None
+
+
+def test_cs_deficit_silent_for_support() -> None:
+    snap = _lane_snap(game_time=600.0, cs=5, position="UTILITY")
+    assert rule_cs_deficit(snap) is None
+
+
+def test_cs_deficit_silent_for_jungler() -> None:
+    snap = _lane_snap(game_time=600.0, cs=30, position="JUNGLE")
+    assert rule_cs_deficit(snap) is None
+
+
+def test_cs_deficit_silent_when_active_not_in_allies() -> None:
+    snap = _SnapCS(
+        game_time=600.0,
+        active_summoner="Ghost",
+        allies=[_PlayerCS(summoner_name="Someone Else", creep_score=10, position="TOP")],
+    )
+    assert rule_cs_deficit(snap) is None
+
+
+def test_cs_deficit_suppressed_by_numbers_disadv() -> None:
+    recs = [
+        _rec("numbers_disadv", "alert"),
+        _rec("cs_deficit", "warn"),
+    ]
+    result = _suppress_dominated(recs)
+    assert not any(r.kind == "cs_deficit" for r in result)
+
+
+# -------------------------------------------------------------------------
+# rule_lane_level_advantage
+# -------------------------------------------------------------------------
+
+@dataclass
+class _PlayerLvl:
+    summoner_name: str = "Me"
+    champion_name: str = "Darius"
+    team: str = "ORDER"
+    level: int = 6
+    is_alive: bool = True
+    respawn_timer: float = 0.0
+    creep_score: int = 80
+    position: str = "TOP"
+    items_value: int = 0
+    spell_one: object = None
+    spell_two: object = None
+
+
+def _lvl_snap(
+    *,
+    my_level: int = 6,
+    opp_level: int = 4,
+    game_time: float = 600.0,
+    position: str = "TOP",
+    active_name: str = "Me",
+) -> _SnapCS:
+    opp = _PlayerLvl(summoner_name="Opp", champion_name="Teemo", level=opp_level, position=position)
+    me = _PlayerLvl(summoner_name=active_name, level=my_level, position=position)
+    return _SnapCS(
+        game_time=game_time,
+        active_summoner=active_name,
+        active_level=my_level,
+        allies=[me],
+        enemies=[opp],
+    )
+
+
+def test_lane_level_adv_fires_info_on_2_level_lead() -> None:
+    rec = rule_lane_level_advantage(_lvl_snap(my_level=6, opp_level=4))
+    assert rec is not None
+    assert rec.kind == "lane_level_adv"
+    assert rec.severity == "info"
+    assert "Teemo" in rec.text
+
+
+def test_lane_level_adv_fires_warn_on_3_level_lead() -> None:
+    rec = rule_lane_level_advantage(_lvl_snap(my_level=7, opp_level=4))
+    assert rec is not None
+    assert rec.severity == "warn"
+    assert rec.kind == "lane_level_adv"
+
+
+def test_lane_level_disadv_fires_when_behind() -> None:
+    rec = rule_lane_level_advantage(_lvl_snap(my_level=4, opp_level=6))
+    assert rec is not None
+    assert rec.kind == "lane_level_disadv"
+    assert rec.severity == "warn"
+
+
+def test_lane_level_silent_when_equal() -> None:
+    assert rule_lane_level_advantage(_lvl_snap(my_level=6, opp_level=6)) is None
+
+
+def test_lane_level_silent_when_diff_1() -> None:
+    assert rule_lane_level_advantage(_lvl_snap(my_level=6, opp_level=5)) is None
+
+
+def test_lane_level_silent_after_laning_phase() -> None:
+    rec = rule_lane_level_advantage(_lvl_snap(my_level=8, opp_level=4, game_time=LANE_PHASE_CUTOFF_S))
+    assert rec is None
+
+
+def test_lane_level_silent_for_support() -> None:
+    rec = rule_lane_level_advantage(_lvl_snap(position="UTILITY"))
+    assert rec is None
+
+
+def test_lane_level_silent_when_no_enemy_in_same_position() -> None:
+    opp = _PlayerLvl(position="MID")
+    me = _PlayerLvl(summoner_name="Me", position="TOP", level=9)
+    snap = _SnapCS(
+        game_time=600.0, active_summoner="Me",
+        allies=[me], enemies=[opp],
+    )
+    assert rule_lane_level_advantage(snap) is None
+
+
+def test_lane_level_adv_in_evaluate() -> None:
+    snap = _lvl_snap(my_level=7, opp_level=4)
+    recs = evaluate(snap)
+    assert any(r.kind == "lane_level_adv" for r in recs)
+
+
+def test_lane_level_adv_suppressed_by_numbers_disadv() -> None:
+    recs = [
+        _rec("numbers_disadv", "alert"),
+        _rec("lane_level_adv", "info"),
+    ]
+    result = _suppress_dominated(recs)
+    assert not any(r.kind == "lane_level_adv" for r in result)
