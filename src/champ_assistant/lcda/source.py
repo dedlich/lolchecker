@@ -26,7 +26,7 @@ from .players import (
     enemies_of,
     parse_players,
 )
-from .power_spikes import PowerSpike, detect_spikes, extract_active_state
+from .power_spikes import EnemySpike, PowerSpike, detect_enemy_spikes, detect_spikes, extract_active_state
 
 logger = logging.getLogger(__name__)
 
@@ -59,6 +59,9 @@ class LcdaSnapshot:
     # "Win", "Lose", or "" when game is still in progress.
     # Populated from the GameEnd event in raw_events.
     game_result: str = ""
+    # Enemy item-completion spikes this tick — non-empty only on the tick
+    # where an enemy crossed a legendary-item threshold (1st / 2nd / 3rd).
+    enemy_spikes: list[EnemySpike] = field(default_factory=list)
 
 
 SnapshotCallback = Callable[[LcdaSnapshot | None], Awaitable[None] | None]
@@ -90,6 +93,7 @@ class LcdaSource:
         self._last_seen: float | None = None
         self._prev_level = 0
         self._prev_items = 0
+        self._prev_enemy_counts: dict[str, int] = {}  # champion_name → legendary count
 
     async def run(self) -> None:
         """Loop until ``close()`` is called.
@@ -152,6 +156,16 @@ class LcdaSource:
         self._prev_level = new_level
         self._prev_items = new_items
 
+        # Enemy spike detection — only track the opposing team's champions.
+        raw_enemy_players = [
+            p for p in (data.get("allPlayers") or [])
+            if isinstance(p, dict) and str(p.get("team") or "") != active_team
+        ] if active_team else []
+        enemy_spikes, new_enemy_counts = detect_enemy_spikes(
+            self._prev_enemy_counts, raw_enemy_players,
+        )
+        self._prev_enemy_counts = new_enemy_counts
+
         from .players import allies_of
         allies = allies_of(all_players, active_team) if active_team else []
         enemy_team = next(
@@ -183,6 +197,7 @@ class LcdaSource:
             ally_aggregate=ally_agg,
             enemy_aggregate=enemy_agg,
             game_result=game_result,
+            enemy_spikes=enemy_spikes,
         )
 
     @staticmethod

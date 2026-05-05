@@ -1,9 +1,13 @@
-"""Detect when the active player just hit a power spike.
+"""Detect when the active player (or an enemy) just hit a power spike.
 
 Inputs come from the LCDA ``activePlayer`` block — level + items count.
 We compare the latest snapshot against the previous one and emit a
 ``PowerSpike`` for each freshly crossed threshold so the UI can show a
 brief celebration without re-firing every tick.
+
+``EnemySpike`` extends the same concept to tracked enemies: fires when
+an enemy player crosses a legendary-item threshold (1st / 2nd / 3rd),
+letting the engine surface a safety warning (e.g. "Jinx has 2 items").
 """
 from __future__ import annotations
 
@@ -11,6 +15,9 @@ from dataclasses import dataclass
 
 LEVEL_SPIKES: tuple[int, ...] = (6, 11, 16)
 ITEM_SPIKES: tuple[int, ...] = (1, 2, 3)  # first / two / three core items
+
+# Legendary item price floor — same threshold as for active player.
+LEGENDARY_PRICE_FLOOR = 2300
 
 
 @dataclass(frozen=True)
@@ -59,6 +66,52 @@ def detect_spikes(
             label, detail = _label_for_items(threshold)
             spikes.append(PowerSpike("items", threshold, label, detail))
     return spikes
+
+
+@dataclass(frozen=True)
+class EnemySpike:
+    """An enemy player just completed their Nth legendary item."""
+    champion_name: str
+    legendary_count: int   # 1 / 2 / 3 (threshold just crossed)
+
+
+def count_legendaries(items: list[dict]) -> int:
+    """Count completed legendary items (price ≥ LEGENDARY_PRICE_FLOOR)."""
+    count = 0
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        price = item.get("price") or 0
+        if isinstance(price, (int, float)) and price >= LEGENDARY_PRICE_FLOOR:
+            count += 1
+    return count
+
+
+def detect_enemy_spikes(
+    prev_counts: dict[str, int],
+    players: list[dict],
+) -> tuple[list[EnemySpike], dict[str, int]]:
+    """Compare enemy player legendary counts against the previous tick.
+
+    Returns ``(spikes, new_counts)``.
+    ``prev_counts`` maps champion_name → previous legendary count.
+    ``new_counts`` should replace ``prev_counts`` in the caller.
+    Spikes fire only when the count crosses a tracked threshold (1 / 2 / 3).
+    """
+    spikes: list[EnemySpike] = []
+    new_counts: dict[str, int] = {}
+    for entry in players:
+        name = str(entry.get("championName") or "")
+        if not name:
+            continue
+        items = entry.get("items") or []
+        new_count = count_legendaries(items)
+        new_counts[name] = new_count
+        prev = prev_counts.get(name, 0)
+        for threshold in (1, 2, 3):
+            if prev < threshold <= new_count:
+                spikes.append(EnemySpike(champion_name=name, legendary_count=threshold))
+    return spikes, new_counts
 
 
 def extract_active_state(active_player: dict | None) -> tuple[int, int]:

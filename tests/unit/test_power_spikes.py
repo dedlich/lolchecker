@@ -2,7 +2,10 @@
 from __future__ import annotations
 
 from champ_assistant.lcda.power_spikes import (
+    EnemySpike,
     PowerSpike,
+    count_legendaries,
+    detect_enemy_spikes,
     detect_spikes,
     extract_active_state,
 )
@@ -78,3 +81,137 @@ def test_power_spike_dataclass_is_frozen() -> None:
     except Exception:  # noqa: BLE001
         return
     raise AssertionError("PowerSpike should be frozen")
+
+
+# ---------------------------------------------------------------------------
+# count_legendaries
+# ---------------------------------------------------------------------------
+
+def test_count_legendaries_filters_boots_and_components() -> None:
+    items = [
+        {"price": 1100},   # boots — skipped
+        {"price": 3000},   # legendary ✓
+        {"price": 850},    # component — skipped
+        {"price": 2400},   # legendary ✓
+    ]
+    assert count_legendaries(items) == 2
+
+
+def test_count_legendaries_empty() -> None:
+    assert count_legendaries([]) == 0
+
+
+# ---------------------------------------------------------------------------
+# detect_enemy_spikes
+# ---------------------------------------------------------------------------
+
+def _player(name: str, prices: list[int]) -> dict:
+    return {
+        "championName": name,
+        "items": [{"price": p} for p in prices],
+        "team": "CHAOS",
+    }
+
+
+def test_detect_enemy_spikes_fires_on_first_legendary() -> None:
+    players = [_player("Jinx", [2800])]
+    spikes, new_counts = detect_enemy_spikes({}, players)
+    assert len(spikes) == 1
+    assert spikes[0].champion_name == "Jinx"
+    assert spikes[0].legendary_count == 1
+
+
+def test_detect_enemy_spikes_fires_on_second_legendary() -> None:
+    prev = {"Jinx": 1}
+    players = [_player("Jinx", [2800, 3200])]
+    spikes, _ = detect_enemy_spikes(prev, players)
+    assert len(spikes) == 1
+    assert spikes[0].legendary_count == 2
+
+
+def test_detect_enemy_spikes_no_spike_when_unchanged() -> None:
+    prev = {"Jinx": 2}
+    players = [_player("Jinx", [2800, 3200])]
+    spikes, _ = detect_enemy_spikes(prev, players)
+    assert spikes == []
+
+
+def test_detect_enemy_spikes_multiple_champions() -> None:
+    prev = {}
+    players = [
+        _player("Jinx", [2800]),
+        _player("Thresh", [900]),   # cheap, not legendary
+    ]
+    spikes, _ = detect_enemy_spikes(prev, players)
+    names = [s.champion_name for s in spikes]
+    assert "Jinx" in names
+    assert "Thresh" not in names
+
+
+def test_detect_enemy_spikes_updates_counts() -> None:
+    players = [_player("Jinx", [2800, 3000])]
+    _, new_counts = detect_enemy_spikes({}, players)
+    assert new_counts.get("Jinx") == 2
+
+
+def test_detect_enemy_spikes_skips_missing_champion_name() -> None:
+    players = [{"championName": "", "items": [{"price": 3000}], "team": "CHAOS"}]
+    spikes, _ = detect_enemy_spikes({}, players)
+    assert spikes == []
+
+
+# ---------------------------------------------------------------------------
+# rule_enemy_item_spike (decision engine)
+# ---------------------------------------------------------------------------
+
+from dataclasses import dataclass, field
+
+
+@dataclass
+class _ESSnap:
+    game_time: float = 600.0
+    enemy_spikes: list = field(default_factory=list)
+    allies: list = field(default_factory=list)
+    enemies: list = field(default_factory=list)
+    ally_aggregate: object = None
+    enemy_aggregate: object = None
+    objectives: list = field(default_factory=list)
+    raw_events: list = field(default_factory=list)
+    active_team: str = ""
+    active_summoner: str = ""
+    active_level: int = 8
+    active_items: int = 1
+    new_spikes: list = field(default_factory=list)
+    game_result: str = ""
+
+
+from champ_assistant.advisor.decision_engine import rule_enemy_item_spike
+
+
+def test_enemy_spike_rule_fires_on_second_legendary() -> None:
+    snap = _ESSnap(enemy_spikes=[EnemySpike("Jinx", 2)])
+    rec = rule_enemy_item_spike(snap)
+    assert rec is not None
+    assert rec.kind == "enemy_spike"
+    assert rec.severity == "warn"
+    assert "Jinx" in rec.text
+    assert "2" in rec.text
+
+
+def test_enemy_spike_rule_fires_info_on_first_legendary() -> None:
+    snap = _ESSnap(enemy_spikes=[EnemySpike("Thresh", 1)])
+    rec = rule_enemy_item_spike(snap)
+    assert rec is not None
+    assert rec.severity == "info"
+
+
+def test_enemy_spike_rule_silent_when_no_spikes() -> None:
+    snap = _ESSnap(enemy_spikes=[])
+    assert rule_enemy_item_spike(snap) is None
+
+
+def test_enemy_spike_rule_picks_highest_count() -> None:
+    snap = _ESSnap(enemy_spikes=[EnemySpike("A", 1), EnemySpike("B", 3)])
+    rec = rule_enemy_item_spike(snap)
+    assert rec is not None
+    assert "B" in rec.text  # B has 3 legendaries — more dangerous

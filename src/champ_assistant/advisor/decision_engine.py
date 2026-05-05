@@ -3013,6 +3013,42 @@ def rule_power_spike(snapshot: "LcdaSnapshot") -> Recommendation | None:
     )
 
 
+def rule_enemy_item_spike(snapshot: "LcdaSnapshot") -> Recommendation | None:
+    """Warn when an enemy champion just completed their 1st/2nd/3rd legendary
+    item. The most dangerous spike (highest legendary count) surfaces first
+    so the player knows which enemy is now scarier.
+
+    2nd legendary is the critical threshold for carries — that's typically
+    their mid-game power peak. 1st legendary fires as info only.
+    """
+    spikes = getattr(snapshot, "enemy_spikes", []) or []
+    if not spikes:
+        return None
+
+    # Most dangerous spike first (highest legendary count, then alphabetical).
+    top = max(spikes, key=lambda s: (getattr(s, "legendary_count", 0), getattr(s, "champion_name", "")))
+    champ = getattr(top, "champion_name", "Gegner")
+    count = getattr(top, "legendary_count", 1)
+
+    if count >= 2:
+        severity, ttl_s = "warn", 30.0
+        text = f"{champ} hat {count}. Item — Vorsicht, starker Spike!"
+    else:
+        severity, ttl_s = "info", 25.0
+        text = f"{champ} hat 1. Item fertig"
+
+    return Recommendation(
+        text=text,
+        severity=severity,
+        category="safety",
+        confidence=0.90,
+        risk="MEDIUM" if count >= 2 else "LOW",
+        ttl_s=ttl_s,
+        kind="enemy_spike",
+        reasons=(f"{champ}: {count}. Legendary Item abgeschlossen",),
+    )
+
+
 # Rule registry — extend by appending a function. Order doesn't affect
 # ``evaluate``'s output (caller sorts by severity).
 ALL_RULES: tuple[Callable[["LcdaSnapshot"], Recommendation | None], ...] = (
@@ -3024,6 +3060,8 @@ ALL_RULES: tuple[Callable[["LcdaSnapshot"], Recommendation | None], ...] = (
     rule_fight_window_closing,
     # Power spike — ult ready / item completed; brief action window.
     rule_power_spike,
+    # Enemy item spike — enemy carry just completed a legendary.
+    rule_enemy_item_spike,
     # Numbers-asymmetry — safety overrides objective calls.
     rule_numbers_disadvantage,
     rule_numbers_advantage,
