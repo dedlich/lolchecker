@@ -23,10 +23,14 @@ from .players import (
     LivePlayer,
     TeamAggregate,
     aggregate_team,
+    allies_of,
     enemies_of,
     parse_players,
 )
+from .active_state import ActiveCombatState, extract_active_combat_state
+from .gank_window import GankAlert, detect_gank_risk
 from .power_spikes import EnemySpike, PowerSpike, detect_enemy_spikes, detect_spikes, extract_active_state
+from .tilt import TiltState, detect_tilt
 
 logger = logging.getLogger(__name__)
 
@@ -62,6 +66,16 @@ class LcdaSnapshot:
     # Enemy item-completion spikes this tick — non-empty only on the tick
     # where an enemy crossed a legendary-item threshold (1st / 2nd / 3rd).
     enemy_spikes: list[EnemySpike] = field(default_factory=list)
+    # Non-None on ticks where the enemy jungler has been unaccounted-for
+    # long enough to warrant a gank warning (Charter B2).
+    gank_alert: GankAlert | None = None
+    # Active player's tilt state — death-pattern coaching (Charter B4).
+    # ``None`` only when the active player hasn't died yet this game.
+    tilt_state: TiltState | None = None
+    # Active player's HP %, mana %, current gold — drives recall + low-HP
+    # rules. Always populated (defaults to all-full when activePlayer is
+    # missing) so rules can read fields without None-checks.
+    active_combat: ActiveCombatState = field(default_factory=ActiveCombatState)
 
 
 SnapshotCallback = Callable[[LcdaSnapshot | None], Awaitable[None] | None]
@@ -94,6 +108,8 @@ class LcdaSource:
         self._prev_level = 0
         self._prev_items = 0
         self._prev_enemy_counts: dict[str, int] = {}  # champion_name → legendary count
+        self._jungler_last_seen_gt: float = 0.0       # gank-window tracking
+        self._jungler_was_alive: bool = False
 
     async def run(self) -> None:
         """Loop until ``close()`` is called.
@@ -147,6 +163,7 @@ class LcdaSource:
         active_team = self._team_of(all_players, active_name)
 
         new_level, new_items = extract_active_state(active)
+        active_combat = extract_active_combat_state(active)
         spikes = detect_spikes(
             prev_level=self._prev_level,
             new_level=new_level,
@@ -166,7 +183,50 @@ class LcdaSource:
         )
         self._prev_enemy_counts = new_enemy_counts
 
-        from .players import allies_of
+        # Gank window detection — infer enemy jungler MIA from kill events.
+        enemy_players = enemies_of(all_players, active_team)
+        active_player_obj = next(
+            (p for p in all_players if p.summoner_name == active_name), None
+        )
+        active_position = str(getattr(active_player_obj, "position", "") or "")
+        gank_alert, new_jlsg, new_jwa = detect_gank_risk(
+            active_position=active_position,
+            enemies=enemy_players,
+            events=list(events),
+            game_time=game_time,
+            prev_last_seen_gt=self._jungler_last_seen_gt,
+            prev_was_alive=self._jungler_was_alive,
+        )
+        self._jungler_last_seen_gt = new_jlsg
+        self._jungler_was_alive = new_jwa
+
+        # Tilt detection — track the active player's death pattern.
+        # Build the active-player and ally-id sets, matching how kill events
+        # identify champions (LCDA uses summoner_name in some versions,
+        # champion_name in others — include both to be defensive).
+        active_ids: set[str] = set()
+        if active_name:
+            active_ids.add(active_name)
+        if active_player_obj is not None:
+            cn = getattr(active_player_obj, "champion_name", "")
+            if cn:
+                active_ids.add(cn)
+        ally_ids: set[str] = set()
+        if active_team:
+            for p in all_players:
+                if p.team != active_team or p.summoner_name == active_name:
+                    continue
+                if p.summoner_name:
+                    ally_ids.add(p.summoner_name)
+                if p.champion_name:
+                    ally_ids.add(p.champion_name)
+        tilt_state = detect_tilt(
+            active_ids=active_ids,
+            ally_ids=ally_ids,
+            events=list(events),
+            game_time=game_time,
+        )
+
         allies = allies_of(all_players, active_team) if active_team else []
         enemy_team = next(
             (t for t in {p.team for p in all_players} if t and t != active_team),
@@ -198,6 +258,9 @@ class LcdaSource:
             enemy_aggregate=enemy_agg,
             game_result=game_result,
             enemy_spikes=enemy_spikes,
+            gank_alert=gank_alert,
+            tilt_state=tilt_state,
+            active_combat=active_combat,
         )
 
     @staticmethod

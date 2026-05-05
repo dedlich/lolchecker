@@ -2984,7 +2984,8 @@ def rule_power_spike(snapshot: "LcdaSnapshot") -> Recommendation | None:
     spikes = getattr(snapshot, "new_spikes", []) or []
     if not spikes:
         return None
-    spike = spikes[-1]
+    # Level spikes (6/11/16) outweigh item spikes; higher value wins within each kind.
+    spike = max(spikes, key=lambda s: (1 if getattr(s, "kind", "") == "level" else 0, getattr(s, "value", 0)))
     kind = getattr(spike, "kind", "")
     value = getattr(spike, "value", 0)
     label = getattr(spike, "label", "Power Spike")
@@ -3049,6 +3050,262 @@ def rule_enemy_item_spike(snapshot: "LcdaSnapshot") -> Recommendation | None:
     )
 
 
+# Game-phase boundaries used by tilt-rule messaging. These are
+# coaching cutoffs, not hard mechanical phases — late-game advice
+# (group 5, no splits) gets dangerous before 25:00 in solo-queue.
+_TILT_LANE_PHASE_END_S: float = 840.0    # 14:00 — first item, lane priority shifts
+_TILT_MID_GAME_END_S: float = 1500.0     # 25:00 — Baron + late-game grouping
+
+
+def _tilt_phase_advice(game_time: float) -> str:
+    """One-liner of *what to do during the next walk-back* given the
+    current game phase. Returned advice is concrete, not motivational."""
+    if game_time <= _TILT_LANE_PHASE_END_S:
+        return "Welle unter Turm freezen, Jungler pingen, kein 1v1"
+    if game_time <= _TILT_MID_GAME_END_S:
+        return "Mit Team gruppieren, kein Side-Lane, Vision setzen"
+    return "Death-Timer 50s+ — niemals alleine zeigen, nur 5er Plays"
+
+
+# ─── Recall-window thresholds (B5 — Recommendation Service) ──────────────────
+# These match the way pros actually think about resource state, not raw HP/mana
+# numbers. Tuned conservatively: false positives are worse than missed calls
+# because the player will mute a noisy assistant within one game.
+
+HP_CRITICAL_PCT: float = 0.30   # below this you die to a single combo
+HP_LOW_PCT: float = 0.50        # below this, trades aren't safe
+MANA_DEPLETED_PCT: float = 0.20 # below this, you can't trade or escape
+MANA_LOW_PCT: float = 0.30      # below this, you're at most 1 ability away from dry
+
+# Gold tiers — generic component thresholds the player can map to their build.
+GOLD_BACK_WORTH: float = 1100.0       # Sheen / Tear / first boots
+GOLD_COMPONENT_SPIKE: float = 1300.0  # Lost Chapter / Caulfield's tier
+GOLD_LARGE_SPIKE: float = 1600.0      # Pickaxe / BF Sword tier
+
+# Recall coaching is most valuable in lane + early mid-game. After 20:00,
+# back timing is dictated by team rotations, not personal resources.
+RECALL_PHASE_END_S: float = 1200.0    # 20:00
+
+
+def rule_recall_check(snapshot: "LcdaSnapshot") -> Recommendation | None:
+    """Recall-window coaching driven by HP %, mana %, and gold (Charter B5).
+
+    Picks at most one of four signals, in priority order:
+
+    1. **Critical HP** (alert) — HP < 30 %; surfaces "back NOW" regardless
+       of gold or game phase. Any next interaction kills you.
+
+    2. **Resource depleted + back-worth gold** (warn) — HP < 50 % OR mana
+       < 25 %, AND gold ≥ 1100. The classic "you need a reset, and you
+       have value to bank" signal. Pros recall here every time.
+
+    3. **Pure gold opportunity** (info) — gold ≥ 1300 in lane phase, even
+       at full HP. The next trip back is worth a real spike; don't sit
+       on uncashed gold while losing tempo.
+
+    4. **Mana check** (info) — mana < 20 % in lane phase. Tells the
+       player they're now in their opponent's all-in window, and to
+       freeze the wave / use Doran's regen until mana is back.
+
+    Skipped while dead (hp_pct ≤ 0). Does **not** fire after 20:00 except
+    for tier 1 (critical HP); recall timing past 20:00 is dictated by
+    team rotation, not personal resources.
+    """
+    state = getattr(snapshot, "active_combat", None)
+    if state is None:
+        return None
+    hp_pct = float(getattr(state, "hp_pct", 1.0))
+    mana_pct = float(getattr(state, "mana_pct", 1.0))
+    gold = float(getattr(state, "gold", 0.0))
+    is_mana_user = bool(getattr(state, "is_mana_user", False))
+    game_time = float(getattr(snapshot, "game_time", 0.0) or 0.0)
+
+    # Dead players get no advice — they can't act on it before respawn.
+    if hp_pct <= 0.0:
+        return None
+
+    # Tier 1 — Critical HP. Always fires regardless of phase / gold.
+    if hp_pct < HP_CRITICAL_PCT:
+        pct = int(hp_pct * 100)
+        return Recommendation(
+            text=f"{pct}% HP — RECALL JETZT, nächster Trade tötet dich",
+            severity="alert",
+            category="safety",
+            confidence=0.95,
+            risk="HIGH",
+            ttl_s=15.0,
+            kind="recall_critical",
+            reasons=(
+                f"HP: {pct}%",
+                f"Gold dabei: {int(gold)}g",
+                "Jeder Skillshot / Auto = Tod",
+            ),
+        )
+
+    # Tier 2 — Resource depleted + back-worth gold (warn).
+    resource_low = hp_pct < HP_LOW_PCT or (is_mana_user and mana_pct < MANA_LOW_PCT)
+    if resource_low and gold >= GOLD_BACK_WORTH and game_time <= RECALL_PHASE_END_S:
+        triggers: list[str] = []
+        if hp_pct < HP_LOW_PCT:
+            triggers.append(f"HP {int(hp_pct*100)}%")
+        if is_mana_user and mana_pct < MANA_LOW_PCT:
+            triggers.append(f"Mana {int(mana_pct*100)}%")
+        spike_tier = (
+            "Large Item" if gold >= GOLD_LARGE_SPIKE
+            else "Component Spike" if gold >= GOLD_COMPONENT_SPIKE
+            else "Component"
+        )
+        return Recommendation(
+            text=f"Recall lohnt — {' + '.join(triggers)}, {int(gold)}g für {spike_tier}",
+            severity="warn",
+            category="safety",
+            confidence=0.85,
+            risk="MEDIUM",
+            ttl_s=20.0,
+            kind="recall_resource",
+            reasons=(
+                *triggers,
+                f"Gold: {int(gold)}g (≥{int(GOLD_BACK_WORTH)}g back-worth)",
+                "Reset-Tempo > vor-pushen + halb-tot bleiben",
+            ),
+        )
+
+    # Tier 3 — Pure gold opportunity (info). Lane phase only.
+    if gold >= GOLD_COMPONENT_SPIKE and game_time <= RECALL_PHASE_END_S:
+        return Recommendation(
+            text=f"{int(gold)}g — Recall-Fenster, Component-Spike kaufen + sicher zurück",
+            severity="info",
+            category="tempo",
+            confidence=0.70,
+            risk="LOW",
+            ttl_s=20.0,
+            kind="recall_gold",
+            reasons=(
+                f"Gold: {int(gold)}g (≥{int(GOLD_COMPONENT_SPIKE)}g Component-Spike)",
+                f"HP {int(hp_pct*100)}% — sicherer Reset möglich",
+            ),
+        )
+
+    # Tier 4 — Mana check (info). Lane phase only, mana users only.
+    if is_mana_user and mana_pct < MANA_DEPLETED_PCT and game_time <= RECALL_PHASE_END_S:
+        return Recommendation(
+            text=f"Mana {int(mana_pct*100)}% — Gegner-All-In-Fenster offen, Welle freezen + warten",
+            severity="info",
+            category="safety",
+            confidence=0.65,
+            risk="MEDIUM",
+            ttl_s=15.0,
+            kind="mana_check",
+            reasons=(
+                f"Mana: {int(mana_pct*100)}% (<{int(MANA_DEPLETED_PCT*100)}%)",
+                "Kein Trade-Antwort verfügbar — defensive Position",
+            ),
+        )
+
+    return None
+
+
+def rule_tilt_detection(snapshot: "LcdaSnapshot") -> Recommendation | None:
+    """Surface the active player's death pattern as a coaching call.
+
+    Five tiers:
+      * caution  — first lane death; freeze + ping
+      * tilt     — 2 deaths in 90s; the classic tilt window
+      * re_engage — 2 deaths in 60s; "1-and-done", do nothing for 30s
+      * spiral   — 3 deaths in 180s OR 2 in 60s; hard reset
+
+    Modifiers append to the rec text:
+      * bounty_lost: "+ Bounty (3+ Streak) verloren — ~600g extra für Gegner"
+      * solo_death:  "+ Alleine gestorben — keine Side-Lane mehr"
+
+    The phase-aware advice line replaces the generic "play safe" because
+    "play safe" means different things in lane vs mid-game vs late-game.
+    Solo-queue users who *know* what playing safe means don't need
+    coaching; the rest get concrete actions.
+    """
+    state = getattr(snapshot, "tilt_state", None)
+    if state is None or getattr(state, "severity", "ok") == "ok":
+        return None
+
+    severity_tier = state.severity
+    game_time = float(getattr(snapshot, "game_time", 0.0) or 0.0)
+    phase_advice = _tilt_phase_advice(game_time)
+
+    if severity_tier == "spiral":
+        text = f"DEATH SPIRAL — {state.deaths_recent_180s} Tode in 3min. STOP. 60s NICHT zeigen — {phase_advice}"
+        severity, ttl_s, confidence, risk = "alert", 90.0, 0.95, "HIGH"
+    elif severity_tier == "re_engage":
+        text = f"1-AND-DONE — 2 Tode in 60s. Direkt nach Respawn wieder rein = Disaster. 30s warten — {phase_advice}"
+        severity, ttl_s, confidence, risk = "alert", 75.0, 0.90, "HIGH"
+    elif severity_tier == "tilt":
+        text = f"Tilt-Fenster — 2 Tode in 90s. Länger basen, 2 Components kaufen, {phase_advice}"
+        severity, ttl_s, confidence, risk = "warn", 60.0, 0.85, "HIGH"
+    else:  # caution — single lane death
+        text = f"Erster Tod — {phase_advice}, kein Comeback-1v1 versuchen"
+        severity, ttl_s, confidence, risk = "info", 30.0, 0.65, "MEDIUM"
+
+    # Modifier suffixes — appended only when the modifier is true.
+    # Reasons get the plain facts; text gets the actionable suffix.
+    modifiers: list[str] = []
+    reasons: list[str] = [
+        f"Tode total: {state.deaths_total}",
+        f"Tode in 90s: {state.deaths_recent_90s}",
+    ]
+    if state.bounty_lost:
+        modifiers.append("+ Bounty (3+ Streak) verloren — ~600g extra Gegner")
+        reasons.append("Bounty: 3+ unanswered kills vor letztem Tod verloren")
+    if state.solo_death:
+        modifiers.append("+ Alleine gestorben — keine Side-Lane mehr")
+        reasons.append("Letzter Tod ohne Ally-Beteiligung — Positionierungsfehler")
+    if modifiers:
+        text = text + "  " + "  ".join(modifiers)
+
+    return Recommendation(
+        text=text,
+        severity=severity,
+        category="safety",
+        confidence=confidence,
+        risk=risk,
+        ttl_s=ttl_s,
+        kind="tilt",
+        reasons=tuple(reasons),
+    )
+
+
+def rule_gank_risk(snapshot: "LcdaSnapshot") -> Recommendation | None:
+    """Warn when the enemy jungler has been unaccounted-for long enough
+    to be approaching a lane undetected (Charter B2).
+
+    Uses the GankAlert computed by LcdaSource from ChampionKill event
+    timestamps. 60s MIA → info; 90s MIA → warn. Only fires during
+    laning phase (4–20 min) for lane roles (TOP, MID, BOT).
+    """
+    alert = getattr(snapshot, "gank_alert", None)
+    if alert is None:
+        return None
+    jungler = getattr(alert, "jungler_name", "Jungler")
+    mia = int(getattr(alert, "seconds_mia", 0))
+    severity = str(getattr(alert, "severity", "info"))
+    if severity == "warn":
+        text = f"{jungler} seit {mia}s verschwunden — Gank möglich! Welle räumen oder zurückziehen."
+        risk = "HIGH"
+        ttl_s = 15.0
+    else:
+        text = f"{jungler} seit {mia}s nicht gesehen — Vorsicht in der Lane."
+        risk = "MEDIUM"
+        ttl_s = 12.0
+    return Recommendation(
+        text=text,
+        severity=severity,
+        category="safety",
+        confidence=0.72,
+        risk=risk,
+        ttl_s=ttl_s,
+        kind="gank_risk",
+        reasons=(f"Jungler {jungler} nicht in Kill-Events seit {mia}s",),
+    )
+
+
 # Rule registry — extend by appending a function. Order doesn't affect
 # ``evaluate``'s output (caller sorts by severity).
 ALL_RULES: tuple[Callable[["LcdaSnapshot"], Recommendation | None], ...] = (
@@ -3062,6 +3319,12 @@ ALL_RULES: tuple[Callable[["LcdaSnapshot"], Recommendation | None], ...] = (
     rule_power_spike,
     # Enemy item spike — enemy carry just completed a legendary.
     rule_enemy_item_spike,
+    # B2 gank window — enemy jungler MIA during laning phase.
+    rule_gank_risk,
+    # B4 tilt detection — active player's death pattern coaching.
+    rule_tilt_detection,
+    # B5 recall window — HP/mana/gold-driven back timing.
+    rule_recall_check,
     # Numbers-asymmetry — safety overrides objective calls.
     rule_numbers_disadvantage,
     rule_numbers_advantage,
@@ -3201,6 +3464,11 @@ def _suppress_dominated(recs: list[Recommendation]) -> list[Recommendation]:
             "fight", "fight_bad", "numbers_adv", "gold_lead", "kill_lead",
             "jungler_down",
             "window_closing",  # ace already urges the push — closing window is redundant
+            "gank_risk",       # full-team push moment — laning gank caution is irrelevant
+            "tilt",            # ace push moment dominates personal-tilt coaching
+            "recall_resource", # 4v0 push moment — back can wait until after the play
+            "recall_gold",     # ditto — don't recall through an ace window
+            "mana_check",      # mana doesn't matter when team is doing the work
         }
         recs = [r for r in recs if r.kind not in _ace_drop]
         kinds = {r.kind for r in recs}
@@ -3264,6 +3532,7 @@ def _suppress_dominated(recs: list[Recommendation]) -> list[Recommendation]:
             "enemy_soul_point",  # drake denial requires committing — not when base is open
             "cs_deficit",        # farming advice irrelevant while defending base
             "lane_level_adv",    # lane-trade window irrelevant while base is open
+            "gank_risk",         # laning gank warning irrelevant when base is open
             # NOTE: ally_inhib_respawning intentionally coexists with ally_inhib_down:
             # "defend now + inhib back in 30s" are complementary, not conflicting.
         }
@@ -3290,6 +3559,22 @@ def _suppress_dominated(recs: list[Recommendation]) -> list[Recommendation]:
             "dragon_soul", "jungler_down",
         }
         recs = [r for r in recs if r.kind not in _fight_kinds]
+
+    # Rule 11 — spiral-level tilt (alert) on the active player suppresses
+    # offensive prompts. Telling a feeding player "fight now!" is the
+    # worst possible combo; the tilt rec is asking them to do nothing.
+    has_spiral_tilt = any(
+        r.kind == "tilt" and r.severity == "alert" for r in recs
+    )
+    if has_spiral_tilt:
+        _spiral_drop = {
+            "fight", "numbers_adv", "gold_lead", "kill_lead",
+            "power_spike",       # ult-up "play now" contradicts "do nothing"
+            "lane_level_adv",    # lane-trade window irrelevant while spiraling
+            "flash_down", "tp_down", "combat_spell_down",
+            "jungler_down", "dragon_soul",
+        }
+        recs = [r for r in recs if r.kind not in _spiral_drop]
 
     return recs
 

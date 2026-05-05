@@ -3515,11 +3515,12 @@ def test_power_spike_text_includes_label_and_detail() -> None:
     assert "all-in" in rec.text
 
 
-def test_power_spike_uses_last_spike_when_multiple() -> None:
+def test_power_spike_picks_highest_priority_when_multiple() -> None:
+    """Level spike outranks item spike fired in the same tick."""
     snap = _Snap(new_spikes=[_spike("level", 6), _spike("items", 1)])
     rec = rule_power_spike(snap)
     assert rec is not None
-    assert rec.severity == "info"  # items=1 → info, not level-6 alert
+    assert rec.severity == "alert"  # level-6 wins over items=1 (info)
 
 
 def test_power_spike_suppressed_by_numbers_disadv() -> None:
