@@ -242,7 +242,8 @@ async def test_fixture_close_during_default_iteration_stops(tmp_path: Path) -> N
 @pytest.mark.asyncio
 async def test_real_source_yields_waiting_when_no_lockfile(tmp_path: Path) -> None:
     src = RealLcuSource(
-        poll_interval=0.0, platform="darwin", env={}, home=tmp_path
+        poll_interval=0.0, platform="darwin", env={}, home=tmp_path,
+        process_iter=lambda: [],
     )
     seen = 0
     async for event in src.events():
@@ -264,6 +265,7 @@ async def test_real_source_yields_connected_when_lockfile_appears(tmp_path: Path
         extra=[tmp_path / "lock"],
         client_factory=cf,
         stream_factory=sf,
+        process_iter=lambda: [],
     )
 
     async def deliver_lockfile() -> None:

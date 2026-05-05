@@ -70,7 +70,7 @@ JUNGLE_CAMPS: tuple[CampSpec, ...] = (
     CampSpec("order_krugs",     "Order Krugs",   90.0,  135.0),
     CampSpec("order_raptors",   "Order Raptors", 90.0,  135.0),
     CampSpec("order_wolves",    "Order Wolves",  90.0,  135.0),
-    CampSpec("order_scuttle",   "Scuttle Top",   195.0, 150.0),
+    CampSpec("order_scuttle",   "Scuttle Top",   210.0, 150.0),  # 3:30 first, 2:30 respawn
     # Chaos side (red side) — top-right jungle on SR minimap
     CampSpec("chaos_red_buff",  "Chaos Red",     90.0,  300.0),
     CampSpec("chaos_blue_buff", "Chaos Blue",    90.0,  300.0),
@@ -78,7 +78,7 @@ JUNGLE_CAMPS: tuple[CampSpec, ...] = (
     CampSpec("chaos_krugs",     "Chaos Krugs",   90.0,  135.0),
     CampSpec("chaos_raptors",   "Chaos Raptors", 90.0,  135.0),
     CampSpec("chaos_wolves",    "Chaos Wolves",  90.0,  135.0),
-    CampSpec("chaos_scuttle",   "Scuttle Bot",   195.0, 150.0),
+    CampSpec("chaos_scuttle",   "Scuttle Bot",   210.0, 150.0),  # 3:30 first, 2:30 respawn
 )
 
 
@@ -251,15 +251,14 @@ class JungleTimelineEngine:
     # -- internals --------------------------------------------------------
 
     def _compute_states(self) -> dict[str, CampState]:
-        """Camps without an observed clear render nothing — the user
-        explicitly rejected predictive 'pseudo' timers because they
-        don't reflect reality. We synthesize an ``alive`` sentinel
-        for un-anchored camps so the UI's existing 'skip if alive'
-        paint path naturally hides them.
+        """Per-camp state mapping. Only camps with an observed clear
+        anchor (from the vision pipeline) emit a real countdown — that's
+        the trustworthy signal. Un-anchored camps return the alive
+        sentinel which the UI's skip-if-alive paint path silently hides.
 
-        Camps with a registered clear go through the real countdown
-        math (anchor + respawn cycle) — that's the trustworthy half
-        of the engine and is preserved unchanged.
+        We deliberately don't fabricate predictive timers for unanchored
+        camps: a guessed countdown is worse than no countdown because
+        the player would act on bad data.
         """
         confidence = self._current_confidence()
         out: dict[str, CampState] = {}
@@ -358,27 +357,34 @@ def _camp_state_at(
             confidence=confidence,
         )
 
-    # Worst-case cycle path.
-    elapsed = game_time - spec.first_spawn_s
-    cycle_index = int(elapsed // spec.respawn_s)
-    last_spawn = spec.first_spawn_s + cycle_index * spec.respawn_s
-    next_spawn = last_spawn + spec.respawn_s
-    since_last = game_time - last_spawn
+    # Worst-case cycle path — show ONLY the first cycle (assume immediate
+    # kill at first spawn, predict the one resulting respawn). Past that
+    # we don't pretend to know whether the camp is alive or not, because
+    # without kill detection any further cycling would just be a guess
+    # that resets visibly when crossing each respawn boundary.
+    next_spawn = spec.first_spawn_s + spec.respawn_s
+    since_first_spawn = game_time - spec.first_spawn_s
 
-    if since_last < ALIVE_GRACE_S:
+    if since_first_spawn < ALIVE_GRACE_S:
         return CampState(
-            id=spec.id,
-            name=spec.name,
-            state="alive",
+            id=spec.id, name=spec.name, state="alive",
             next_spawn_at=next_spawn,
             time_remaining=max(0.0, next_spawn - game_time),
             confidence=confidence,
         )
+    if game_time < next_spawn:
+        return CampState(
+            id=spec.id, name=spec.name, state="respawning",
+            next_spawn_at=next_spawn,
+            time_remaining=max(0.0, next_spawn - game_time),
+            confidence=confidence,
+        )
+    # Past the first respawn — we have no honest signal for cycle 2+.
+    # Hide via the "alive" sentinel + zero time_remaining so the UI's
+    # skip-if-alive paint path naturally drops the timer.
     return CampState(
-        id=spec.id,
-        name=spec.name,
-        state="respawning",
-        next_spawn_at=next_spawn,
-        time_remaining=max(0.0, next_spawn - game_time),
-        confidence=confidence,
+        id=spec.id, name=spec.name, state="alive",
+        next_spawn_at=0.0,
+        time_remaining=0.0,
+        confidence=0.0,
     )

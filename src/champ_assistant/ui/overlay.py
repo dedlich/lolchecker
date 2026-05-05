@@ -502,11 +502,22 @@ class MainOverlay(QMainWindow):
             self._my_build_panel.hide()
             self._my_build_pending = None
             self._my_build_apply_btn.hide()
+            # Reset auto-apply tracker so the next champion gets a fresh push.
+            self._auto_applied_for_champ = None
             return
 
         self._my_build_pending = (champ_key, list(build.runes), list(build.items))
         self._my_build_apply_btn.show()
         self._my_build_panel.show()
+        # Auto-apply once per champion lock — pushes runes + static item set
+        # during champ select so League's in-game shop loads with our build
+        # already in place. The user can still click Apply Build to re-push
+        # if they hover-swap.
+        if getattr(self, "_auto_applied_for_champ", None) != champ_key:
+            self._auto_applied_for_champ = champ_key
+            self.apply_build_requested.emit(
+                champ_key, list(build.runes), list(build.items),
+            )
 
         # Update header icon + champion name
         role_label = (view.my_champion_role or "").replace("BOT", "ADC")

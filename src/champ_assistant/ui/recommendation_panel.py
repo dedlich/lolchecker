@@ -25,6 +25,7 @@ from PyQt6.QtCore import (
 from PyQt6.QtGui import QColor, QPainter, QPaintEvent
 from PyQt6.QtWidgets import (
     QFrame,
+    QGraphicsDropShadowEffect,
     QGraphicsOpacityEffect,
     QHBoxLayout,
     QLabel,
@@ -96,36 +97,41 @@ class _RecRow(QFrame):
         self._glyph.setStyleSheet(self._glyph_stylesheet("info"))
         layout.addWidget(self._glyph)
 
-        text_col = QVBoxLayout()
-        text_col.setSpacing(2)
-        text_col.setContentsMargins(0, 0, 0, 0)
         self._text = QLabel("")
         self._text.setWordWrap(True)
         self._text.setStyleSheet(
             f"color: {styles.TEXT_PRIMARY};"
-            f" font-size: {styles.FS_BODY}px; font-weight: 600;"
+            f" font-size: {styles.FS_BODY}px; font-weight: 800;"
+            " background: transparent;"
         )
-        text_col.addWidget(self._text)
-        # Meta-row right under the action: "78% • MEDIUM" — quick at-a-
-        # glance confidence + risk read without opening the InsightPanel.
+        # Strong drop-shadow turns the text into a "haloed" message that
+        # stays readable over the brightest game pixels (white health-bar,
+        # gold drake, light minimap regions).
+        shadow = QGraphicsDropShadowEffect(self._text)
+        shadow.setBlurRadius(8)
+        shadow.setOffset(0, 0)
+        shadow.setColor(QColor(0, 0, 0, 255))
+        self._text.setGraphicsEffect(shadow)
+        layout.addWidget(self._text, 1)
+        # Meta label still allocated so existing render() paths don't crash,
+        # but it's hidden in chat-mode — no TTL/confidence chrome.
         self._meta = QLabel("")
-        self._meta.setStyleSheet(
-            f"color: {styles.TEXT_MUTED};"
-            f" font-size: {styles.FS_CAPTION}px; font-weight: 600;"
-            " letter-spacing: 0.4px;"
-        )
-        text_col.addWidget(self._meta)
-        layout.addLayout(text_col, 1)
+        self._meta.hide()
 
     def render(self, rec: Recommendation) -> None:
+        # Tint the body text by severity so the message reads "alert" /
+        # "warn" / "info" without any panel chrome.
+        color = self._color_for(rec.severity)
         self._text.setText(rec.text)
+        self._text.setStyleSheet(
+            f"color: {color};"
+            f" font-size: {styles.FS_BODY}px; font-weight: 700;"
+            " background: transparent;"
+        )
         self._glyph.setText(_CATEGORY_GLYPHS.get(rec.category, "•"))
         self._glyph.setStyleSheet(self._glyph_stylesheet(rec.severity))
-        # High-confidence + alert → swap to a glow-bordered stylesheet
-        # variant for that "this matters" feel without piling on
-        # extra UI chrome.
-        glow = rec.confidence >= 0.8 and rec.severity == "alert"
-        self.setStyleSheet(self._stylesheet_for(rec.severity, glow=glow))
+        # Background is always transparent in chat-mode — no glow variant.
+        self.setStyleSheet(self._stylesheet_for(rec.severity))
         # Stash for paintEvent — confidence bar at bottom of the card.
         self._severity = rec.severity
         self._confidence = max(0.0, min(1.0, rec.confidence))
@@ -189,31 +195,9 @@ class _RecRow(QFrame):
         self._opacity_effect.setOpacity(1.0)
 
     def paintEvent(self, event: QPaintEvent) -> None:  # type: ignore[override]
+        # Chat-mode: no confidence bar, no background — let the
+        # transparent card render exactly nothing.
         super().paintEvent(event)
-        # Render the confidence bar over the bottom-inside edge of the
-        # card. Color matches severity, width fills proportional to
-        # the rec's confidence.
-        if not getattr(self, "_severity", None):
-            return
-        painter = QPainter(self)
-        try:
-            painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-            color = QColor(self._color_for(self._severity))
-            color.setAlpha(220)
-            painter.setBrush(color)
-            painter.setPen(Qt.PenStyle.NoPen)
-            inner_w = self.width() - 2 * (self.STRIP_W + 4)
-            bar_w = int(inner_w * self._confidence)
-            painter.drawRoundedRect(
-                self.STRIP_W + 4,
-                self.height() - CONFIDENCE_BAR_HEIGHT_PX - 4,
-                bar_w,
-                CONFIDENCE_BAR_HEIGHT_PX,
-                CONFIDENCE_BAR_HEIGHT_PX // 2,
-                CONFIDENCE_BAR_HEIGHT_PX // 2,
-            )
-        finally:
-            painter.end()
 
     @staticmethod
     def _color_for(severity: str) -> str:
@@ -225,31 +209,10 @@ class _RecRow(QFrame):
 
     @classmethod
     def _stylesheet_for(cls, severity: str, *, glow: bool = False) -> str:
-        color = cls._color_for(severity)
-        # Glow variant — full-width accent border instead of just the
-        # left strip, plus a brighter background. Reserved for high-
-        # confidence alerts so the user catches the call instantly.
-        if glow:
-            return (
-                f"QFrame[rec-row='true'] {{"
-                f" background-color: {styles.BG_ELEVATED};"
-                f" border-radius: {styles.RADIUS}px;"
-                f" border: 2px solid {color};"
-                f" }}"
-                f" QFrame[rec-row='true']:hover {{"
-                f" background-color: {styles.BG_INTERACT};"
-                f" }}"
-            )
-        return (
-            f"QFrame[rec-row='true'] {{"
-            f" background-color: {styles.BG_TERTIARY};"
-            f" border-radius: {styles.RADIUS}px;"
-            f" border-left: {cls.STRIP_W}px solid {color};"
-            f" }}"
-            f" QFrame[rec-row='true']:hover {{"
-            f" background-color: {styles.BG_INTERACT};"
-            f" }}"
-        )
+        # Chat-style: no card background, no border, no left strip.
+        # The body label carries the severity color directly so the
+        # message is read as plain text floating over the game.
+        return "QFrame[rec-row='true'] { background: transparent; border: none; }"
 
     @classmethod
     def _glyph_stylesheet(cls, severity: str) -> str:
@@ -265,11 +228,19 @@ class RecommendationPanel(FloatingWidget):
 
     KEY = "recommendation_panel"
     DEFAULT_POS = (40, 40)
-    DEFAULT_SIZE = (400, 200)
+    DEFAULT_SIZE = (440, 320)
 
     def __init__(self) -> None:
         super().__init__()
-        self.setStyleSheet(styles.floating_panel_stylesheet())
+        # Pure chat overlay — fully transparent panel, no border, no
+        # backdrop. FloatingWidget's base class adds a 28-blur drop-shadow
+        # on the panel rect for its "lifted card" look; since we have no
+        # background, that shadow renders as a phantom rounded outline.
+        # Drop the panel-level effect (per-row text gets its own shadow).
+        self.setGraphicsEffect(None)
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
+        self.setAttribute(Qt.WidgetAttribute.WA_NoSystemBackground, True)
+        self.setStyleSheet("background: transparent; border: none;")
         # Focus mode — collapses to top-1 only when active. Toggled by
         # set_focus_mode(). Default off; the user opts in via Settings.
         self._focus_mode = False
@@ -277,29 +248,10 @@ class RecommendationPanel(FloatingWidget):
 
         outer = QVBoxLayout(self)
         outer.setContentsMargins(
-            styles.SPACING_WIDE, styles.SPACING_GRID,
-            styles.SPACING_WIDE, styles.SPACING_GRID,
+            styles.SPACING_GRID, styles.SPACING_GRID,
+            styles.SPACING_GRID, styles.SPACING_GRID,
         )
-        outer.setSpacing(styles.SPACING_TIGHT + 2)
-
-        # Header strip — small accent dot + section label.
-        header = QHBoxLayout()
-        header.setSpacing(styles.SPACING_TIGHT)
-        header.setContentsMargins(2, 0, 0, 0)
-        dot = QLabel("●")
-        dot.setStyleSheet(
-            f"color: {styles.ACCENT};"
-            f" font-size: {styles.FS_BODY}px;"
-        )
-        header.addWidget(dot)
-        title = QLabel("EMPFEHLUNGEN")
-        title.setStyleSheet(
-            f"color: {styles.TEXT_MUTED};"
-            f" font-size: {styles.FS_LABEL}px; font-weight: 700;"
-            " letter-spacing: 1.6px;"
-        )
-        header.addWidget(title, 1)
-        outer.addLayout(header)
+        outer.setSpacing(styles.SPACING_TIGHT)
 
         # Pre-allocated row cards. Layout never shifts on rec churn.
         self._rows: list[_RecRow] = []

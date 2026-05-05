@@ -1153,7 +1153,7 @@ CS_EXPECTED_PER_MIN = 8.0
 CS_INFO_DEFICIT = 2.0              # info  (< 6.0/min when expected 8.0)
 CS_WARN_DEFICIT = 3.5              # warn  (< 4.5/min when expected 8.0)
 # Long TTL so the rule fires once per ~2 ticks, not every 2 s tick.
-CS_DEFICIT_TTL_S = 120.0
+CS_DEFICIT_TTL_S = 30.0
 # Positions exempt from CS checks.
 _NON_CS_POSITIONS: frozenset[str] = frozenset({"UTILITY", "JUNGLE"})
 
@@ -1206,7 +1206,7 @@ def rule_cs_deficit(snapshot: "LcdaSnapshot") -> Recommendation | None:
     expected_cs = int(CS_EXPECTED_PER_MIN * min_elapsed)
 
     return Recommendation(
-        text=f"CS-Rückstand: {cs}/{expected_cs} ({cs_per_min:.1f}/min) — farme mehr Wellen",
+        text=f"CS {cs} ({cs_per_min:.1f}/min, Ziel {CS_EXPECTED_PER_MIN:.0f}/min) — farme Wellen",
         severity=severity,
         category="lane",
         confidence=0.75,
@@ -1215,7 +1215,7 @@ def rule_cs_deficit(snapshot: "LcdaSnapshot") -> Recommendation | None:
         kind="cs_deficit",
         reasons=(
             f"{cs_per_min:.1f} CS/min (Ziel: {CS_EXPECTED_PER_MIN:.0f}/min)",
-            f"Minute {min_elapsed}: {cs} CS, erwartet ~{expected_cs}",
+            f"Minute {min_elapsed}: {cs} CS, Soll ~{expected_cs}",
         ),
     )
 
@@ -3087,6 +3087,19 @@ GOLD_LARGE_SPIKE: float = 1600.0      # Pickaxe / BF Sword tier
 RECALL_PHASE_END_S: float = 1200.0    # 20:00
 
 
+# Hysteresis state for the recall rule — module-level dedup so each
+# tier doesn't re-fire every 2 s while its trigger condition persists.
+# All four tiers re-arm only after the player crosses the corresponding
+# rearm threshold (HP > 35 %, mana > 30 %, gold spent below threshold).
+_RECALL_CRITICAL_ARMED: bool = True
+_RECALL_RESOURCE_ARMED: bool = True
+_RECALL_GOLD_ARMED: bool = True
+_RECALL_MANA_ARMED: bool = True
+HP_RECALL_REARM_PCT: float = 0.35
+MANA_RECALL_REARM_PCT: float = 0.30
+GOLD_RECALL_REARM_BUFFER: float = 200.0  # gold must drop this far below threshold
+
+
 def rule_recall_check(snapshot: "LcdaSnapshot") -> Recommendation | None:
     """Recall-window coaching driven by HP %, mana %, and gold (Charter B5).
 
@@ -3111,6 +3124,8 @@ def rule_recall_check(snapshot: "LcdaSnapshot") -> Recommendation | None:
     for tier 1 (critical HP); recall timing past 20:00 is dictated by
     team rotation, not personal resources.
     """
+    global _RECALL_CRITICAL_ARMED, _RECALL_RESOURCE_ARMED
+    global _RECALL_GOLD_ARMED, _RECALL_MANA_ARMED
     state = getattr(snapshot, "active_combat", None)
     if state is None:
         return None
@@ -3122,10 +3137,30 @@ def rule_recall_check(snapshot: "LcdaSnapshot") -> Recommendation | None:
 
     # Dead players get no advice — they can't act on it before respawn.
     if hp_pct <= 0.0:
+        # Reset hysteresis on death — next life starts fresh.
+        _RECALL_CRITICAL_ARMED = True
+        _RECALL_RESOURCE_ARMED = True
+        _RECALL_GOLD_ARMED = True
+        _RECALL_MANA_ARMED = True
         return None
 
-    # Tier 1 — Critical HP. Always fires regardless of phase / gold.
+    # Re-arm each tier once its rearm threshold is crossed. Without this
+    # the rules fire every snapshot tick while their trigger condition
+    # persists, producing dozens of identical recs per game.
+    if hp_pct >= HP_RECALL_REARM_PCT:
+        _RECALL_CRITICAL_ARMED = True
+    if hp_pct >= HP_LOW_PCT and (not is_mana_user or mana_pct >= MANA_LOW_PCT):
+        _RECALL_RESOURCE_ARMED = True
+    if gold < GOLD_COMPONENT_SPIKE - GOLD_RECALL_REARM_BUFFER:
+        _RECALL_GOLD_ARMED = True
+    if not is_mana_user or mana_pct >= MANA_RECALL_REARM_PCT:
+        _RECALL_MANA_ARMED = True
+
+    # Tier 1 — Critical HP. Fires once per "below 30 %" episode.
+    if hp_pct < HP_CRITICAL_PCT and not _RECALL_CRITICAL_ARMED:
+        return None
     if hp_pct < HP_CRITICAL_PCT:
+        _RECALL_CRITICAL_ARMED = False
         pct = int(hp_pct * 100)
         return Recommendation(
             text=f"{pct}% HP — RECALL JETZT, nächster Trade tötet dich",
@@ -3144,7 +3179,12 @@ def rule_recall_check(snapshot: "LcdaSnapshot") -> Recommendation | None:
 
     # Tier 2 — Resource depleted + back-worth gold (warn).
     resource_low = hp_pct < HP_LOW_PCT or (is_mana_user and mana_pct < MANA_LOW_PCT)
-    if resource_low and gold >= GOLD_BACK_WORTH and game_time <= RECALL_PHASE_END_S:
+    if (
+        resource_low and gold >= GOLD_BACK_WORTH
+        and game_time <= RECALL_PHASE_END_S
+        and _RECALL_RESOURCE_ARMED
+    ):
+        _RECALL_RESOURCE_ARMED = False
         triggers: list[str] = []
         if hp_pct < HP_LOW_PCT:
             triggers.append(f"HP {int(hp_pct*100)}%")
@@ -3171,7 +3211,12 @@ def rule_recall_check(snapshot: "LcdaSnapshot") -> Recommendation | None:
         )
 
     # Tier 3 — Pure gold opportunity (info). Lane phase only.
-    if gold >= GOLD_COMPONENT_SPIKE and game_time <= RECALL_PHASE_END_S:
+    if (
+        gold >= GOLD_COMPONENT_SPIKE
+        and game_time <= RECALL_PHASE_END_S
+        and _RECALL_GOLD_ARMED
+    ):
+        _RECALL_GOLD_ARMED = False
         return Recommendation(
             text=f"{int(gold)}g — Recall-Fenster, Component-Spike kaufen + sicher zurück",
             severity="info",
@@ -3187,7 +3232,12 @@ def rule_recall_check(snapshot: "LcdaSnapshot") -> Recommendation | None:
         )
 
     # Tier 4 — Mana check (info). Lane phase only, mana users only.
-    if is_mana_user and mana_pct < MANA_DEPLETED_PCT and game_time <= RECALL_PHASE_END_S:
+    if (
+        is_mana_user and mana_pct < MANA_DEPLETED_PCT
+        and game_time <= RECALL_PHASE_END_S
+        and _RECALL_MANA_ARMED
+    ):
+        _RECALL_MANA_ARMED = False
         return Recommendation(
             text=f"Mana {int(mana_pct*100)}% — Gegner-All-In-Fenster offen, Welle freezen + warten",
             severity="info",

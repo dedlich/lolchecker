@@ -181,6 +181,7 @@ class RealLcuSource:
         extra: list[Path] | None = None,
         client_factory: ClientFactory = _default_client_factory,
         stream_factory: StreamFactory = _default_stream_factory,
+        process_iter: Any = None,
     ) -> None:
         self.poll_interval = poll_interval
         self._platform = platform
@@ -189,6 +190,7 @@ class RealLcuSource:
         self._extra = extra
         self._client_factory = client_factory
         self._stream_factory = stream_factory
+        self._process_iter = process_iter
         self._closed = False
 
     @property
@@ -207,6 +209,7 @@ class RealLcuSource:
                     env=self._env,
                     home=self._home,
                     extra=self._extra,
+                    process_iter=self._process_iter,
                 )
                 lockfile_info = parse_lockfile(lockfile_path)
             except LockfileNotFound:

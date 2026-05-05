@@ -72,11 +72,11 @@ PERK_IDS: dict[str, int] = {
     "Cheap Shot":          8126,
     "Taste of Blood":      8139,
     "Sudden Impact":       8143,
-    "Zombie Ward":         8136,
-    "Ghost Poro":          8120,
-    "Eyeball Collection":  8138,
+    # Row 3 (Riot rebuilt — old: Zombie Ward / Ghost Poro / Eyeball Collection)
+    "Sixth Sense":         8137,
+    "Grisly Mementos":     8140,
+    "Deep Ward":           8141,
     "Treasure Hunter":     8135,
-    "Ingenious Hunter":    8134,
     "Relentless Hunter":   8105,
     "Ultimate Hunter":     8106,
     # ---- Sorcery keystones + tree

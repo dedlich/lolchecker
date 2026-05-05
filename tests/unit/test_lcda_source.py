@@ -42,7 +42,7 @@ async def test_snapshot_emitted_with_objectives() -> None:
     assert snap.game_mode == "CLASSIC"
     assert snap.game_time == 1620.0
     names = {o.name for o in snap.objectives}
-    assert names == {"Dragon", "Baron", "Herald"}
+    assert names == {"VoidGrubs", "Dragon", "Baron", "Herald"}
     drag = next(o for o in snap.objectives if o.name == "Dragon")
     assert drag.last_killed_seconds == 1100.0
 

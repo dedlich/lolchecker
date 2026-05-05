@@ -221,7 +221,7 @@ def test_find_lockfile_returns_first_existing(tmp_path: Path) -> None:
 
 def test_find_lockfile_raises_when_none_exist(tmp_path: Path) -> None:
     with pytest.raises(LockfileNotFound) as excinfo:
-        find_lockfile(platform="darwin", env={}, home=tmp_path)
+        find_lockfile(platform="darwin", env={}, home=tmp_path, process_iter=lambda: [])
     # Error message should list searched paths so users can debug.
     assert "Searched" in str(excinfo.value)
 

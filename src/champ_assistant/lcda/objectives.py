@@ -1,13 +1,13 @@
-"""Compute next-spawn timers for Dragon, Baron, Herald from the LCDA event log.
+"""Compute next-spawn timers for VoidGrubs, Dragon, Baron, Herald.
 
-Spawn rules baseline (League patch ~14.x):
-  Dragon  — first 5:00, respawn 5:00 after kill.
-  Baron   — first 25:00, respawn 6:00 after kill.
-  Herald  — first 14:00, respawn 6:00 after kill, despawns ~19:55.
+Spawn rules baseline (League patch 14.x+):
+  VoidGrubs — first 5:00, only one spawn, replaced by Herald at 14:00.
+  Dragon    — first 5:00, respawn 5:00 after kill.
+  Baron     — first 25:00, respawn 6:00 after kill.
+  Herald    — first 14:00, respawn 6:00 after kill, despawns ~19:55.
 
-These are deliberately patch-agnostic constants — Riot tweaks them every
-season. When a future patch changes them, update the four constants below;
-the rest of the logic stays the same.
+These are patch-agnostic constants — Riot tweaks them every season. When
+a future patch changes them, update the constants; the rest stays the same.
 """
 from __future__ import annotations
 
@@ -22,6 +22,13 @@ BARON_RESPAWN = 360.0
 HERALD_FIRST_SPAWN = 840.0
 HERALD_RESPAWN = 360.0
 HERALD_DESPAWN = 1195.0  # last possible spawn time
+
+# Void Grubs spawn once at 5:00 in the Baron pit. Once cleared they don't
+# come back; Herald takes the pit at 14:00. We treat them as a one-shot
+# pre-Herald objective so the Baron-pit display has the right countdown
+# during the 0:00–5:00 window.
+VOID_GRUBS_FIRST_SPAWN = 300.0
+VOID_GRUBS_DESPAWN = 840.0  # Herald replaces them at 14:00
 
 
 @dataclass(frozen=True)
@@ -106,12 +113,40 @@ def _herald(events: list[dict], game_time: float) -> ObjectiveTimer:
     )
 
 
+def _void_grubs(events: list[dict], game_time: float) -> ObjectiveTimer:
+    """Pre-Herald grubs at the Baron pit. One-shot — they don't respawn
+    after kill, and Herald replaces them at 14:00 regardless. We expose
+    a timer only while they're a relevant pit objective."""
+    kill = _latest(events, "VoidGrubKill") or _latest(events, "HordeKill")
+    # Past Herald's first spawn → grubs are gone, no timer.
+    if game_time >= VOID_GRUBS_DESPAWN:
+        return ObjectiveTimer(
+            name="VoidGrubs",
+            next_spawn_seconds=None,
+            last_killed_seconds=float(kill["EventTime"]) if kill else None,
+        )
+    if kill is None:
+        return ObjectiveTimer(
+            name="VoidGrubs",
+            next_spawn_seconds=VOID_GRUBS_FIRST_SPAWN,
+            last_killed_seconds=None,
+        )
+    # Killed at least once — they're gone for the game.
+    return ObjectiveTimer(
+        name="VoidGrubs",
+        next_spawn_seconds=None,
+        last_killed_seconds=float(kill["EventTime"]),
+        last_killer=kill.get("KillerName"),
+    )
+
+
 def compute_objectives(
     events: list[dict],
     game_time: float,
 ) -> list[ObjectiveTimer]:
-    """Build Dragon/Baron/Herald timers from the LCDA event log."""
+    """Build VoidGrubs/Dragon/Baron/Herald timers from the LCDA event log."""
     return [
+        _void_grubs(events, game_time),
         _dragon(events),
         _baron(events),
         _herald(events, game_time),

@@ -760,6 +760,7 @@ def _run_with_ui(args: argparse.Namespace) -> int:
             champions=assistant.champions,
             tags=assistant.tags,
             cache_dir=args.data_dir.parent / "ddragon_cache",
+            assistant=assistant,
         ),
         name="lcda-watcher",
     )
@@ -1011,6 +1012,7 @@ async def _run_lcda_watcher(
     champions: dict | None = None,
     tags: object = None,
     cache_dir: Path | None = None,
+    assistant: object = None,
 ) -> None:
     """Background task that polls LCDA and routes snapshots through the
     StateStore. The store's listeners then drive overlay + floating-widget
@@ -1078,10 +1080,26 @@ async def _run_lcda_watcher(
     _build_result: list[object] = [None]        # mutable single-element wrapper
     _build_champion: list[str] = [""]           # last champion we built for
     _build_log = logging.getLogger("champ_assistant.build_engine")
-    # name_to_key: DataDragon display name → Meraki URL key (e.g. "Miss Fortune" → "MissFortune")
-    _name_to_key: dict[str, str] = (
-        {c.name: c.key for c in (champions or {}).values()} if champions else {}
-    )
+
+    def _name_to_key_for(name: str) -> str:
+        """DataDragon display name → Meraki URL key. Reads ``assistant.champions``
+        at call time so the late-arriving DDragon prefetch is picked up — the
+        closure-captured ``champions`` parameter was None at function-define
+        time and stayed stale otherwise."""
+        roster = getattr(assistant, "champions", None) or {}
+        for c in roster.values():
+            if c.name == name:
+                return c.key
+        return name.replace(" ", "")
+
+    def _key_to_id(key: str) -> int:
+        """DataDragon string key → numeric champion id (Sylas → 517).
+        Same late-binding rationale as _name_to_key_for."""
+        roster = getattr(assistant, "champions", None) or {}
+        for c in roster.values():
+            if c.key == key:
+                return int(c.id)
+        return 0
 
     async def _maybe_update_build(snap: object) -> None:
         """Compute (or reuse cached) build result for the current champion."""
@@ -1102,7 +1120,7 @@ async def _run_lcda_watcher(
             return  # same champion — reuse existing build result
         _build_champion[0] = local_champ_display
         _build_result[0] = None  # clear stale result immediately
-        meraki_key = _name_to_key.get(local_champ_display, local_champ_display.replace(" ", ""))
+        meraki_key = _name_to_key_for(local_champ_display)
         _build_log.info("build_engine_starting champion=%s key=%s", local_champ_display, meraki_key)
         try:
             from champ_assistant.advisor.build_engine import (
@@ -1180,10 +1198,7 @@ async def _run_lcda_watcher(
         except LockfileNotFound:
             _build_log.debug("blueprint_push_skipped: lockfile not found (client not running)")
             return
-        champ_id = next(
-            (c.id for c in (champions or {}).values() if c.key == champion_key),
-            0,
-        )
+        champ_id = _key_to_id(champion_key)
         try:
             async with LcuClient(lockfile) as lcu:
                 result = await apply_item_set_from_result(
@@ -1437,6 +1452,16 @@ async def _hydrate_champions_and_icons(
         )
     overlay.summoner_tracker.set_champion_icons(name_to_pixmap)
     overlay.summoner_tracker.set_spell_icons(spell_pixmaps)
+    # Per-lane scoreboard rows show champion icons + summoner-spell slots.
+    # The ScoreboardWidget instance lives in the floating widget list — find
+    # it via Qt's top-level widget registry rather than threading another arg
+    # through this hydrate fn.
+    from PyQt6.QtWidgets import QApplication
+    from champ_assistant.ui.scoreboard_widget import ScoreboardWidget
+    for w in QApplication.topLevelWidgets():
+        if isinstance(w, ScoreboardWidget):
+            w.set_champion_icons(name_to_pixmap)
+            w.set_spell_icons(spell_pixmaps)
 
     # Item icons — keyed by item-NAME so PickCard's _build_line can
     # look them up directly from the build.items list (which carries

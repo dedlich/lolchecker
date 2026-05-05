@@ -30,10 +30,11 @@ two scuttle camps their natural split-river placement on the minimap.
 """
 from __future__ import annotations
 
+import time
 from typing import TYPE_CHECKING
 
 from PyQt6.QtCore import QPoint, QRect, Qt
-from PyQt6.QtGui import QColor, QFont, QMouseEvent, QPainter, QPaintEvent
+from PyQt6.QtGui import QColor, QFont, QPainter, QPaintEvent
 from PyQt6.QtWidgets import QWidget
 
 from . import styles
@@ -43,27 +44,31 @@ if TYPE_CHECKING:
     from ..lcda.objectives import ObjectiveTimer
 
 
-# Canonical camp positions on Summoner's Rift, normalized 0..1
-# (origin = top-left of the minimap image; Order base is bottom-left,
-# Chaos base is top-right). Coordinates derived from the in-game
-# minimap with both sides represented (14 camps total).
+# Canonical camp positions on Summoner's Rift, normalized 0..1.
+# Origin = top-left of the minimap image. Order Nexus is at bottom-left,
+# Chaos Nexus at top-right.
+#
+# Coordinates derived from Riot's in-game world coords (~14882x14882
+# game units) divided by map size, with Y inverted (game Y=0 is bottom,
+# minimap Y=0 is top). Cross-checked against the in-game minimap.
 CAMP_POSITIONS: dict[str, tuple[float, float]] = {
-    # Order side (blue side) — bottom-left jungle
-    "order_blue_buff": (0.22, 0.65),
-    "order_red_buff":  (0.38, 0.76),
-    "order_gromp":     (0.14, 0.53),
-    "order_wolves":    (0.25, 0.53),
-    "order_raptors":   (0.40, 0.67),
-    "order_krugs":     (0.30, 0.83),
-    "order_scuttle":   (0.43, 0.60),   # top-river scuttle spawn
-    # Chaos side (red side) — top-right jungle
-    "chaos_blue_buff": (0.78, 0.35),
-    "chaos_red_buff":  (0.62, 0.24),
-    "chaos_gromp":     (0.86, 0.47),
-    "chaos_wolves":    (0.75, 0.47),
-    "chaos_raptors":   (0.60, 0.33),
-    "chaos_krugs":     (0.70, 0.17),
-    "chaos_scuttle":   (0.57, 0.40),   # bot-river scuttle spawn
+    # Order side (blue side) — bottom-left jungle quadrants
+    "order_blue_buff": (0.276, 0.451),  # top-side jungle (NE of base)
+    "order_red_buff":  (0.516, 0.711),  # bot-side jungle (SE of base)
+    "order_gromp":     (0.146, 0.439),
+    "order_wolves":    (0.253, 0.563),
+    "order_raptors":   (0.464, 0.634),
+    "order_krugs":     (0.566, 0.831),
+    "order_scuttle":   (0.420, 0.320),  # top-river scuttle (closer to Baron pit)
+    # Chaos side (red side) — top-right jungle quadrants
+    # Mirror of Order through (0.5, 0.5).
+    "chaos_blue_buff": (0.724, 0.549),
+    "chaos_red_buff":  (0.484, 0.289),
+    "chaos_gromp":     (0.854, 0.561),
+    "chaos_wolves":    (0.747, 0.437),
+    "chaos_raptors":   (0.536, 0.366),
+    "chaos_krugs":     (0.434, 0.169),
+    "chaos_scuttle":   (0.580, 0.680),  # bot-river scuttle (closer to Drake pit)
 }
 
 # Single-letter glyph drawn inside each camp marker.
@@ -110,12 +115,14 @@ MARKER_RADIUS_PX = 9
 
 
 # Major-objective pit positions on the SR minimap, normalized 0..1.
-# Drake spawns bot-river; Baron + Herald share the top-river pit (Herald
-# until ~14:00, Baron after — same position).
+# Drake spawns bot-river (south-east of map center); Void Grubs / Herald /
+# Baron all share the top-river pit (north-west of center) — only one is
+# alive at a time, so the layer picks the most relevant one to render.
 OBJECTIVE_POSITIONS: dict[str, tuple[float, float]] = {
-    "Dragon": (0.42, 0.62),
-    "Baron":  (0.58, 0.38),
-    "Herald": (0.58, 0.38),
+    "Dragon":    (0.663, 0.703),
+    "VoidGrubs": (0.336, 0.297),
+    "Herald":    (0.336, 0.297),
+    "Baron":     (0.336, 0.297),
 }
 
 # Glyph + tint for the major-objective markers. Same paint pipeline
@@ -182,27 +189,39 @@ class MapOverlayLayer(QWidget):
         # camp markers in paintEvent.
         self._objectives: dict[str, "ObjectiveTimer"] = {}
         self._objective_game_time: float = 0.0
+        # Wall-clock anchor for interpolating game_time between LCDA polls.
+        # LCDA refreshes every ~1-2s, but the scheduler repaints at 1 Hz.
+        # Between snapshots we extrapolate from the last known game_time so
+        # countdowns tick smoothly instead of freezing for up to 2 seconds.
+        self._tick_wall_anchor: float = time.monotonic()
 
-        # Click-to-arm: clicking near a camp position registers an
-        # observed clear with the engine, starting the real respawn
-        # countdown. The user explicitly wants kill-driven timers,
-        # not predictive ones; this is the input path. Cursor changes
-        # to a pointer to signal interactivity.
-        self.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.setToolTip(
-            "Klick auf ein Camp markiert es als beobachtet gekillt — "
-            "Timer startet erst dann."
-        )
+        # Pure read-only overlay — no clicks, no markers, only countdowns.
+        # Mouse events pass through to whatever's behind (the in-game
+        # minimap), so right-clicks on the minimap still issue commands.
+        self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
+
+        # Team rotation: LoL renders the minimap with the active player's
+        # base at the bottom. For an Order (blue-side) player our hardcoded
+        # CAMP_POSITIONS already match the rendered orientation. For a Chaos
+        # player the minimap is mirrored 180°, so each (nx, ny) flips to
+        # (1-nx, 1-ny). Set via ``set_team`` from the parent.
+        self._flip = False
 
         # Cache the font + colors so paintEvent does zero allocations
         # for static style state (the only per-frame allocation is the
-        # QPainter itself, which Qt requires).
+        # QPainter itself, which Qt requires). Pixel size keeps the
+        # countdown unobtrusive on top of the in-game minimap markers.
         self._font = QFont()
-        self._font.setPointSize(styles.FS_CAPTION)
+        self._font.setPixelSize(11)
         self._font.setBold(True)
-        self._color_high = self._rgba(styles.TEXT_PRIMARY, 255)
-        self._color_mid  = self._rgba(styles.WARNING,      217)  # 0.85 * 255
-        self._color_low  = self._rgba(styles.TEXT_MUTED,   178)  # 0.70 * 255
+        # All timer text in pure white — confidence used to drive a colour
+        # gradient but the in-game minimap is busy enough that white reads
+        # cleanest. Alpha 255 keeps it crisp; the upstream blink threshold
+        # still fades imminent spawns on alternate ticks.
+        white = QColor(255, 255, 255, 255)
+        self._color_high = white
+        self._color_mid  = white
+        self._color_low  = white
 
     # -- public API -------------------------------------------------------
 
@@ -222,7 +241,19 @@ class MapOverlayLayer(QWidget):
         respawn countdown when the engine reports them killed."""
         self._objectives = dict(objectives)
         self._objective_game_time = float(game_time)
+        self._tick_wall_anchor = time.monotonic()
         self.update()
+
+    def set_team(self, team: str) -> None:
+        """Tell the layer which side the active player is on.
+
+        Order/blue → no flip; Chaos/red → flip 180°. Anything else
+        (empty / unknown) is treated as Order so we don't accidentally
+        invert when team data is missing."""
+        flip = (team or "").upper() == "CHAOS"
+        if flip != self._flip:
+            self._flip = flip
+            self.update()
 
     # -- internals --------------------------------------------------------
 
@@ -230,224 +261,115 @@ class MapOverlayLayer(QWidget):
         self._blink_phase = 1 - self._blink_phase
         self.update()
 
-    # -- click handling --------------------------------------------------
-
-    # Clicks within this many normalized units of a camp anchor count.
-    # 0.10 in a 0..1 coord system ≈ 10% of the minimap edge — generous
-    # enough on a 110×110 px panel that fingers don't have to be
-    # surgically precise.
-    CLICK_HIT_RADIUS = 0.10
-
-    def mousePressEvent(self, event: QMouseEvent | None) -> None:  # type: ignore[override]
-        if event is None or event.button() != Qt.MouseButton.LeftButton:
-            return
-        camp_id = self._camp_at(event.position().x(), event.position().y())
-        if camp_id is None:
-            return
-        try:
-            self._engine.register_clear(camp_id)
-        except Exception:  # noqa: BLE001 — input handler must never crash UI
-            return
-        self.update()
-
-    def _camp_at(self, px: float, py: float) -> str | None:
-        """Find the camp whose anchor is closest to the click point,
-        within ``CLICK_HIT_RADIUS`` (normalized). Returns the camp_id
-        or None if no camp is in range."""
-        rect = self.rect()
-        if rect.width() <= 0 or rect.height() <= 0:
-            return None
-        nx = (px - rect.left()) / rect.width()
-        ny = (py - rect.top()) / rect.height()
-        best_id: str | None = None
-        best_dist = self.CLICK_HIT_RADIUS
-        for camp_id, (anchor_nx, anchor_ny) in CAMP_POSITIONS.items():
-            dx = nx - anchor_nx
-            dy = ny - anchor_ny
-            dist = (dx * dx + dy * dy) ** 0.5
-            if dist < best_dist:
-                best_dist = dist
-                best_id = camp_id
-        return best_id
-
     def paintEvent(self, event: QPaintEvent) -> None:  # type: ignore[override]
+        """Read-only overlay — paints countdown text only, no markers
+        or glyphs. Camps with no active timer paint nothing; the user
+        sees the bare in-game minimap underneath."""
         try:
             states = self._engine.states()
         except Exception:  # noqa: BLE001 — paint must never crash UI
             return
+
+        # During loading screens LCDA reports game_time=0 even though
+        # we're getting snapshots. Don't paint anything until the actual
+        # game clock has started ticking.
+        if self._objective_game_time < 1.0:
+            return
+
+        # Wall-clock interpolation: extrapolate game_time forward from
+        # the last LCDA snapshot so the countdown ticks every paint
+        # frame instead of freezing between 1-2s LCDA polls.
+        elapsed_since_tick = time.monotonic() - self._tick_wall_anchor
+        # Cap at 5s so a stalled LCDA pipe doesn't run timers wildly past
+        # actual game state.
+        elapsed_since_tick = min(5.0, max(0.0, elapsed_since_tick))
+        interpolated_game_time = self._objective_game_time + elapsed_since_tick
 
         painter = QPainter(self)
         try:
             painter.setRenderHint(QPainter.RenderHint.Antialiasing)
             painter.setFont(self._font)
             metrics = painter.fontMetrics()
-            rect = self.rect()
+            # Inset 4% on each side so coords map to the playable map area,
+            # not the UI-decoration border around the minimap container.
+            full = self.rect()
+            inset = max(4, int(min(full.width(), full.height()) * 0.04))
+            rect = full.adjusted(inset, inset, -inset, -inset)
 
-            # First pass — always draw camp markers (filled circle +
-            # glyph) at every position. Markers fade when the camp is
-            # in alive sentinel (un-armed) so the user sees they
-            # haven't started a timer yet, but still knows what's
-            # clickable. Active timers get a brighter marker.
-            for camp_id, (nx, ny) in CAMP_POSITIONS.items():
-                state = states.get(camp_id)
-                anchor = map_to_screen(rect, nx, ny)
-                self._paint_marker(
-                    painter, anchor, camp_id,
-                    armed=state is not None and state.state != "alive",
-                )
+            def _xy(nx: float, ny: float) -> tuple[float, float]:
+                """Apply 180° flip when the active player is on Chaos side."""
+                if self._flip:
+                    return (1.0 - nx, 1.0 - ny)
+                return (nx, ny)
 
-            # Second pass — countdown text overlay on top of markers
-            # for camps with active timers.
+            # Camp countdowns — text only, centered at the camp anchor.
             for camp_id, (nx, ny) in CAMP_POSITIONS.items():
                 state = states.get(camp_id)
                 if state is None:
                     continue
-
-                # Hide the timer while the camp is alive (just spawned)
-                # — that's the visual signal "camp is up". Once the
-                # alive-grace window ends in the engine's model the
-                # timer reappears with the full cycle countdown.
-                if state.state == "alive" or state.time_remaining <= 0.5:
+                # Re-derive remaining from next_spawn_at + interpolated time
+                # so the countdown ticks smoothly between LCDA polls.
+                remaining = max(0.0, state.next_spawn_at - interpolated_game_time)
+                if state.state == "alive" or remaining <= 0.5:
                     continue
-
-                # Blink during last BLINK_THRESHOLD_S seconds — skip
-                # drawing on alternate scheduler ticks.
-                if (
-                    state.time_remaining <= self.BLINK_THRESHOLD_S
-                    and self._blink_phase
-                ):
-                    continue
-
-                text = _format_mmss(state.time_remaining)
-                painter.setPen(self._color_for(state.confidence))
-
-                anchor = map_to_screen(rect, nx, ny)
-                # Position the countdown text below the marker rather
-                # than centered on it — the marker is now drawn at the
-                # anchor point and the text sits underneath.
-                text_w = metrics.horizontalAdvance(text)
-                text_h = metrics.height()
-                draw_pt = QPoint(
-                    anchor.x() - text_w // 2,
-                    anchor.y() + MARKER_RADIUS_PX + text_h - 2,
-                )
-                painter.drawText(draw_pt, text)
-
-            # Third pass — major-objective markers (Drake/Baron/Herald)
-            # at their pit positions. Same marker pipeline as camps;
-            # countdown only renders when LCDA reports the objective
-            # has been killed (next_spawn_seconds > 0).
-            for obj_name, (nx, ny) in OBJECTIVE_POSITIONS.items():
-                anchor = map_to_screen(rect, nx, ny)
-                obj = self._objectives.get(obj_name)
-                armed = (
-                    obj is not None
-                    and obj.next_spawn_seconds is not None
-                    and obj.remaining(self._objective_game_time) is not None
-                )
-                self._paint_objective_marker(painter, anchor, obj_name, armed=bool(armed))
-                if not armed or obj is None:
-                    continue
-                remaining = obj.remaining(self._objective_game_time)
-                if remaining is None or remaining <= 0.5:
+                if remaining <= self.BLINK_THRESHOLD_S and self._blink_phase:
                     continue
                 text = _format_mmss(remaining)
-                painter.setPen(self._color_high)
+                painter.setPen(self._color_for(state.confidence))
+                fx, fy = _xy(nx, ny)
+                anchor = map_to_screen(rect, fx, fy)
                 text_w = metrics.horizontalAdvance(text)
                 text_h = metrics.height()
-                draw_pt = QPoint(
-                    anchor.x() - text_w // 2,
-                    anchor.y() + MARKER_RADIUS_PX + text_h - 2,
+                painter.drawText(
+                    QPoint(anchor.x() - text_w // 2, anchor.y() + text_h // 3),
+                    text,
                 )
-                painter.drawText(draw_pt, text)
+
+            # Major objective countdowns. Baron and Herald share the
+            # same pit on the actual map (only one alive at a time), so
+            # render whichever has the smaller remaining time at this
+            # tick — the other isn't relevant yet.
+            obj_remaining: dict[str, float] = {}
+            for obj_name in OBJECTIVE_POSITIONS:
+                obj = self._objectives.get(obj_name)
+                if obj is None or obj.next_spawn_seconds is None:
+                    continue
+                rem = obj.remaining(interpolated_game_time)
+                if rem is None or rem <= 0.5:
+                    continue
+                obj_remaining[obj_name] = rem
+
+            # Three objectives share the Baron pit (Void Grubs → Herald
+            # → Baron). Only one is alive at a time, so render the one
+            # closest to spawning.
+            BARON_PIT = {"VoidGrubs", "Herald", "Baron"}
+            baron_pit_choice: str | None = None
+            for cand in BARON_PIT:
+                if cand in obj_remaining and (
+                    baron_pit_choice is None
+                    or obj_remaining[cand] < obj_remaining[baron_pit_choice]
+                ):
+                    baron_pit_choice = cand
+
+            for obj_name, (nx, ny) in OBJECTIVE_POSITIONS.items():
+                if obj_name not in obj_remaining:
+                    continue
+                # Skip the losers of the Baron-pit triple-share.
+                if obj_name in BARON_PIT and obj_name != baron_pit_choice:
+                    continue
+                remaining = obj_remaining[obj_name]
+                text = _format_mmss(remaining)
+                painter.setPen(self._color_high)
+                fx, fy = _xy(nx, ny)
+                anchor = map_to_screen(rect, fx, fy)
+                text_w = metrics.horizontalAdvance(text)
+                text_h = metrics.height()
+                painter.drawText(
+                    QPoint(anchor.x() - text_w // 2, anchor.y() + text_h // 3),
+                    text,
+                )
         finally:
             painter.end()
-
-    def _paint_objective_marker(
-        self,
-        painter: QPainter,
-        anchor: QPoint,
-        obj_name: str,
-        *,
-        armed: bool,
-    ) -> None:
-        """Same shape as camp markers but pulls from the OBJECTIVE_*
-        registries. Rendered always so the player sees the pit even
-        before the objective is first killed."""
-        base_color = QColor(OBJECTIVE_COLORS.get(obj_name, styles.TEXT_MUTED))
-        fill_alpha = 230 if armed else 140
-        ring_alpha = 255 if armed else 180
-        fill = QColor(base_color)
-        fill.setAlpha(fill_alpha)
-        ring = QColor(base_color)
-        ring.setAlpha(ring_alpha)
-
-        painter.setPen(ring)
-        painter.setBrush(fill)
-        painter.drawEllipse(
-            anchor.x() - MARKER_RADIUS_PX,
-            anchor.y() - MARKER_RADIUS_PX,
-            MARKER_RADIUS_PX * 2,
-            MARKER_RADIUS_PX * 2,
-        )
-
-        glyph = OBJECTIVE_GLYPHS.get(obj_name, "?")
-        glyph_color = QColor("#FFFFFF")
-        glyph_color.setAlpha(255 if armed else 200)
-        painter.setPen(glyph_color)
-        gm = painter.fontMetrics()
-        gw = gm.horizontalAdvance(glyph)
-        gh = gm.ascent()
-        painter.drawText(
-            QPoint(anchor.x() - gw // 2, anchor.y() + gh // 2 - 1),
-            glyph,
-        )
-        painter.setBrush(Qt.BrushStyle.NoBrush)
-
-    def _paint_marker(
-        self,
-        painter: QPainter,
-        anchor: QPoint,
-        camp_id: str,
-        *,
-        armed: bool,
-    ) -> None:
-        """Draw a single camp marker — filled circle with a glyph
-        letter. Dim alpha when un-armed (no timer running) so the user
-        sees the camp is clickable but doesn't have an active count.
-        Bright alpha when armed."""
-        base_color = QColor(CAMP_COLORS.get(camp_id, styles.TEXT_MUTED))
-        fill_alpha = 220 if armed else 140
-        ring_alpha = 255 if armed else 180
-        fill = QColor(base_color)
-        fill.setAlpha(fill_alpha)
-        ring = QColor(base_color)
-        ring.setAlpha(ring_alpha)
-
-        # Filled circle.
-        painter.setPen(ring)
-        painter.setBrush(fill)
-        painter.drawEllipse(
-            anchor.x() - MARKER_RADIUS_PX,
-            anchor.y() - MARKER_RADIUS_PX,
-            MARKER_RADIUS_PX * 2,
-            MARKER_RADIUS_PX * 2,
-        )
-
-        # Glyph in the middle. White text reads on every camp color.
-        glyph = CAMP_GLYPHS.get(camp_id, "?")
-        glyph_color = QColor("#FFFFFF")
-        glyph_color.setAlpha(255 if armed else 200)
-        painter.setPen(glyph_color)
-        glyph_metrics = painter.fontMetrics()
-        gw = glyph_metrics.horizontalAdvance(glyph)
-        gh = glyph_metrics.ascent()
-        painter.drawText(
-            QPoint(anchor.x() - gw // 2, anchor.y() + gh // 2 - 1),
-            glyph,
-        )
-        # Reset brush so callers don't see it leaking into the next pass.
-        painter.setBrush(Qt.BrushStyle.NoBrush)
 
     def _color_for(self, confidence: float) -> QColor:
         """Return one of the cached QColor instances. No allocation —

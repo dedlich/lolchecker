@@ -49,18 +49,20 @@ def test_red_buff_cycle_matches_canonical_5min() -> None:
     assert s.time_remaining == 190.0
 
 
-def test_red_buff_second_cycle() -> None:
-    # After 6:30 spawn (assumed kill), next spawn at 11:30 (690s).
+def test_red_buff_past_first_cycle_hides_until_anchor() -> None:
+    # After the first respawn passes (390s), the deterministic estimator
+    # stops emitting countdowns — without a kill anchor we have no honest
+    # signal for cycle 2+. UI hides the timer via the alive sentinel.
     s = _camp_state_at(RED, game_time=500.0, confidence=1.0)
-    assert s.next_spawn_at == 690.0
-    assert s.time_remaining == 190.0
+    assert s.state == "alive"
+    assert s.time_remaining == 0.0
 
 
 def test_gromp_cycle_matches_135s() -> None:
-    # First spawn 90s. Cycles: 90, 225, 360, 495, ...
-    s = _camp_state_at(GROMP, game_time=300.0, confidence=1.0)
-    assert s.next_spawn_at == 360.0
-    assert s.time_remaining == 60.0
+    # First spawn 90s, first respawn at 225s. Within first cycle.
+    s = _camp_state_at(GROMP, game_time=200.0, confidence=1.0)
+    assert s.next_spawn_at == 225.0
+    assert s.time_remaining == 25.0
 
 
 def test_scuttle_first_spawn_is_3min15() -> None:
@@ -164,12 +166,11 @@ def test_tick_notifies_subscribers() -> None:
 # Observed-clear gating — engine no longer emits predictive timers
 # --------------------------------------------------------------------------
 def test_unanchored_camps_return_alive_sentinel() -> None:
-    """User rejected predictive 'pseudo' timers — without an observed
-    clear, the engine should NOT emit a respawn countdown. Camps stay
-    in the 'alive' sentinel so the UI's skip-if-alive paint path
-    naturally hides them."""
+    """Without an observed kill anchor the engine emits no countdown —
+    a guessed timer is worse than none because players would act on it.
+    The vision pipeline is the only source of truth for camp clears."""
     engine = JungleTimelineEngine()
-    engine.tick(180.0)  # 3 minutes in, nothing observed yet
+    engine.tick(180.0)
     states = engine.states()
     for state in states.values():
         assert state.state == "alive"
@@ -192,16 +193,17 @@ def test_anchored_camp_emits_real_countdown() -> None:
 
 def test_unrelated_camps_stay_hidden_after_one_anchor() -> None:
     """Registering a clear on order_red_buff must NOT also surface predictive
-    timers for other camps. Each camp gates independently."""
+    timers for other camps. Each camp gates independently on its own anchor."""
     engine = JungleTimelineEngine()
-    engine.tick(60.0)
-    engine.register_clear("order_red_buff", game_time=60.0)
+    engine.tick(180.0)
+    engine.register_clear("order_red_buff", game_time=180.0)
     states = engine.states()
     for camp_id, state in states.items():
         if camp_id == "order_red_buff":
             assert state.state == "respawning"
         else:
             assert state.state == "alive"
+            assert state.time_remaining == 0.0
 
 
 def test_unsubscribe_stops_notifications() -> None:
