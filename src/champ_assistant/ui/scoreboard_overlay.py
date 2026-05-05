@@ -74,8 +74,8 @@ class GoldDifferencePanel(FloatingWidget):
     DEFAULT_POS = (760, 80)
     DEFAULT_SIZE = (380, 220)
 
-    BLUE_COLOR = "#3CA0E0"   # Riot's ORDER blue
-    RED_COLOR  = "#D04040"   # Riot's CHAOS red
+    BLUE_COLOR = styles.TEAM_ORDER   # Riot ORDER blue
+    RED_COLOR  = styles.TEAM_CHAOS   # Riot CHAOS red
 
     def __init__(self) -> None:
         super().__init__()

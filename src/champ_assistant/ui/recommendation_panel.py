@@ -273,6 +273,7 @@ class RecommendationPanel(FloatingWidget):
         # Focus mode — collapses to top-1 only when active. Toggled by
         # set_focus_mode(). Default off; the user opts in via Settings.
         self._focus_mode = False
+        self._last_recs: list[Recommendation] = []
 
         outer = QVBoxLayout(self)
         outer.setContentsMargins(
@@ -326,6 +327,7 @@ class RecommendationPanel(FloatingWidget):
         """Render top-N recommendations (already severity-sorted by
         ``decision_engine.evaluate``). Empty list → hide widget.
         When focus_mode is on, collapses to top-1 only."""
+        self._last_recs = list(recs)
         if not recs:
             for row in self._rows:
                 row.hide()
@@ -345,26 +347,13 @@ class RecommendationPanel(FloatingWidget):
             self.fade_appear()
 
     def set_focus_mode(self, on: bool) -> None:
-        """Toggle focus mode at runtime. Re-renders the current top
-        recommendation with the new cap so the change is visible
-        immediately, not only on next snapshot."""
+        """Toggle focus mode at runtime. Re-renders immediately with the
+        stored rec list so the change is visible without waiting for the
+        next LCDA snapshot."""
         if self._focus_mode == on:
             return
         self._focus_mode = on
-        # Force a re-render with whatever's currently visible.
-        active_recs: list[Recommendation] = []
-        for row in self._rows:
-            if row.isVisible() and row._severity is not None:
-                # We can't reconstruct the full Recommendation from
-                # the row state alone; just hide extras when entering
-                # focus, no-op when exiting (next snapshot will fan
-                # them back out).
-                pass
-        if on:
-            for i, row in enumerate(self._rows):
-                if i >= FOCUS_MODE_ROWS:
-                    row.hide()
-                    row._stop_pulse()
+        self.set_recommendations(self._last_recs)
 
     def _on_tick(self) -> None:
         now = time.monotonic()

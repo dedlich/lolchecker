@@ -63,6 +63,14 @@ TEAM_ALLY:      Final[str] = "#6BBBFF"   # cool blue — ally side
 TEAM_ENEMY:     Final[str] = DANGER      # warm red — enemy side
 TEAM_NEUTRAL:   Final[str] = TEXT_MUTED  # neutral / no-delta separator
 
+# Riot-canonical ORDER/CHAOS team colors — used by widgets that display
+# absolute team identity (gold-diff scoreboard) rather than the local
+# player's ally/enemy perspective. Keep separate from TEAM_ALLY/ENEMY
+# so a perspective-relative retheme doesn't accidentally break the
+# scoreboard layout, which always shows blue-side left / red-side right.
+TEAM_ORDER:     Final[str] = "#3CA0E0"   # Riot ORDER blue (blue side)
+TEAM_CHAOS:     Final[str] = "#D04040"   # Riot CHAOS red  (red side)
+
 # --------------------------------------------------------------------------
 # Borders (translucent so they read soft at any opacity)
 # --------------------------------------------------------------------------

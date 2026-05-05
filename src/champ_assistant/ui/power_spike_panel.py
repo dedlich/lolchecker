@@ -78,7 +78,11 @@ class PowerSpikePanel(QFrame):
         )
 
         if snapshot.new_spikes:
-            self._latest_spike = snapshot.new_spikes[-1]
+            # Level spikes (6/11/16) take priority over item spikes; higher value wins within kind.
+            self._latest_spike = max(
+                snapshot.new_spikes,
+                key=lambda s: (1 if s.kind == "level" else 0, s.value),
+            )
             self._latest_spike_at = time.monotonic()
         # Repaint immediately so the fresh spike is visible; the central
         # scheduler's 1 Hz tick keeps fading it out from there.
