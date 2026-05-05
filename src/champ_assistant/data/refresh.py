@@ -5,19 +5,15 @@ On success: writes updated ``tiers.json`` atomically and hands a new
 ``TierList`` to the caller. On any network / parse failure: existing files
 are untouched and ``None`` is returned so callers can keep their current data.
 
-Endpoint (Lolalytics public stats API):
-  GET https://lolalytics.com/api/tierlist/1/
-      ?patch=current&tier={tier}&region={region}&lane={lane}&hv=3
+Source: Lolalytics tier list page (SSR Qwik state embedded in HTML).
+The page embeds full champion stats per role; we parse the Qwik JSON state
+block to extract win rates and build our tier list without any undocumented
+API calls.
 
-Representative response (defensive parsing handles format drift):
-  {
-    "patch": "15.8",
-    "data": [
-      {"id": 266, "n": "Aatrox", "wr": 50.4, "pr": 3.1, "br": 7.2}
-    ]
-  }
+Endpoint:
+  GET https://lolalytics.com/lol/tierlist/?tier={tier}&region={region}
 
-Counter data is handled lazily per-champion in ``runtime_counters.py``.
+Counter data is handled lazily per-champion in ``lolalytics_counters.py``.
 Builds are not refreshed here — the LCU push layer reads from builds.json
 which is updated out-of-band (manual curation or a future separate fetch).
 """
@@ -26,6 +22,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import re
 import time
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -42,18 +39,17 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 # Configuration
 # ---------------------------------------------------------------------------
-LOLALYTICS_BASE = "https://lolalytics.com/api/tierlist/1/"
+LOLALYTICS_TIERLIST_URL = "https://lolalytics.com/lol/tierlist/"
 REFRESH_TTL_S: float = 6 * 3600        # re-fetch after 6 hours
-REQUEST_TIMEOUT: float = 10.0
-MAX_CONCURRENCY: int = 3                # parallel lane requests
+REQUEST_TIMEOUT: float = 20.0           # SSR pages are larger
 
 _STAMP_FILENAME = ".tiers_refreshed_at"
 
 _LANE_TO_ROLE: dict[str, Role] = {
     "top":     "TOP",
     "jungle":  "JUNGLE",
-    "mid":     "MID",
-    "adc":     "BOT",
+    "middle":  "MID",
+    "bottom":  "BOT",
     "support": "SUPPORT",
 }
 
@@ -72,7 +68,7 @@ _HEADERS = {
         "AppleWebKit/537.36 (KHTML, like Gecko) "
         "Chrome/124.0.0.0 Safari/537.36"
     ),
-    "Accept": "application/json",
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
     "Referer": "https://lolalytics.com/",
 }
 
@@ -126,66 +122,139 @@ def _atomic_write_json(path: Path, obj: Any) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Fetch one lane
+# Qwik SSR state parser
 # ---------------------------------------------------------------------------
-
-async def _fetch_lane(
-    client: httpx.AsyncClient,
-    lane: str,
-    *,
-    tier: str,
-    region: str,
-) -> list[dict[str, Any]]:
-    """Fetch raw tier-list rows for one lane. Returns [] on any error."""
-    params = {
-        "patch": "current",
-        "tier": tier,
-        "region": region,
-        "lane": lane,
-        "hv": "4",
-    }
-    try:
-        resp = await client.get(LOLALYTICS_BASE, params=params, headers=_HEADERS)
-        resp.raise_for_status()
-        payload = resp.json()
-    except (httpx.HTTPError, ValueError) as exc:
-        logger.warning("lolalytics_fetch_failed lane=%s err=%s", lane, exc)
-        return []
-
-    data = payload.get("data") or []
-    if not isinstance(data, list):
-        logger.warning("lolalytics_unexpected_shape lane=%s", lane)
-        return []
-    return data
+_BASE36 = "0123456789abcdefghijklmnopqrstuvwxyz"
 
 
-# ---------------------------------------------------------------------------
-# Parse raw rows into TierEntry objects
-# ---------------------------------------------------------------------------
+def _b36(ref: str) -> int | None:
+    """Decode a base-36 reference string to an integer index."""
+    val = 0
+    for c in ref:
+        if c not in _BASE36:
+            return None
+        val = val * 36 + _BASE36.index(c)
+    return val
 
-def _parse_entries(
-    rows: list[dict[str, Any]],
-    role: Role,
+
+def _parse_qwik_state(html: str) -> list[Any]:
+    """Extract the Qwik SSR object array from an HTML page."""
+    m = re.search(r'<script\s+type="qwik/json">(.*?)</script>', html, re.DOTALL)
+    if not m:
+        raise ValueError("qwik/json script block not found")
+    return json.loads(m.group(1))["objs"]
+
+
+def _deref(objs: list[Any], ref: Any) -> Any:
+    """Resolve a Qwik reference string to its value in *objs*."""
+    if not isinstance(ref, str):
+        return ref
+    # Strip Qwik signal prefix (\x12 = reactive signal wrapper)
+    raw = ref[1:] if ref.startswith("\x12") else ref
+    idx = _b36(raw)
+    if idx is None or idx >= len(objs):
+        return ref
+    return objs[idx]
+
+
+def _parse_tierlist_from_state(
+    objs: list[Any],
     champ_by_id: dict[int, "Champion"],
-) -> list[TierEntry]:
-    """Convert raw Lolalytics rows to sorted TierEntry list for one role."""
-    entries: list[TierEntry] = []
-    for row in rows:
-        champ_id = row.get("id")
-        win_rate = row.get("wr")
-        if not isinstance(champ_id, int) or not isinstance(win_rate, float | int):
+) -> dict[Role, list[TierEntry]]:
+    """Walk the Qwik object graph and return a role → TierEntry list mapping."""
+    # Find the dict that holds useGetData/useGetConstants Qwik action keys.
+    # This dict always has both 'K0pttOcjEAY' and 'tPXLxeCn1mM'.
+    gateway: dict[str, str] | None = None
+    for obj in objs:
+        if isinstance(obj, dict) and "K0pttOcjEAY" in obj and "tPXLxeCn1mM" in obj:
+            gateway = obj
+            break
+    if gateway is None:
+        raise ValueError("gateway object not found in Qwik state")
+
+    # useGetData → tierlist root object
+    tl_idx = _b36(gateway["tPXLxeCn1mM"])
+    if tl_idx is None or tl_idx >= len(objs):
+        raise ValueError("tPXLxeCn1mM ref invalid")
+    tl_obj = objs[tl_idx]
+    if not isinstance(tl_obj, dict) or "cid" not in tl_obj:
+        raise ValueError("tierlist object missing 'cid' key")
+
+    # cid → {champion_id_str: stats_ref}
+    cid_idx = _b36(tl_obj["cid"])
+    if cid_idx is None or cid_idx >= len(objs):
+        raise ValueError("cid ref invalid")
+    cid_map = objs[cid_idx]
+    if not isinstance(cid_map, dict):
+        raise ValueError(f"cid is not a dict: {type(cid_map)}")
+
+    role_entries: dict[Role, list[tuple[float, TierEntry]]] = {}
+
+    for champ_id_str, stats_ref in cid_map.items():
+        try:
+            champ_id = int(champ_id_str)
+        except ValueError:
             continue
+
         champ = champ_by_id.get(champ_id)
         if champ is None:
             continue
-        grade = _wr_to_tier(float(win_rate))
-        entries.append(TierEntry(champion=champ.key, tier=grade))  # type: ignore[arg-type]
 
-    # Sort S+ first, then by win rate descending — we store the order
-    # so callers can use positional priority without re-sorting.
+        stats_idx = _b36(stats_ref)
+        if stats_idx is None or stats_idx >= len(objs):
+            continue
+        stats = objs[stats_idx]
+        if not isinstance(stats, dict):
+            continue
+
+        # Resolve win rate and lane
+        wr = _deref(objs, stats.get("wr"))
+        lane = _deref(objs, stats.get("lane"))
+        if not isinstance(wr, (int, float)) or not isinstance(lane, str):
+            continue
+
+        role = _LANE_TO_ROLE.get(lane)
+        if role is None:
+            continue
+
+        grade = _wr_to_tier(float(wr))
+        entry = TierEntry(champion=champ.key, tier=grade)  # type: ignore[arg-type]
+        role_entries.setdefault(role, []).append((float(wr), entry))
+
+    # Sort each role: S+ first, within same grade by win rate descending.
     _order = {"S+": 0, "S": 1, "A": 2, "B": 3, "C": 4, "D": 5}
-    entries.sort(key=lambda e: _order.get(e.tier, 9))
-    return entries
+    result: dict[Role, list[TierEntry]] = {}
+    for role, wr_entries in role_entries.items():
+        wr_entries.sort(key=lambda x: (_order.get(x[1].tier, 9), -x[0]))
+        result[role] = [e for _, e in wr_entries]
+
+    return result
+
+
+# ---------------------------------------------------------------------------
+# Network fetch
+# ---------------------------------------------------------------------------
+
+async def _fetch_tierlist_page(
+    client: httpx.AsyncClient,
+    *,
+    tier: str,
+    region: str,
+) -> str:
+    """Fetch the Lolalytics tier list HTML page. Returns HTML on success."""
+    params = {"tier": tier, "region": region}
+    try:
+        resp = await client.get(
+            LOLALYTICS_TIERLIST_URL,
+            params=params,
+            headers=_HEADERS,
+        )
+        resp.raise_for_status()
+        return resp.text
+    except httpx.HTTPError as exc:
+        logger.warning("lolalytics_tierlist_fetch_failed tier=%s region=%s err=%s",
+                       tier, region, exc)
+        return ""
 
 
 # ---------------------------------------------------------------------------
@@ -196,8 +265,8 @@ async def maybe_refresh(
     data_dir: Path,
     champ_by_id: dict[int, "Champion"],
     *,
-    tier: str = "platinum_plus",
-    region: str = "euw",
+    tier: str = "emerald_plus",
+    region: str = "all",
     force: bool = False,
 ) -> TierList | None:
     """Refresh tier data from Lolalytics when the cached copy is stale.
@@ -210,7 +279,7 @@ async def maybe_refresh(
         DataDragon champion map keyed by numeric ID — used to resolve
         Lolalytics' numeric ``id`` fields to our champion key strings.
     tier:
-        Lolalytics tier filter. ``"platinum_plus"`` is the recommended
+        Lolalytics tier filter. ``"emerald_plus"`` is the recommended
         default; ``"diamond_plus"`` for a higher-elo perspective.
     region:
         Lolalytics region. ``"euw"``, ``"na"``, ``"kr"`` or ``"all"``.
@@ -232,38 +301,22 @@ async def maybe_refresh(
 
     logger.info("tier_refresh_start tier=%s region=%s", tier, region)
 
-    sem = asyncio.Semaphore(MAX_CONCURRENCY)
-
-    async def fetch_one(lane: str) -> tuple[str, list[dict[str, Any]]]:
-        async with sem:
-            rows = await _fetch_lane(client, lane, tier=tier, region=region)
-            return lane, rows
-
     async with httpx.AsyncClient(timeout=REQUEST_TIMEOUT) as client:
-        results = await asyncio.gather(
-            *(fetch_one(lane) for lane in _LANE_TO_ROLE),
-            return_exceptions=True,
-        )
+        html = await _fetch_tierlist_page(client, tier=tier, region=region)
 
-    # Build the role → entries mapping.
-    role_entries: dict[Role, list[TierEntry]] = {}
-    any_ok = False
-    for result in results:
-        if isinstance(result, BaseException):
-            logger.warning("tier_refresh_lane_error err=%s", result)
-            continue
-        lane, rows = result
-        role = _LANE_TO_ROLE[lane]
-        entries = _parse_entries(rows, role, champ_by_id)
-        if entries:
-            role_entries[role] = entries
-            any_ok = True
-            logger.info(
-                "tier_refresh_lane_ok lane=%s entries=%d", lane, len(entries)
-            )
+    if not html:
+        logger.warning("tier_refresh_failed reason=empty_response")
+        return None
 
-    if not any_ok:
-        logger.warning("tier_refresh_failed reason=all_lanes_empty")
+    try:
+        objs = _parse_qwik_state(html)
+        role_entries = _parse_tierlist_from_state(objs, champ_by_id)
+    except (ValueError, KeyError, json.JSONDecodeError) as exc:
+        logger.warning("tier_refresh_parse_failed err=%s", exc)
+        return None
+
+    if not role_entries:
+        logger.warning("tier_refresh_failed reason=no_entries_parsed")
         return None
 
     # Build fresh TierList and persist to disk.
