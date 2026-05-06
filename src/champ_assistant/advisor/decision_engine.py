@@ -3372,6 +3372,163 @@ def _lane_mia_advice(active_position: str, game_time: float) -> str:
     return table.get(active_position, "Welle pushen + Vision setzen")
 
 
+# ─── Objective setup-window thresholds ────────────────────────────────────────
+# Pre-spawn coaching for drake / baron / herald / void grubs. The existing
+# rule_dragon_window / rule_baron_window fire WHEN the objective is up — this
+# rule fires the 30-90s window *before* spawn, when waves still have time to
+# crash and rotation is the play.
+#
+# Why 30-90s:
+#   90s — earliest you'd start prepping. Beyond this is too far out to
+#         influence the wave that'll crash at spawn.
+#   30s — last possible push. Below 30s the wave is already locked in;
+#         you're either there or you're not, and the existing
+#         drake/baron-window rules cover the actual fight.
+SETUP_WINDOW_MIN_S: float = 30.0
+SETUP_WINDOW_MAX_S: float = 90.0
+
+# Priority ordering when multiple objectives sit in the setup window
+# at the same time. Baron > Dragon > Herald > Void Grubs reflects what
+# pros actually contest first when forced to pick.
+_OBJECTIVE_PRIORITY: dict[str, int] = {
+    "Baron":     4,
+    "Dragon":    3,
+    "Herald":    2,
+    "VoidGrubs": 1,
+}
+
+# Per-objective × position setup advice. Six lane-specific strings per
+# objective is overkill for V1; instead we tag advice by "near vs far" —
+# whether the active player's lane is on the same side as the pit.
+# Drake = bot side; Baron / Herald / Void Grubs = top side.
+_OBJECTIVE_SIDE: dict[str, str] = {
+    "Dragon":    "BOTTOM",
+    "Baron":     "TOP",
+    "Herald":    "TOP",
+    "VoidGrubs": "TOP",
+}
+
+
+def _objective_setup_advice(
+    objective: str, active_position: str, game_time: float,
+) -> str:
+    """Pro-tuned setup line per objective × proximity to pit.
+
+    "Near pit": active player's lane is on the same map side as the
+    objective. They prep vision + push their wave in place.
+    "Far pit": active player needs to rotate. Push hard, get TP up,
+    or coordinate a wave swap with team.
+    """
+    pit_side = _OBJECTIVE_SIDE.get(objective, "")
+    near_pit = active_position == pit_side or (
+        # Bot 2-vs-2: support lane is bottom too.
+        active_position == "UTILITY" and pit_side == "BOTTOM"
+    )
+
+    if objective == "Dragon":
+        if near_pit:
+            return "Welle pushen, Pixel-Buschwerk warden, Pit-Control"
+        if active_position == "MIDDLE":
+            return "Mid-Welle shoven, dann rotieren, Vision setzen"
+        if active_position == "JUNGLE":
+            return "Pit + Drachen-Buschwerk warden, Smite ready"
+        # TOP — far from pit
+        return "Welle hard pushen, TP bereithalten, dann rotieren"
+
+    if objective == "Baron":
+        if near_pit:
+            return "Pit-Vision setzen, Welle pushen, Tank-Position"
+        if active_position == "MIDDLE":
+            return "Mid pushen + River-Vision, dann zum Pit"
+        if active_position == "JUNGLE":
+            return "Pit + River warden, Smite ready, Vision-Sweeper"
+        # BOTTOM / UTILITY — far from baron
+        return "Bot-Welle resetten, dann zum Pit gruppieren"
+
+    if objective == "Herald":
+        if near_pit:
+            return "Welle pushen, River-Buschwerk warden, Pit-Control"
+        if active_position == "MIDDLE":
+            return "Mid pushen, dann zum Top-River rotieren"
+        if active_position == "JUNGLE":
+            return "Pit + Top-River warden, Smite ready"
+        # BOTTOM / UTILITY — far from herald
+        return "Welle pushen, Drache-Setup oder Top-Side mitspielen"
+
+    if objective == "VoidGrubs":
+        if near_pit:
+            return "Welle pushen, Pit-Vision, Top-Side gruppieren"
+        if active_position == "JUNGLE":
+            return "Pit warden + Smite ready, Top mitnehmen"
+        return "Welle pushen, Vision-Pressure, Top-Side mitspielen"
+
+    return "Welle pushen + Vision setzen"
+
+
+def rule_objective_setup_window(snapshot: "LcdaSnapshot") -> Recommendation | None:
+    """Fire 30–90 s before drake / baron / herald / void grubs spawn so the
+    player has time to crash a wave + set vision + rotate (Charter B3).
+
+    Picks the highest-priority objective in the setup window; one rec per
+    tick at most. Existing ``rule_dragon_window`` / ``rule_baron_window``
+    take over once the objective is actually up.
+
+    Position-aware advice differentiates "near-pit" (push in place + vision)
+    from "far-pit" (push hard + rotate / TP). JUNGLE always gets vision +
+    smite-ready advice since they're the one expected to reach the pit first.
+    """
+    objectives = list(getattr(snapshot, "objectives", []) or [])
+    if not objectives:
+        return None
+    game_time = float(getattr(snapshot, "game_time", 0.0) or 0.0)
+
+    # Find the most-actionable objective: highest priority among any
+    # whose remaining-time falls inside the setup window.
+    best: tuple[int, float, str] | None = None  # (priority, remaining, name)
+    for obj in objectives:
+        name = str(getattr(obj, "name", "") or "")
+        remaining = obj.remaining(game_time) if hasattr(obj, "remaining") else None
+        if remaining is None:
+            continue
+        if not (SETUP_WINDOW_MIN_S <= remaining <= SETUP_WINDOW_MAX_S):
+            continue
+        prio = _OBJECTIVE_PRIORITY.get(name, 0)
+        if prio == 0:
+            continue
+        if best is None or prio > best[0]:
+            best = (prio, remaining, name)
+
+    if best is None:
+        return None
+    _, remaining, name = best
+
+    # Active-player position drives the advice variant.
+    active_player = _active_player(snapshot)
+    active_position = str(getattr(active_player, "position", "") or "")
+    advice = _objective_setup_advice(name, active_position, game_time)
+
+    label = {
+        "Dragon": "Drache",
+        "Baron": "Baron",
+        "Herald": "Herald",
+        "VoidGrubs": "Void Grubs",
+    }.get(name, name)
+
+    return Recommendation(
+        text=f"{label} in {int(remaining)}s — {advice}",
+        severity="info",
+        category="objective",
+        confidence=0.80,
+        risk="LOW",
+        ttl_s=20.0,
+        kind="objective_setup",
+        reasons=(
+            f"{label} spawnt in {int(remaining)}s",
+            "Setup-Fenster: Welle crashen lassen + Vision = on-time bei Spawn",
+        ),
+    )
+
+
 def rule_lane_opponent_mia(snapshot: "LcdaSnapshot") -> Recommendation | None:
     """Surface "your direct lane opponent is missing" with phase-aware advice
     (Charter B2 — lane-side companion to ``rule_gank_risk``).
@@ -3470,6 +3627,8 @@ ALL_RULES: tuple[Callable[["LcdaSnapshot"], Recommendation | None], ...] = (
     rule_gank_risk,
     # B2 lane-opponent MIA — your direct lane opponent absent from CS.
     rule_lane_opponent_mia,
+    # B3 objective setup window — pre-spawn drake/baron/herald coaching.
+    rule_objective_setup_window,
     # B4 tilt detection — active player's death pattern coaching.
     rule_tilt_detection,
     # B5 recall window — HP/mana/gold-driven back timing.
@@ -3619,6 +3778,7 @@ def _suppress_dominated(recs: list[Recommendation]) -> list[Recommendation]:
             "recall_gold",     # ditto — don't recall through an ace window
             "mana_check",      # mana doesn't matter when team is doing the work
             "lane_mia",        # team-push beats laning push; group, don't side-lane
+            "objective_setup", # ace push moment dominates objective prep
         }
         recs = [r for r in recs if r.kind not in _ace_drop]
         kinds = {r.kind for r in recs}
@@ -3645,6 +3805,7 @@ def _suppress_dominated(recs: list[Recommendation]) -> list[Recommendation]:
             "cs_deficit",        # farming advice irrelevant while team is down
             "lane_level_adv",    # lane trades irrelevant when short-handed
             "lane_mia",          # don't tell a short-handed player to side-push alone
+            "objective_setup",   # don't push objectives short-handed — wait for ally
         }
         return [r for r in recs if r.kind not in _offensive]
 
@@ -3685,6 +3846,7 @@ def _suppress_dominated(recs: list[Recommendation]) -> list[Recommendation]:
             "lane_level_adv",    # lane-trade window irrelevant while base is open
             "gank_risk",         # laning gank warning irrelevant when base is open
             "lane_mia",          # don't tell defenders to chase tempo in lane
+            "objective_setup",   # ditto — defending base trumps objective prep
             # NOTE: ally_inhib_respawning intentionally coexists with ally_inhib_down:
             # "defend now + inhib back in 30s" are complementary, not conflicting.
         }
@@ -3709,6 +3871,7 @@ def _suppress_dominated(recs: list[Recommendation]) -> list[Recommendation]:
             "dragon_take", "dragon_free", "baron_take", "baron_free", "elder_take",
             "baron_buff_expiring", "elder_buff_expiring",
             "dragon_soul", "jungler_down",
+            "objective_setup",  # don't prep objectives — they'll execute you
         }
         recs = [r for r in recs if r.kind not in _fight_kinds]
 
@@ -3724,6 +3887,7 @@ def _suppress_dominated(recs: list[Recommendation]) -> list[Recommendation]:
             "power_spike",       # ult-up "play now" contradicts "do nothing"
             "lane_level_adv",    # lane-trade window irrelevant while spiraling
             "lane_mia",          # don't tell a feeding player to side-push alone
+            "objective_setup",   # objective prep irrelevant when player is feeding
             "flash_down", "tp_down", "combat_spell_down",
             "jungler_down", "dragon_soul",
         }
