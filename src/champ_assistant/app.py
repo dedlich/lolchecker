@@ -118,9 +118,13 @@ class ChampAssistant:
         self.builds = builds or BuildLibrary()
         self._runtime_counters = runtime_counters
         self._profile_service = profile_service
-        # Track in-flight runtime fetches to avoid duplicate scheduling.
-        self._runtime_inflight: set[tuple[str, str]] = set()
-        self._profile_inflight: set[str] = set()
+        # Track in-flight async fan-outs by key to avoid duplicate
+        # scheduling. The Coalescer guarantees the key is discarded on
+        # task completion (exception or success) so we don't have to
+        # sprinkle ``discard()`` calls through every fetch's try/finally.
+        from .coalescer import Coalescer
+        self._runtime_coalescer: Coalescer[tuple[str, str]] = Coalescer()
+        self._profile_coalescer: Coalescer[str] = Coalescer()
         self._enemy_profiles_by_cell: dict[int, object] = {}
         # Mirror for the player's own team (used by the lobby panel
         # during loading screen / post-finalization). The local player
@@ -211,14 +215,12 @@ class ChampAssistant:
         try:
             import json as _json
             from datetime import datetime
-            log_dir: Path | None = None
-            for h in logging.getLogger().handlers:
-                base = getattr(h, "baseFilename", None)
-                if base:
-                    log_dir = Path(base).parent
-                    break
-            if log_dir is None:
-                return
+            from . import app_paths
+            # Single source of truth for the log directory — no longer
+            # walks logging handlers (brittle: a JSON handler or rotating
+            # file handler swap silently broke the dump path).
+            log_dir = app_paths.log_dir()
+            log_dir.mkdir(parents=True, exist_ok=True)
             stamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
             dump = log_dir / f"failed_payload_{stamp}.json"
             dump.write_text(_json.dumps(data, indent=2, default=str), encoding="utf-8")
@@ -397,26 +399,19 @@ class ChampAssistant:
         if not member.puuid and not member.summoner_id:
             return
         key = member.puuid or f"sid:{member.summoner_id}"
-        # Inflight key is team-prefixed so the same puuid being
-        # fetched for ally + enemy doesn't collide (rare but possible
-        # in test fixtures).
+        # Inflight key is team-prefixed so the same puuid being fetched
+        # for ally + enemy doesn't collide (rare but possible in test
+        # fixtures). Coalescer handles dedup + RuntimeError-on-no-loop +
+        # discard-on-completion in one place.
         inflight_key = f"{'a' if is_ally else 'e'}:{key}"
-        if inflight_key in self._profile_inflight:
-            return
-        self._profile_inflight.add(inflight_key)
-        try:
-            import asyncio as _aio
-            _aio.create_task(
-                self._fetch_one_profile(member, inflight_key, is_ally=is_ally)
-            )
-        except RuntimeError:
-            # No running loop (tests or sync use) — skip.
-            self._profile_inflight.discard(inflight_key)
+        self._profile_coalescer.schedule(
+            inflight_key,
+            lambda: self._fetch_one_profile(member, is_ally=is_ally),
+        )
 
     async def _fetch_one_profile(
         self,
         member: TeamMember,
-        inflight_key: str,
         *,
         is_ally: bool = False,
     ) -> None:
@@ -441,8 +436,7 @@ class ChampAssistant:
                 "profile_fetch_failed cell=%d ally=%s: %s",
                 member.cell_id, is_ally, exc,
             )
-        finally:
-            self._profile_inflight.discard(inflight_key)
+        # Inflight discard handled by the Coalescer wrapper.
 
     def _resolve_enemy_role(
         self, enemy: TeamMember, index: int, champion: Champion | None
@@ -492,15 +486,6 @@ class ChampAssistant:
         if store is None or not store.enabled:
             return
         key = (enemy_key, role)
-        if key in self._runtime_inflight:
-            return
-        try:
-            loop = asyncio.get_running_loop()
-        except RuntimeError:
-            # Not inside an event loop (e.g. unit tests). Skip — caller
-            # can still await store.get() directly if they need the data.
-            return
-        self._runtime_inflight.add(key)
 
         async def _fetch_and_rerender() -> None:
             try:
@@ -510,10 +495,12 @@ class ChampAssistant:
                     self._push_view(view)
             except Exception:  # noqa: BLE001
                 logger.exception("runtime_fetch_failed")
-            finally:
-                self._runtime_inflight.discard(key)
+            # Inflight discard handled by the Coalescer wrapper.
 
-        loop.create_task(_fetch_and_rerender(), name=f"runtime-fetch-{enemy_key}")
+        # Coalescer dedups + handles RuntimeError-on-no-loop + discards
+        # the key on completion. Returns False if the fetch was already
+        # inflight or no loop is running — in either case nothing to do.
+        self._runtime_coalescer.schedule(key, _fetch_and_rerender)
 
     def _compute_enemy_counters(
         self, session: ChampSelectSession

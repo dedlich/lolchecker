@@ -59,10 +59,12 @@ class PhaseRecord:
 
 
 def _log_dir() -> Path:
-    if sys.platform.startswith("win"):
-        base = os.environ.get("LOCALAPPDATA") or str(Path.home() / "AppData" / "Local")
-        return Path(base) / "ChampAssistant" / "logs"
-    return Path.home() / ".champ-assistant" / "logs"
+    """Thin delegator to ``app_paths.log_dir`` — kept under the original
+    name so existing tests that ``monkeypatch.setattr(pm, "_log_dir", ...)``
+    keep working. New code should import from ``app_paths`` directly.
+    """
+    from . import app_paths
+    return app_paths.log_dir()
 
 
 def performance_log_path() -> Path:

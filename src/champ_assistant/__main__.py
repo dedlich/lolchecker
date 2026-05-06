@@ -57,15 +57,10 @@ def _log_startup_summary(perf_module) -> None:  # type: ignore[no-untyped-def]
 
 
 def _resource_root() -> Path:
-    """Repo root in dev, bundle root in a PyInstaller frozen exe.
-
-    PyInstaller sets ``sys.frozen`` and exposes the unpacked bundle path via
-    ``sys._MEIPASS``. From source, fall back to the repo root inferred from
-    this file's location.
-    """
-    if getattr(sys, "frozen", False) and hasattr(sys, "_MEIPASS"):
-        return Path(sys._MEIPASS)
-    return Path(__file__).resolve().parents[2]
+    """Thin delegator to ``app_paths.resource_root`` — kept for backwards
+    compat with existing call sites in this module."""
+    from champ_assistant import app_paths
+    return app_paths.resource_root()
 
 
 DEFAULT_FIXTURE_DIR = _resource_root() / "tests" / "fixtures" / "sessions"
