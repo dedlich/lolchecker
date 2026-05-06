@@ -81,12 +81,12 @@ class MinimapTimersWidget(QWidget):
         # Geometry override loaded from overlay.json. When set, auto-pin
         # is skipped so the user's manual position is respected.
         self._geom_override: tuple[int, int, int, int] | None = self._load_override()
-        # F8 toggle poll — debounced so a long press doesn't rapid-fire.
-        self._f8_was_down = False
-        self._f8_timer = QTimer(self)
-        self._f8_timer.setInterval(80)
-        self._f8_timer.timeout.connect(self._poll_calibration_hotkey)
-        self._f8_timer.start()
+        # Calibration is toggled by the ``calibrate_minimap`` global hotkey
+        # (default: Ctrl+Alt+M). __main__ wires HotkeyService.hotkey_pressed
+        # to ``toggle_calibration`` — see _on_hotkey there. We deliberately
+        # do NOT poll the keyboard; low-level key polling is the exact
+        # pattern Riot's Vanguard flags as suspicious. See
+        # tests/lint/test_no_input_hooks.py.
 
         if self._geom_override is not None:
             x, y, w, h = self._geom_override
@@ -230,23 +230,11 @@ class MinimapTimersWidget(QWidget):
 
     # -- calibration mode ------------------------------------------------
 
-    def _poll_calibration_hotkey(self) -> None:
-        """Toggle calibration on/off when F8 is pressed (Windows-only)."""
-        import sys
-        if not sys.platform.startswith("win"):
-            return
-        try:
-            import ctypes
-            user32 = ctypes.windll.user32
-            VK_F8 = 0x77
-            down = bool(user32.GetAsyncKeyState(VK_F8) & 0x8000)
-            if down and not self._f8_was_down:
-                self._toggle_calibration()
-            self._f8_was_down = down
-        except Exception:  # noqa: BLE001 — never crash from a hotkey poll
-            return
-
-    def _toggle_calibration(self) -> None:
+    def toggle_calibration(self) -> None:
+        """Public toggle invoked by the ``calibrate_minimap`` hotkey
+        (default: Ctrl+Alt+M). Drag/resize the widget over the minimap
+        while calibration is on; press again to lock the geometry in
+        and restore click-through."""
         if self._calibration_mode:
             self._exit_calibration()
         else:

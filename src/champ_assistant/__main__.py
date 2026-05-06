@@ -695,6 +695,15 @@ def _run_with_ui(args: argparse.Namespace) -> int:
     if persisted.show_scoreboard:
         scoreboard = ScoreboardWidget()
         floating.append(scoreboard)
+        # Subscribe to state.scoreboard_visible so the panel peeks when
+        # vision detects the in-game TAB scoreboard (or when the user
+        # presses Ctrl+Alt+B). NO keyboard polling — see
+        # tests/lint/test_no_input_hooks.py for the Vanguard rationale.
+        def _drive_scoreboard_peek(old, new) -> None:  # type: ignore[no-untyped-def]
+            if old.scoreboard_visible != new.scoreboard_visible:
+                scoreboard.set_peek_visible(new.scoreboard_visible)
+        store.subscribe(_drive_scoreboard_peek)
+    minimap = None
     if persisted.show_minimap_timers:
         minimap = MinimapTimersWidget()
         minimap.connect_scheduler(scheduler)
@@ -913,6 +922,12 @@ def _run_with_ui(args: argparse.Namespace) -> int:
             # so a second press dismisses the panel. Latest top is
             # stashed on the panel itself by the LCDA dispatch loop.
             insight_panel.toggle(getattr(insight_panel, "_latest_top", None))
+        elif name == "calibrate_minimap":
+            # Manually re-position the minimap-timers overlay to match
+            # the in-game minimap. Drag + resize while on; press again
+            # to lock geometry and restore click-through.
+            if minimap is not None:
+                minimap.toggle_calibration()
 
     def _reset_widget_positions() -> None:
         from champ_assistant import layout as _layout

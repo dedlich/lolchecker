@@ -1,10 +1,14 @@
 """Floating scoreboard widget — kills, gold delta, dragons per team,
 plus per-lane matchup gold diff and clickable summoner-spell timers.
-Visible only while TAB is held.
 
-Inspired by Blitz's "post-game-style" scoreboard that hovers over the
-TAB area in-game. Hides when TAB is released so it doesn't clutter
-the lane-phase HUD.
+Visibility is driven externally via ``set_peek_visible(bool)`` —
+typically wired in __main__ to ``state_store.scoreboard_visible``,
+which the vision subsystem flips when it detects the in-game TAB
+scoreboard on screen, and which the ``toggle_scoreboard`` hotkey
+flips manually. We deliberately do NOT poll the keyboard: low-level
+key polling (``GetAsyncKeyState`` / ``SetWindowsHookEx``) is the
+exact pattern Riot's Vanguard flags as suspicious. See
+``tests/lint/test_no_input_hooks.py``.
 
 Data sources (all from LCDA):
   - Per-player kills/items value: aggregated into TeamAggregate
@@ -14,11 +18,10 @@ Data sources (all from LCDA):
 
 Spell timers persist while the panel is hidden — the user clicks a
 spell icon when they see it used, the cooldown ticks down even after
-TAB is released, and the next tab-peek shows the current state.
+the panel hides, and the next time it peeks shows the current state.
 """
 from __future__ import annotations
 
-import sys
 import time as _time
 
 from PyQt6.QtCore import Qt, QTimer
@@ -372,14 +375,11 @@ class ScoreboardWidget(FloatingWidget):
             }
         outer.addLayout(lane_grid)
 
-        # Tab-key visibility poll — show only while TAB is held AND the LoL
-        # game window is the foreground window. Mirrors League's own scoreboard
-        # behavior so this widget feels like a built-in HUD addition.
-        self._tab_held = False
-        self._tab_timer = QTimer(self)
-        self._tab_timer.setInterval(50)
-        self._tab_timer.timeout.connect(self._poll_tab_state)
-        self._tab_timer.start()
+        # Visibility is driven externally — see ``set_peek_visible``.
+        # The vision subsystem detects the in-game scoreboard via screen
+        # analysis (no keyboard polling) and pushes ``scoreboard_visible``
+        # into the StateStore; __main__ wires that signal through to here.
+        self._peek_armed = False
 
         self.hide()
 
@@ -516,27 +516,15 @@ class ScoreboardWidget(FloatingWidget):
         label.clear()
         label.setText(_short_name(player))
 
-    def _poll_tab_state(self) -> None:
-        """Show the widget while TAB is held AND LoL is the foreground
-        window; hide otherwise. ~50 ms cadence keeps the show/hide
-        feeling instant without spamming Win32 calls."""
-        if not sys.platform.startswith("win"):
-            return
-        try:
-            import ctypes
-            user32 = ctypes.windll.user32
-            VK_TAB = 0x09
-            tab_down = bool(user32.GetAsyncKeyState(VK_TAB) & 0x8000)
-            # Restrict to LoL foreground so Tab in any other app doesn't
-            # flash the overlay across our other widgets / users' work.
-            fg = user32.GetForegroundWindow()
-            cls_buf = ctypes.create_unicode_buffer(64)
-            user32.GetClassNameW(fg, cls_buf, 64)
-            lol_focused = (cls_buf.value or "") == "RiotWindowClass"
-            should_show = tab_down and lol_focused and self._latest_snapshot is not None
-        except Exception:  # noqa: BLE001 — never crash the UI on a poll
-            return
+    def set_peek_visible(self, visible: bool) -> None:
+        """External visibility driver. Called by the StateStore subscription
+        wired in __main__ — the vision subsystem (or the toggle_scoreboard
+        hotkey) flips ``state.scoreboard_visible``, which routes here.
 
+        Snapshot must have arrived at least once for the panel to show;
+        an empty panel hovering over an in-game scoreboard would be confusing.
+        """
+        should_show = visible and self._latest_snapshot is not None
         if should_show and not self.isVisible():
             self.fade_appear()
         elif not should_show and self.isVisible():

@@ -56,6 +56,7 @@ VK_B = 0x42
 VK_D = 0x44
 VK_H = 0x48
 VK_L = 0x4C
+VK_M = 0x4D
 VK_R = 0x52
 
 WM_HOTKEY = 0x0312
@@ -101,6 +102,7 @@ DEFAULT_BINDINGS: tuple[HotkeyBinding, ...] = (
     HotkeyBinding("reset_positions",   MOD_CONTROL | MOD_ALT, VK_R, "Ctrl+Alt+R"),
     HotkeyBinding("reset_layout",      MOD_CONTROL | MOD_ALT, VK_D, "Ctrl+Alt+D"),
     HotkeyBinding("toggle_scoreboard", MOD_CONTROL | MOD_ALT, VK_B, "Ctrl+Alt+B"),
+    HotkeyBinding("calibrate_minimap", MOD_CONTROL | MOD_ALT, VK_M, "Ctrl+Alt+M"),
 )
 
 
