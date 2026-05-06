@@ -185,35 +185,70 @@ RULE_TIMING_RING_SIZE = 500
 
 
 class RuleTimingRecorder:
-    """Per-rule duration recorder + digest formatter.
+    """Per-rule duration + activation recorder.
 
-    Single mutable state: ``_samples[rule_name] = deque[ms]``. Append-only
-    on the hot path; readers (``digest`` / ``flush``) snapshot under the
-    lock so concurrent rule eval doesn't tear the buffer.
+    Tracks three kinds of state per rule:
+
+    * ``_samples`` — ring buffer of recent durations (for p50/p95/max).
+    * ``_invocations`` — lifetime call count. Doesn't decay with the
+      ring buffer, so the fire-rate denominator stays accurate even
+      across long sessions.
+    * ``_fires`` — lifetime count of calls that produced a Recommendation
+      (passed ``fired=True``). Numerator for the fire rate.
+
+    Append-only on the hot path; readers (``digest`` / ``flush``)
+    snapshot under the lock so concurrent rule eval doesn't tear state.
     """
 
     def __init__(self) -> None:
         self._samples: dict[str, deque[float]] = defaultdict(
             lambda: deque(maxlen=RULE_TIMING_RING_SIZE),
         )
+        self._invocations: dict[str, int] = defaultdict(int)
+        self._fires: dict[str, int] = defaultdict(int)
         self._lock = Lock()
 
-    def record(self, rule_name: str, duration_ms: float) -> None:
-        """Append one duration sample for ``rule_name``. O(1)."""
+    def record(
+        self, rule_name: str, duration_ms: float, *, fired: bool = False,
+    ) -> None:
+        """Append one duration sample + bump invocation counter.
+
+        ``fired=True`` additionally bumps the fire counter — the engine
+        passes this when the rule returned a non-None Recommendation.
+        Calls that raised count as invocations but not as fires (they
+        also didn't produce output).
+        """
         with self._lock:
             self._samples[rule_name].append(duration_ms)
+            self._invocations[rule_name] += 1
+            if fired:
+                self._fires[rule_name] += 1
 
     def snapshot(self) -> dict[str, list[float]]:
         """Defensive copy of the current samples — readers iterate safely."""
         with self._lock:
             return {name: list(samples) for name, samples in self._samples.items()}
 
-    def digest(self) -> list[tuple[str, int, float, float, float, float]]:
-        """Per-rule (name, count, p50_ms, p95_ms, max_ms, mean_ms) sorted by
-        descending p95. Empty rules are omitted."""
-        snap = self.snapshot()
-        rows: list[tuple[str, int, float, float, float, float]] = []
-        for name, samples in snap.items():
+    def activation_snapshot(self) -> tuple[dict[str, int], dict[str, int]]:
+        """Defensive copy of (invocations, fires) maps."""
+        with self._lock:
+            return dict(self._invocations), dict(self._fires)
+
+    def digest(self) -> list[tuple[str, int, int, float, float, float, float, float]]:
+        """Per-rule digest sorted by descending p95. Empty rules omitted.
+
+        Each row: ``(name, invocations, fires, fire_rate,
+        p50_ms, p95_ms, max_ms, mean_ms)``.
+
+        ``fire_rate`` is in [0, 1] — fraction of invocations that produced
+        a Recommendation. A high p95 + high fire rate is a real cost; a
+        high p95 + low fire rate is a tail-event under specific snapshot
+        conditions, less concerning.
+        """
+        snap_samples = self.snapshot()
+        invocations, fires = self.activation_snapshot()
+        rows: list[tuple[str, int, int, float, float, float, float, float]] = []
+        for name, samples in snap_samples.items():
             if not samples:
                 continue
             ordered = sorted(samples)
@@ -223,21 +258,31 @@ class RuleTimingRecorder:
             # nearest-rank percentile).
             p50_idx = max(0, min(count - 1, int(0.5 * count)))
             p95_idx = max(0, min(count - 1, int(0.95 * count)))
+            inv = invocations.get(name, count)
+            fc = fires.get(name, 0)
+            fire_rate = fc / inv if inv else 0.0
             rows.append((
                 name,
-                count,
+                inv,
+                fc,
+                fire_rate,
                 ordered[p50_idx],
                 ordered[p95_idx],
                 ordered[-1],
                 sum(ordered) / count,
             ))
-        rows.sort(key=lambda r: r[3], reverse=True)
+        rows.sort(key=lambda r: r[5], reverse=True)
         return rows
 
     def flush(self, path: Path | None = None) -> Path | None:
         """Write the digest to ``rule_timing.log`` next to performance.log.
         Atomic via tempfile + os.replace so a kill mid-flush doesn't leave a
-        half-written log. Returns the path on success, None on I/O failure."""
+        half-written log. Returns the path on success, None on I/O failure.
+
+        Output format (TSV)::
+
+          rule  invocations  fires  fire_rate  p50_ms  p95_ms  max_ms  mean_ms
+        """
         if path is None:
             path = _log_dir() / "rule_timing.log"
         rows = self.digest()
@@ -254,11 +299,14 @@ class RuleTimingRecorder:
                 dir=str(path.parent), prefix=".rule_timing_", suffix=".log.tmp",
             ) as tmp:
                 tmp_path = Path(tmp.name)
-                tmp.write("rule\tcount\tp50_ms\tp95_ms\tmax_ms\tmean_ms\n")
-                for name, count, p50, p95, mx, mean in rows:
+                tmp.write(
+                    "rule\tinvocations\tfires\tfire_rate"
+                    "\tp50_ms\tp95_ms\tmax_ms\tmean_ms\n"
+                )
+                for name, inv, fc, rate, p50, p95, mx, mean in rows:
                     tmp.write(
-                        f"{name}\t{count}\t{p50:.4f}\t{p95:.4f}\t"
-                        f"{mx:.4f}\t{mean:.4f}\n"
+                        f"{name}\t{inv}\t{fc}\t{rate:.4f}"
+                        f"\t{p50:.4f}\t{p95:.4f}\t{mx:.4f}\t{mean:.4f}\n"
                     )
             os.replace(tmp_path, path)
             return path

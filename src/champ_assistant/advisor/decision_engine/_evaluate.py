@@ -294,7 +294,9 @@ def evaluate(
         except Exception:  # noqa: BLE001 — engine never propagates rule bugs
             timer.record(rule_name, (perf_counter() - t0) * 1000.0)
             continue
-        timer.record(rule_name, (perf_counter() - t0) * 1000.0)
+        timer.record(
+            rule_name, (perf_counter() - t0) * 1000.0, fired=rec is not None,
+        )
         if rec is not None:
             out.append(rec)
     if spell_tracker is not None:
@@ -307,7 +309,10 @@ def evaluate(
             t0 = perf_counter()
             try:
                 rec = _spell_rule(snapshot, spell_tracker)
-                timer.record(rule_name, (perf_counter() - t0) * 1000.0)
+                timer.record(
+                    rule_name, (perf_counter() - t0) * 1000.0,
+                    fired=rec is not None,
+                )
                 if rec is not None:
                     out.append(rec)
             except Exception:  # noqa: BLE001
@@ -316,7 +321,10 @@ def evaluate(
         t0 = perf_counter()
         try:
             rec = rule_situational_build(snapshot, situational_build)
-            timer.record("rule_situational_build", (perf_counter() - t0) * 1000.0)
+            timer.record(
+                "rule_situational_build", (perf_counter() - t0) * 1000.0,
+                fired=rec is not None,
+            )
             if rec is not None:
                 out.append(rec)
         except Exception:  # noqa: BLE001

@@ -152,12 +152,14 @@ def test_rule_timing_digest_omits_empty_buckets() -> None:
 
 def test_rule_timing_digest_computes_percentiles() -> None:
     rec = pm.RuleTimingRecorder()
-    # Known distribution: 1..10 ms.
+    # Known distribution: 1..10 ms — 10 invocations, none "fired".
     for ms in range(1, 11):
         rec.record("known", float(ms))
     digest = {row[0]: row for row in rec.digest()}
-    name, count, p50, p95, mx, mean = digest["known"]
-    assert count == 10
+    name, inv, fires, fire_rate, p50, p95, mx, mean = digest["known"]
+    assert inv == 10
+    assert fires == 0
+    assert fire_rate == 0.0
     assert mx == 10.0
     assert mean == 5.5
     # p50 nearest-rank with 10 samples: index 5 → value 6.0 (sort-ascending).
@@ -195,7 +197,10 @@ def test_rule_timing_flush_writes_tsv(monkeypatch, tmp_path) -> None:
     assert out.name == "rule_timing.log"
     content = out.read_text(encoding="utf-8").strip().splitlines()
     # Header + 2 rules.
-    assert content[0].startswith("rule\tcount\t")
+    assert content[0] == (
+        "rule\tinvocations\tfires\tfire_rate"
+        "\tp50_ms\tp95_ms\tmax_ms\tmean_ms"
+    )
     assert len(content) == 3
     # One row mentions rule_x, the other rule_y.
     assert any("rule_x" in line for line in content[1:])
@@ -224,3 +229,135 @@ def test_rule_timing_reset_for_tests_drops_singleton() -> None:
     b = pm.rule_timing_recorder()
     assert b is not a
     assert "rule_z" not in b.snapshot()
+
+
+# ---------------------------------------------------------------------------
+# Activation tracking — fired counter + fire rate
+# ---------------------------------------------------------------------------
+
+def test_record_default_does_not_count_as_fire() -> None:
+    """``record(name, ms)`` without ``fired=True`` is an invocation but not a fire."""
+    rec = pm.RuleTimingRecorder()
+    rec.record("rule_a", 1.0)
+    rec.record("rule_a", 1.0)
+    inv, fires = rec.activation_snapshot()
+    assert inv["rule_a"] == 2
+    assert fires.get("rule_a", 0) == 0
+
+
+def test_record_with_fired_flag_increments_fire_count() -> None:
+    rec = pm.RuleTimingRecorder()
+    rec.record("rule_a", 1.0, fired=True)
+    rec.record("rule_a", 1.0, fired=False)
+    rec.record("rule_a", 1.0, fired=True)
+    inv, fires = rec.activation_snapshot()
+    assert inv["rule_a"] == 3
+    assert fires["rule_a"] == 2
+
+
+def test_digest_includes_fire_rate() -> None:
+    rec = pm.RuleTimingRecorder()
+    # 4 invocations, 1 fire → fire_rate 0.25
+    rec.record("rule_a", 1.0, fired=True)
+    rec.record("rule_a", 1.0)
+    rec.record("rule_a", 1.0)
+    rec.record("rule_a", 1.0)
+    digest = {row[0]: row for row in rec.digest()}
+    name, inv, fires, fire_rate, *_ = digest["rule_a"]
+    assert inv == 4
+    assert fires == 1
+    assert fire_rate == 0.25
+
+
+def test_digest_fire_rate_zero_when_never_fired() -> None:
+    rec = pm.RuleTimingRecorder()
+    for _ in range(5):
+        rec.record("never_fires", 0.5)
+    digest = {row[0]: row for row in rec.digest()}
+    _, _, fires, fire_rate, *_ = digest["never_fires"]
+    assert fires == 0
+    assert fire_rate == 0.0
+
+
+def test_digest_fire_rate_one_when_always_fires() -> None:
+    rec = pm.RuleTimingRecorder()
+    for _ in range(5):
+        rec.record("always_fires", 0.5, fired=True)
+    digest = {row[0]: row for row in rec.digest()}
+    _, _, fires, fire_rate, *_ = digest["always_fires"]
+    assert fires == 5
+    assert fire_rate == 1.0
+
+
+def test_invocation_count_survives_ring_buffer_eviction() -> None:
+    """Lifetime invocation counter doesn't decay with the ring buffer.
+    A long session with cap+10 calls should still report cap+10 invocations
+    (not just the cap most recent samples)."""
+    rec = pm.RuleTimingRecorder()
+    cap = pm.RULE_TIMING_RING_SIZE
+    for _ in range(cap + 10):
+        rec.record("hot_rule", 0.1, fired=True)
+    inv, fires = rec.activation_snapshot()
+    # Lifetime count is total calls, not just retained samples.
+    assert inv["hot_rule"] == cap + 10
+    assert fires["hot_rule"] == cap + 10
+    # But the duration ring buffer is capped.
+    assert len(rec.snapshot()["hot_rule"]) == cap
+
+
+def test_evaluate_records_activation_for_firing_rules() -> None:
+    """End-to-end: evaluate() should mark a rule as fired when it returns
+    a Recommendation. Easiest way to verify: stub a snapshot that triggers
+    rule_first_blood and check the recorder."""
+    from dataclasses import dataclass, field
+    from champ_assistant.advisor.decision_engine import (
+        evaluate, reset_first_blood_hysteresis,
+    )
+
+    pm.reset_for_tests()
+    reset_first_blood_hysteresis()
+
+    @dataclass
+    class _P:
+        summoner_name: str = ""
+        champion_name: str = ""
+
+    @dataclass
+    class _Snap:
+        game_time: float = 200.0
+        raw_events: list = field(default_factory=list)
+        enemies: list = field(default_factory=list)
+        allies: list = field(default_factory=list)
+        ally_aggregate: object = None
+        enemy_aggregate: object = None
+        objectives: list = field(default_factory=list)
+        active_team: str = "ORDER"
+        active_summoner: str = "Me"
+        active_level: int = 3
+        active_items: int = 0
+        new_spikes: list = field(default_factory=list)
+        enemy_spikes: list = field(default_factory=list)
+        gank_alert: object = None
+        tilt_state: object = None
+        active_combat: object = None
+        lane_opponent_alert: object = None
+        game_result: str = ""
+        game_mode: str = ""
+
+    snap = _Snap(
+        game_time=200.0,
+        raw_events=[{
+            "EventName": "ChampionKill", "EventTime": 180.0,
+            "KillerName": "Me", "VictimName": "Yasuo", "Assisters": [],
+        }],
+        allies=[_P(summoner_name="Me", champion_name="MyChamp")],
+        enemies=[_P(summoner_name="Yasuo", champion_name="Yasuo")],
+    )
+    evaluate(snap)
+    inv, fires = pm.rule_timing_recorder().activation_snapshot()
+    # rule_first_blood should have fired exactly once on this snapshot.
+    assert inv.get("rule_first_blood", 0) == 1
+    assert fires.get("rule_first_blood", 0) == 1
+    # rule_late_game_group ran but should NOT have fired (game time too early).
+    assert inv.get("rule_late_game_group", 0) == 1
+    assert fires.get("rule_late_game_group", 0) == 0

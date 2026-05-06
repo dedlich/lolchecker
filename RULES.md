@@ -430,4 +430,8 @@ listed kinds on the right.
 
 The `time.perf_counter()` instrumentation in `evaluate()` records every rule's
 duration to the `RuleTimingRecorder`, which flushes a digest to
-`rule_timing.log` on shutdown. New rules show up automatically.
+`rule_timing.log` on shutdown. New rules show up automatically. The digest
+also tracks per-rule **invocations** (lifetime call count) and **fires**
+(times the rule produced a non-None Recommendation), with `fire_rate = fires /
+invocations` in the output. A new rule that never fires AND has no
+invocations is dead code; one that fires every tick may need throttling.
