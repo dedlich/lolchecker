@@ -3367,6 +3367,33 @@ def reset_objective_taken_hysteresis() -> None:
     _OBJECTIVE_TAKEN_HYSTERESIS.reset()
 
 
+# ─── Objective-bounty hysteresis ─────────────────────────────────────────────
+# Two flags — one for "we're behind, comeback bounty active" and one for
+# "we're ahead, our deaths will give them comeback bounty". Each flips
+# armed/disarmed across threshold crossings so the rule fires once per
+# state-change rather than every tick the condition holds.
+
+class _ObjectiveBountyHysteresis:
+    """Per-direction (behind / ahead) fired flag."""
+    __slots__ = ("fired_behind", "fired_ahead")
+
+    def __init__(self) -> None:
+        self.fired_behind = False
+        self.fired_ahead = False
+
+    def reset(self) -> None:
+        self.fired_behind = False
+        self.fired_ahead = False
+
+
+_OBJECTIVE_BOUNTY_HYSTERESIS = _ObjectiveBountyHysteresis()
+
+
+def reset_objective_bounty_hysteresis() -> None:
+    """Test-only: drop both bounty-fired flags."""
+    _OBJECTIVE_BOUNTY_HYSTERESIS.reset()
+
+
 def rule_recall_check(snapshot: "LcdaSnapshot") -> Recommendation | None:
     """Recall-window coaching driven by HP %, mana %, and gold (Charter B5).
 
@@ -4566,6 +4593,105 @@ def rule_objective_taken_by_ally(snapshot: "LcdaSnapshot") -> Recommendation | N
     )
 
 
+# ─── Objective-bounty thresholds ─────────────────────────────────────────────
+# Riot's catch-up bounty system kicks in when one team is significantly ahead.
+# Trailing team gets bonus gold from objectives + kills; leading team's
+# deaths spawn shutdowns. The exact formula scales with game-time, but a
+# 4-5k items_value differential is a reliable proxy for "bounties are
+# active" in patches 14.x+.
+OBJECTIVE_BOUNTY_DIFF_THRESHOLD: float = 4500.0   # |items_value diff| ≥ this
+OBJECTIVE_BOUNTY_REARM_THRESHOLD: float = 3000.0  # diff drops below this → re-arm
+# Bounty mechanic only matters in mid-game. Before 8 min there's not enough
+# differential; past 35 min the pace is too late-game for bounties to swing.
+OBJECTIVE_BOUNTY_PHASE_START_S: float = 480.0    # 8:00
+OBJECTIVE_BOUNTY_PHASE_END_S: float = 2100.0     # 35:00
+
+
+def rule_objective_bounty_active(snapshot: "LcdaSnapshot") -> Recommendation | None:
+    """Two-sided "Riot bounty system is currently affecting the game" notice.
+
+    Pros explicitly think about catch-up bounties:
+      * Behind 4k+: "objectives give bonus gold, force them — comeback IS
+        mathematically supported". Solo-queue's #1 mid-game FF mistake is
+        not knowing the bounty math.
+      * Ahead 4k+: "your deaths are worth shutdown gold to them — extra
+        careful, no greedy 1v1s". Solo-queue gets cocky when ahead and
+        trades the lead back through unaware deaths.
+
+    Distinct from existing rules:
+      * rule_far_behind_safe — generic "play safe when behind"
+      * rule_gold_lead_push — generic "press the lead"
+    Both are gold-diff threshold rules but reference *general* play
+    advice. This rule specifically mentions the bounty mechanic so the
+    user understands WHY the action is right (comeback math; defensive
+    valuation of own life).
+
+    Single-fire per state-change (entering the threshold band fires once;
+    leaving it via the rearm threshold re-arms for the next swing).
+    """
+    game_time = float(getattr(snapshot, "game_time", 0.0) or 0.0)
+    if not (OBJECTIVE_BOUNTY_PHASE_START_S <= game_time <= OBJECTIVE_BOUNTY_PHASE_END_S):
+        return None
+
+    diff = _team_gold_diff(snapshot)
+    h = _OBJECTIVE_BOUNTY_HYSTERESIS
+
+    # Re-arm when the gap closes below the rearm threshold.
+    abs_diff = abs(diff)
+    if abs_diff < OBJECTIVE_BOUNTY_REARM_THRESHOLD:
+        h.fired_behind = False
+        h.fired_ahead = False
+        return None
+
+    if abs_diff < OBJECTIVE_BOUNTY_DIFF_THRESHOLD:
+        return None
+
+    # Behind branch.
+    if diff < 0 and not h.fired_behind:
+        h.fired_behind = True
+        gap_k = round(abs_diff / 1000.0, 1)
+        return Recommendation(
+            text=(
+                f"-{gap_k}k Gold — Objective-Bounties aktiv. Drake / Baron / "
+                "Tower geben Bonus-Gold beim Take. Force-Objectives lohnen."
+            ),
+            severity="info",
+            category="tempo",
+            confidence=0.78,
+            risk="MEDIUM",
+            ttl_s=45.0,
+            kind="objective_bounty_behind",
+            reasons=(
+                f"Team-Gold-Diff: {int(diff)}",
+                "Riot Catch-Up-System: Bonus-Gold auf Objectives + Kills",
+                "Comeback-Math: 1 Baron-Bounty + Inhib = ~5k Swing",
+            ),
+        )
+    # Ahead branch.
+    if diff > 0 and not h.fired_ahead:
+        h.fired_ahead = True
+        gap_k = round(abs_diff / 1000.0, 1)
+        return Recommendation(
+            text=(
+                f"+{gap_k}k Gold — Vorsicht: Objective-Bounties auf eurer "
+                "Seite. Tod kostet Shutdown-Gold + Spike. Kein Greed."
+            ),
+            severity="info",
+            category="safety",
+            confidence=0.78,
+            risk="MEDIUM",
+            ttl_s=45.0,
+            kind="objective_bounty_ahead",
+            reasons=(
+                f"Team-Gold-Diff: +{int(diff)}",
+                "Bounty-System: jeder Tod gibt Gegner +Y g extra",
+                "Pro-Maxime: Lead halten via Vision + Map-Control, nicht 1v1",
+            ),
+        )
+
+    return None
+
+
 def rule_tilt_detection(snapshot: "LcdaSnapshot") -> Recommendation | None:
     """Surface the active player's death pattern as a coaching call.
 
@@ -4934,6 +5060,8 @@ ALL_RULES: tuple[Callable[["LcdaSnapshot"], Recommendation | None], ...] = (
     rule_shutdown_taken,
     # B5 objective taken — at-moment-of-kill conversion call.
     rule_objective_taken_by_ally,
+    # B5 objective bounty — catch-up mechanic awareness (two-sided).
+    rule_objective_bounty_active,
     # B4 tilt detection — active player's death pattern coaching.
     rule_tilt_detection,
     # B5 recall window — HP/mana/gold-driven back timing.
@@ -5100,6 +5228,8 @@ def _suppress_dominated(recs: list[Recommendation]) -> list[Recommendation]:
             "objective_taken_soul",
             "objective_taken_drake",
             "objective_taken_herald",
+            "objective_bounty_behind",  # already in winning push
+            "objective_bounty_ahead",
         }
         recs = [r for r in recs if r.kind not in _ace_drop]
         kinds = {r.kind for r in recs}
@@ -5197,6 +5327,8 @@ def _suppress_dominated(recs: list[Recommendation]) -> list[Recommendation]:
             "objective_taken_soul",
             "objective_taken_drake",
             "objective_taken_herald",
+            "objective_bounty_behind",  # base defense trumps comeback push
+            "objective_bounty_ahead",
             # NOTE: ally_inhib_respawning intentionally coexists with ally_inhib_down:
             # "defend now + inhib back in 30s" are complementary, not conflicting.
         }
@@ -5227,6 +5359,14 @@ def _suppress_dominated(recs: list[Recommendation]) -> list[Recommendation]:
         }
         recs = [r for r in recs if r.kind not in _fight_kinds]
 
+    # Rule 10b — far_behind_safe ("scale, no fights") contradicts
+    # objective_bounty_behind ("force objectives for bounty gold"). At
+    # deep deficits the safe-play call wins; the bounty info is true
+    # but acting on it gets you killed and gives them MORE bounty.
+    if "far_behind_safe" in kinds:
+        recs = [r for r in recs if r.kind != "objective_bounty_behind"]
+        kinds = {r.kind for r in recs}
+
     # Rule 11 — spiral-level tilt (alert) on the active player suppresses
     # offensive prompts. Telling a feeding player "fight now!" is the
     # worst possible combo; the tilt rec is asking them to do nothing.
@@ -5254,6 +5394,8 @@ def _suppress_dominated(recs: list[Recommendation]) -> list[Recommendation]:
             "objective_taken_soul",
             "objective_taken_drake",
             "objective_taken_herald",
+            "objective_bounty_behind",  # feeding player shouldn't force comeback objective
+            "objective_bounty_ahead",
             "flash_down", "tp_down", "combat_spell_down",
             "jungler_down", "dragon_soul",
         }
