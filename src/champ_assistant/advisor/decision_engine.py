@@ -3184,6 +3184,31 @@ def reset_enemy_bounty_hysteresis() -> None:
     _ENEMY_BOUNTY_HYSTERESIS.reset()
 
 
+# ─── Ally bounty hysteresis ──────────────────────────────────────────────────
+# Same shape as the enemy version, but applied to allies (excluding the
+# active player — they get rule_active_bounty instead).
+
+class _AllyBountyHysteresis:
+    """Per-ally fired-tier + death-count tracker."""
+    __slots__ = ("last_fired_tier", "last_seen_deaths")
+
+    def __init__(self) -> None:
+        self.last_fired_tier: dict[str, int] = {}
+        self.last_seen_deaths: dict[str, int] = {}
+
+    def reset(self) -> None:
+        self.last_fired_tier.clear()
+        self.last_seen_deaths.clear()
+
+
+_ALLY_BOUNTY_HYSTERESIS = _AllyBountyHysteresis()
+
+
+def reset_ally_bounty_hysteresis() -> None:
+    """Test-only: drop per-ally fired-tier state."""
+    _ALLY_BOUNTY_HYSTERESIS.reset()
+
+
 def rule_recall_check(snapshot: "LcdaSnapshot") -> Recommendation | None:
     """Recall-window coaching driven by HP %, mana %, and gold (Charter B5).
 
@@ -3588,6 +3613,129 @@ def rule_enemy_bounty(snapshot: "LcdaSnapshot") -> Recommendation | None:
     )
 
 
+# Position-specific protect-the-carry advice. What "support the carry"
+# actually means depends on which lane they play.
+_ALLY_PROTECT_ADVICE: dict[str, str] = {
+    "TOP":     "Top-Side Vision, TP-Engages für Top, Welle für Top freihalten",
+    "JUNGLE":  "Jungle wardēn (river + buffs), Counter-Gank-Pressure",
+    "MIDDLE":  "Mid-Roams unterstützen, Welle für Mid freihalten, Vision",
+    "BOTTOM":  "Bot-Side stacken (Drachen), Engages mit CC, kein 4v5",
+    "UTILITY": "Bot stacken, Vision für Bot-Plays, Engages koordinieren",
+}
+
+
+def rule_ally_bounty(snapshot: "LcdaSnapshot") -> Recommendation | None:
+    """Surface "ALLY X has a streak — protect-the-carry" once per tier per
+    ally life (Charter B5 — protect-the-carry coaching).
+
+    Third leg of the bounty matrix:
+      * rule_active_bounty  — "you have bounty"            (defensive)
+      * rule_enemy_bounty   — "enemy has bounty, focus"   (offensive)
+      * rule_ally_bounty    — "ally has bounty, protect"  (supportive)
+
+    Pros pivot the entire team strategy when an ally is fed:
+      * Give the carrier side-lane control (split-push enablement)
+      * Ward the side they're playing
+      * Don't 4v5 — wait for them
+      * Buff-share (red/blue to the carrier)
+      * Stay close in mid/late for peel
+
+    Solo queue routinely abandons the fed ally to splitpush alone, then
+    fights 4v5 without them. Externalising this signal closes that gap.
+
+    Active player is excluded — their own streak is handled by
+    rule_active_bounty with different (defensive) messaging.
+    """
+    allies = list(getattr(snapshot, "allies", []) or [])
+    if not allies:
+        return None
+    active_summoner = str(getattr(snapshot, "active_summoner", "") or "")
+    events = list(getattr(snapshot, "raw_events", []) or [])
+    h = _ALLY_BOUNTY_HYSTERESIS
+
+    # Phase 1 — refresh per-ally death state.
+    for a in allies:
+        if str(getattr(a, "summoner_name", "")) == active_summoner:
+            continue
+        name = str(getattr(a, "champion_name", "") or "")
+        if not name:
+            continue
+        deaths = int(getattr(a, "deaths", 0) or 0)
+        prev = h.last_seen_deaths.get(name, 0)
+        if deaths > prev:
+            h.last_fired_tier[name] = 0
+            h.last_seen_deaths[name] = deaths
+        elif name not in h.last_seen_deaths:
+            h.last_seen_deaths[name] = deaths
+
+    # Phase 2 — pick the most-actionable ally (highest unannounced tier).
+    best: tuple[int, int, str, object] | None = None
+    for a in allies:
+        if str(getattr(a, "summoner_name", "")) == active_summoner:
+            continue
+        if not getattr(a, "is_alive", True):
+            continue
+        name = str(getattr(a, "champion_name", "") or "")
+        if not name:
+            continue
+        streak = _kill_streak(a, events)
+        if streak < BOUNTY_TIER_INFO_S:
+            continue
+        if streak >= BOUNTY_TIER_GODLIKE_S:
+            tier = BOUNTY_TIER_GODLIKE_S
+        elif streak >= BOUNTY_TIER_WARN_S:
+            tier = BOUNTY_TIER_WARN_S
+        else:
+            tier = BOUNTY_TIER_INFO_S
+        if tier <= h.last_fired_tier.get(name, 0):
+            continue
+        candidate = (tier, streak, name, a)
+        if best is None or candidate > best:
+            best = candidate
+
+    if best is None:
+        return None
+    tier, streak, name, ally = best
+    h.last_fired_tier[name] = tier
+
+    position = str(getattr(ally, "position", "") or "")
+    advice = _ALLY_PROTECT_ADVICE.get(position, "Carry-Pflege, kein Solo-Engage ohne sie")
+
+    if tier == BOUNTY_TIER_GODLIKE_S:
+        text = (
+            f"{name} GODLIKE ({streak}-Streak) — Win-Condition, ALLE Plays um {name}. "
+            f"{advice}"
+        )
+        severity, ttl_s, confidence, risk = "warn", 35.0, 0.92, "MEDIUM"
+    elif tier == BOUNTY_TIER_WARN_S:
+        text = (
+            f"{name} UNSTOPPABLE ({streak}-Streak) — Protect-the-Carry-Modus. "
+            f"{advice}"
+        )
+        severity, ttl_s, confidence, risk = "warn", 30.0, 0.86, "MEDIUM"
+    else:
+        text = (
+            f"{name} Killing Spree ({streak}-Streak) — peelen + Vision. "
+            f"{advice}"
+        )
+        severity, ttl_s, confidence, risk = "info", 25.0, 0.78, "LOW"
+
+    return Recommendation(
+        text=text,
+        severity=severity,
+        category="tempo",
+        confidence=confidence,
+        risk=risk,
+        ttl_s=ttl_s,
+        kind="ally_bounty",
+        reasons=(
+            f"{name} hat {streak} Kills ohne Tod (Position: {position or 'unbekannt'})",
+            "Fed Ally = Team-Win-Condition, Plays um sie aufbauen",
+            "Kein 4v5 ohne Carry — warten lohnt fast immer",
+        ),
+    )
+
+
 def rule_tilt_detection(snapshot: "LcdaSnapshot") -> Recommendation | None:
     """Surface the active player's death pattern as a coaching call.
 
@@ -3942,6 +4090,8 @@ ALL_RULES: tuple[Callable[["LcdaSnapshot"], Recommendation | None], ...] = (
     rule_active_bounty,
     # B5 enemy bounty — proactive "kill the fed carrier" focus call.
     rule_enemy_bounty,
+    # B5 ally bounty — proactive "protect the fed ally" coaching.
+    rule_ally_bounty,
     # B4 tilt detection — active player's death pattern coaching.
     rule_tilt_detection,
     # B5 recall window — HP/mana/gold-driven back timing.
@@ -4095,6 +4245,7 @@ def _suppress_dominated(recs: list[Recommendation]) -> list[Recommendation]:
             "skill_point_unspent",  # micro-nag — irrelevant during ace push
             "active_bounty",        # bounty doesn't matter when team is winning the play
             "enemy_bounty",         # 5v0 push moment — focus call is implicit
+            "ally_bounty",          # protect-the-carry irrelevant — push winning
         }
         recs = [r for r in recs if r.kind not in _ace_drop]
         kinds = {r.kind for r in recs}
@@ -4125,6 +4276,7 @@ def _suppress_dominated(recs: list[Recommendation]) -> list[Recommendation]:
             "skill_point_unspent", # micro-nag drowns out the safety call
             "active_bounty",       # numbers_disadv is the more-urgent safety call
             "enemy_bounty",        # short-handed teams don't pick fights — focus is moot
+            "ally_bounty",         # the more-urgent "play safe" already covers "don't 4v5"
         }
         return [r for r in recs if r.kind not in _offensive]
 
@@ -4169,6 +4321,7 @@ def _suppress_dominated(recs: list[Recommendation]) -> list[Recommendation]:
             "skill_point_unspent", # micro-nag drowns out the defense call
             "active_bounty",       # bounty coaching irrelevant when defending base
             "enemy_bounty",        # focus call irrelevant — they're inside your base
+            "ally_bounty",         # protect-the-carry irrelevant — defend, don't enable
             # NOTE: ally_inhib_respawning intentionally coexists with ally_inhib_down:
             # "defend now + inhib back in 30s" are complementary, not conflicting.
         }
@@ -4195,6 +4348,7 @@ def _suppress_dominated(recs: list[Recommendation]) -> list[Recommendation]:
             "dragon_soul", "jungler_down",
             "objective_setup",  # don't prep objectives — they'll execute you
             "enemy_bounty",     # focus call moot when fighting equals death
+            "ally_bounty",      # protect-the-carry moot when entire team must back
         }
         recs = [r for r in recs if r.kind not in _fight_kinds]
 
@@ -4213,6 +4367,7 @@ def _suppress_dominated(recs: list[Recommendation]) -> list[Recommendation]:
             "objective_setup",   # objective prep irrelevant when player is feeding
             "skill_point_unspent",  # micro-nag drowns out "do nothing" message
             "enemy_bounty",      # focus call irrelevant — feeding player should not fight
+            "ally_bounty",       # protect-the-carry irrelevant — feeding player can't help
             "flash_down", "tp_down", "combat_spell_down",
             "jungler_down", "dragon_soul",
         }
