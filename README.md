@@ -83,6 +83,13 @@ order before it ships.
    load Python DLL" on launch). One-time setup.
 3. Extract the zip. Run `champ-assistant.exe`.
 
+> **Windows SmartScreen warning is expected.** The bundle is unsigned, so on
+> first launch Windows shows _"Windows protected your PC"_ with a **Don't run**
+> button. Click **More info → Run anyway**. After the first launch SmartScreen
+> remembers the choice and stops nagging. Code signing is on the roadmap
+> ([OPTIMIZATION.md §4.1](docs/OPTIMIZATION.md)); until then, build
+> reputation locally by running it once.
+
 ### From source (any platform)
 
 ```bash

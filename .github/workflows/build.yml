@@ -68,3 +68,20 @@ jobs:
           generate_release_notes: true
           draft: false
           prerelease: false
+          # Static header above the auto-generated changelog. Tells users
+          # what to expect on first launch — the bundle is unsigned, so
+          # SmartScreen will warn until reputation builds. See README.md
+          # "Windows (recommended)" + OPTIMIZATION.md §4.1.
+          body: |
+            ## First-run notes
+
+            This bundle is **unsigned**. On first launch Windows SmartScreen will
+            show _"Windows protected your PC"_ with a **Don't run** button. Click
+            **More info → Run anyway** — SmartScreen remembers the choice and won't
+            ask again on this machine. Code signing is on the roadmap.
+
+            **Windows Defender exclusion:** add the extracted folder to Defender's
+            exclusion list before extracting. Without it, Defender quarantines the
+            bundled `python311.dll` and you'll see "Failed to load Python DLL".
+
+            ---
