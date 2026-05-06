@@ -3287,6 +3287,32 @@ def reset_first_blood_hysteresis() -> None:
     _FIRST_BLOOD_HYSTERESIS.reset()
 
 
+# ─── Teamfight-outcome hysteresis ────────────────────────────────────────────
+# Don't re-fire the same fight every tick. After firing, hold for 30s (the
+# "press the win / recover the loss" window) before allowing the next
+# teamfight rec.
+
+class _TeamfightOutcomeHysteresis:
+    """Tracks the latest fight already announced, so the rule fires once
+    per teamfight rather than every tick the recent-window stays populated.
+    """
+    __slots__ = ("last_fired_event_time",)
+
+    def __init__(self) -> None:
+        self.last_fired_event_time: float = -1.0
+
+    def reset(self) -> None:
+        self.last_fired_event_time = -1.0
+
+
+_TEAMFIGHT_OUTCOME_HYSTERESIS = _TeamfightOutcomeHysteresis()
+
+
+def reset_teamfight_outcome_hysteresis() -> None:
+    """Test-only: re-arm teamfight-outcome detection."""
+    _TEAMFIGHT_OUTCOME_HYSTERESIS.reset()
+
+
 def rule_recall_check(snapshot: "LcdaSnapshot") -> Recommendation | None:
     """Recall-window coaching driven by HP %, mana %, and gold (Charter B5).
 
@@ -4082,6 +4108,135 @@ def rule_first_blood(snapshot: "LcdaSnapshot") -> Recommendation | None:
     )
 
 
+# ─── Teamfight-outcome thresholds ────────────────────────────────────────────
+# A "teamfight" here is ≥3 total ChampionKill events in a tight time window.
+# This excludes single ganks (1-0) and 2-man skirmishes (2-1, 1-1) — those
+# don't carry the same "press the win / recover the loss" stakes.
+TEAMFIGHT_WINDOW_S: float = 15.0       # all kills within 15 s = same fight
+TEAMFIGHT_MIN_TOTAL_KILLS: int = 3     # at least 3 deaths to count as a fight
+TEAMFIGHT_DECISIVE_NET: int = 2        # |ally_kills − ally_deaths| ≥ 2 to fire
+TEAMFIGHT_LOPSIDED_NET: int = 3        # ≥ 3 = fully decisive (ace/near-ace)
+
+
+def _teamfight_outcome_advice(game_time: float, ally_won: bool) -> str:
+    """Phase-aware "what to do in the next 30 s" line. Pros adjust by phase:
+    early-game wins press for plates, mid-game wins force baron/drake,
+    late-game wins force inhibs/elder."""
+    if ally_won:
+        if game_time < 840.0:        # < 14:00
+            return "Plates + Drache forcen, Wave-Pressure, kein Solo-Trade"
+        if game_time < 1500.0:       # 14:00 – 25:00
+            return "Drache/Baron forcen, Vision in ihrem Jungle, Tower"
+        return "Baron / Elder forcen, Inhib pushen, kein Solo-Splitten"
+    # Ally lost.
+    if game_time < 840.0:
+        return "Recall, Wellen freezen, kein Trade vor Reset"
+    if game_time < 1500.0:
+        return "Defensiv, Drake/Baron abgeben, Pause kaufen"
+    return "Defensiv, Inhib protect, alle ablecken vor Engage"
+
+
+def rule_teamfight_outcome(snapshot: "LcdaSnapshot") -> Recommendation | None:
+    """Surface "we just won/lost a teamfight, here's what to do next"
+    once per fight (Charter B5 — post-fight conversion / recovery).
+
+    Distinct from existing rules:
+      * rule_ace_detected   — fires ONLY on full 5-0 wipes
+      * rule_numbers_advantage / _disadvantage — surface CURRENT alive
+        counts, can't distinguish "we just won 4-2" from "5v3 because
+        of a 2v0 skirmish 30 s ago"
+
+    This rule fires on EVENTS — counts ChampionKill events in the most
+    recent 15-second window. ≥3 deaths total, |net| ≥ 2 → decisive
+    teamfight, surface phase-aware advice.
+
+    Hysteresis fires once per fight (keyed on the latest event time
+    that triggered the rec); subsequent ticks within 15 s of that
+    event won't re-fire even though the events stay in the window.
+    """
+    events = list(getattr(snapshot, "raw_events", []) or [])
+    if not events:
+        return None
+
+    # Identify ally vs enemy via summoner_name + champion_name id sets.
+    allies = list(getattr(snapshot, "allies", []) or [])
+    enemies = list(getattr(snapshot, "enemies", []) or [])
+    ally_ids = _team_id_set(allies)
+    enemy_ids = _team_id_set(enemies)
+    if not ally_ids or not enemy_ids:
+        return None
+
+    # Find the latest ChampionKill (anchor of the fight window).
+    kill_events = [e for e in events if e.get("EventName") == "ChampionKill"]
+    if not kill_events:
+        return None
+    kill_events.sort(key=lambda e: float(e.get("EventTime", 0) or 0))
+    latest_t = float(kill_events[-1].get("EventTime", 0) or 0)
+    window_start = latest_t - TEAMFIGHT_WINDOW_S
+    fight_kills = [
+        e for e in kill_events
+        if float(e.get("EventTime", 0) or 0) >= window_start
+    ]
+    if len(fight_kills) < TEAMFIGHT_MIN_TOTAL_KILLS:
+        return None
+
+    # Score the fight from the active player's team perspective.
+    ally_kills = 0
+    enemy_kills = 0
+    for evt in fight_kills:
+        killer = evt.get("KillerName") or ""
+        if killer in ally_ids:
+            ally_kills += 1
+        elif killer in enemy_ids:
+            enemy_kills += 1
+    net = ally_kills - enemy_kills
+
+    if abs(net) < TEAMFIGHT_DECISIVE_NET:
+        return None  # trade fight, no decisive outcome to coach on
+
+    # Hysteresis — don't re-fire the same fight on subsequent ticks.
+    h = _TEAMFIGHT_OUTCOME_HYSTERESIS
+    if abs(latest_t - h.last_fired_event_time) < TEAMFIGHT_WINDOW_S:
+        return None
+    h.last_fired_event_time = latest_t
+
+    game_time = float(getattr(snapshot, "game_time", 0.0) or 0.0)
+    ally_won = net > 0
+    advice = _teamfight_outcome_advice(game_time, ally_won)
+
+    if ally_won and net >= TEAMFIGHT_LOPSIDED_NET:
+        text = f"Teamfight {ally_kills}-{enemy_kills} GEWONNEN — JETZT {advice}"
+        severity, ttl_s, confidence, risk = "alert", 30.0, 0.92, "LOW"
+        kind = "teamfight_won_big"
+    elif ally_won:
+        text = f"Teamfight {ally_kills}-{enemy_kills} gewonnen — Tempo: {advice}"
+        severity, ttl_s, confidence, risk = "info", 25.0, 0.85, "LOW"
+        kind = "teamfight_won"
+    elif net <= -TEAMFIGHT_LOPSIDED_NET:
+        text = f"Teamfight {ally_kills}-{enemy_kills} VERLOREN — KEIN Engage. {advice}"
+        severity, ttl_s, confidence, risk = "alert", 35.0, 0.92, "HIGH"
+        kind = "teamfight_lost_big"
+    else:
+        text = f"Teamfight {ally_kills}-{enemy_kills} verloren — defensiv. {advice}"
+        severity, ttl_s, confidence, risk = "warn", 30.0, 0.85, "HIGH"
+        kind = "teamfight_lost"
+
+    return Recommendation(
+        text=text,
+        severity=severity,
+        category="tempo" if ally_won else "safety",
+        confidence=confidence,
+        risk=risk,
+        ttl_s=ttl_s,
+        kind=kind,
+        reasons=(
+            f"Letzte 15s: {ally_kills} Team-Kills, {enemy_kills} Tode (Net {net:+d})",
+            "Pro-Maxime: Win → Konvertiere SOFORT. Loss → Reset BEVOR Re-Engage.",
+            "Solo-Queue-Throw #1: nach verlorenem Fight weiter engagen",
+        ),
+    )
+
+
 def rule_tilt_detection(snapshot: "LcdaSnapshot") -> Recommendation | None:
     """Surface the active player's death pattern as a coaching call.
 
@@ -4444,6 +4599,8 @@ ALL_RULES: tuple[Callable[["LcdaSnapshot"], Recommendation | None], ...] = (
     rule_plate_window,
     # B5 first blood — single-fire momentum / safety call after first kill.
     rule_first_blood,
+    # B5 teamfight outcome — post-fight conversion / recovery coaching.
+    rule_teamfight_outcome,
     # B4 tilt detection — active player's death pattern coaching.
     rule_tilt_detection,
     # B5 recall window — HP/mana/gold-driven back timing.
@@ -4601,6 +4758,8 @@ def _suppress_dominated(recs: list[Recommendation]) -> list[Recommendation]:
             "matchup_mismatch",     # lane analysis irrelevant during ace push
             "plate_window",         # plates moot — push the win, not a tower trade
             "first_blood",          # FB momentum coaching irrelevant during ace push
+            "teamfight_won",        # ace IS the conversion call — redundant
+            "teamfight_won_big",
         }
         recs = [r for r in recs if r.kind not in _ace_drop]
         kinds = {r.kind for r in recs}
@@ -4635,6 +4794,10 @@ def _suppress_dominated(recs: list[Recommendation]) -> list[Recommendation]:
             "matchup_mismatch",    # lane analysis drowns out the urgent safety call
             "plate_window",        # don't tell short-handed players to push for plates
             "first_blood",         # the more-urgent "play safe" already dominates
+            "teamfight_won",       # can't claim "we won" while short-handed
+            "teamfight_won_big",
+            # teamfight_lost / teamfight_lost_big SURVIVE — they explain
+            # WHY we're short-handed and the "no engage" message is valuable.
         }
         return [r for r in recs if r.kind not in _offensive]
 
@@ -4682,6 +4845,10 @@ def _suppress_dominated(recs: list[Recommendation]) -> list[Recommendation]:
             "ally_bounty",         # protect-the-carry irrelevant — defend, don't enable
             "matchup_mismatch",    # lane analysis irrelevant — base is open
             "plate_window",        # plates moot when defending your own base
+            "teamfight_won",       # post-fight tempo irrelevant — defend, not push
+            "teamfight_won_big",
+            "teamfight_lost",      # ditto — the urgent "defend base" call wins
+            "teamfight_lost_big",
             # NOTE: ally_inhib_respawning intentionally coexists with ally_inhib_down:
             # "defend now + inhib back in 30s" are complementary, not conflicting.
         }
@@ -4730,6 +4897,8 @@ def _suppress_dominated(recs: list[Recommendation]) -> list[Recommendation]:
             "ally_bounty",       # protect-the-carry irrelevant — feeding player can't help
             "matchup_mismatch",  # lane analysis is what tilt already implies — single message wins
             "plate_window",      # don't tell a feeding player to push for plates
+            "teamfight_won",     # feeding player isn't pushing the win — let team handle
+            "teamfight_won_big",
             "flash_down", "tp_down", "combat_spell_down",
             "jungler_down", "dragon_soul",
         }
