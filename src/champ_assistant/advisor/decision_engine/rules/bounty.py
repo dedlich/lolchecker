@@ -17,7 +17,14 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from ....lcda.source import LcdaSnapshot
 
-from .._core import Recommendation, _kill_streak, _team_gold_diff
+from .._core import (
+    BOUNTY_TIER_GODLIKE_S,
+    BOUNTY_TIER_INFO_S,
+    BOUNTY_TIER_WARN_S,
+    Recommendation,
+    _kill_streak,
+    _team_gold_diff,
+)
 from .._state import (
     _ALLY_BOUNTY_HYSTERESIS,
     _BOUNTY_HYSTERESIS,
@@ -33,19 +40,6 @@ def _active_player(snapshot: "LcdaSnapshot") -> object | None:
         if str(getattr(a, "summoner_name", "") or "") == sn:
             return a
     return None
-
-
-# ─── Bounty awareness thresholds ─────────────────────────────────────────────
-# Riot's actual bounty schedule (as of patch 14.x):
-#   3 unanswered kills → +150g shutdown
-#   4-5 unanswered    → +200-300g
-#   6-7 unanswered    → +400-500g
-#   8+               → +500g (capped) — "Legendary"
-# League's announcer terms anchor the messages so the user immediately
-# recognizes "oh that's the Killing Spree / Unstoppable / Godlike threshold".
-BOUNTY_TIER_INFO_S: int = 3      # Killing Spree
-BOUNTY_TIER_WARN_S: int = 5      # Unstoppable
-BOUNTY_TIER_GODLIKE_S: int = 7   # Godlike+
 
 
 def rule_active_bounty(snapshot: "LcdaSnapshot") -> Recommendation | None:

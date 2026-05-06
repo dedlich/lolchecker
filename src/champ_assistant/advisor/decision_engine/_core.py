@@ -316,6 +316,15 @@ def _active_player(snapshot: "LcdaSnapshot") -> object | None:
     return None
 
 
+# Bounty tiers — Riot's announcer terms anchor the bounty rules' messages.
+# 3+ unanswered kills → +150g (Killing Spree); 5+ → +200-300g (Unstoppable);
+# 7+ → +400-500g (Godlike). Multiple rules across bounty / combat domains
+# reference these tiers, so they live here.
+BOUNTY_TIER_INFO_S: int = 3      # Killing Spree
+BOUNTY_TIER_WARN_S: int = 5      # Unstoppable
+BOUNTY_TIER_GODLIKE_S: int = 7   # Godlike+
+
+
 def _team_id_set(players: list) -> set[str]:
     """Build the set of identifiers for a team (summoner_name + champion_name
     of every member). Used by rules that decide which side caused an event."""
