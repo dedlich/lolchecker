@@ -100,11 +100,15 @@ def test_every_kind_in_table_is_emitted_by_some_rule() -> None:
     import re
     from pathlib import Path
 
-    rules_path = (
+    engine_root = (
         Path(__file__).resolve().parents[2]
-        / "src" / "champ_assistant" / "advisor" / "decision_engine" / "_rules.py"
+        / "src" / "champ_assistant" / "advisor" / "decision_engine"
     )
-    src = rules_path.read_text(encoding="utf-8")
+    # Scan _rules.py + every domain module under rules/ (the §3.2 split
+    # moved rule bodies out of _rules.py into rules/<domain>.py — the
+    # lint must follow them).
+    sources = [engine_root / "_rules.py", *(engine_root / "rules").glob("*.py")]
+    src = "\n".join(p.read_text(encoding="utf-8") for p in sources if p.is_file())
     # Match `kind="some_str"` and `kind='some_str'` literally.
     emitted = set(re.findall(r"kind\s*=\s*['\"]([a-z_][a-z0-9_]*)['\"]", src))
 
