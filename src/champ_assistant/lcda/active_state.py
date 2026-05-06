@@ -42,12 +42,17 @@ class ActiveCombatState:
     than raw HP values which scale wildly between champions and patches.
     ``gold`` is absolute (LCDA's ``currentGold``) since item prices are
     absolute too.
+
+    ``unspent_skill_points`` = (player level − sum of Q/W/E/R levels).
+    Pros never carry an unspent point past the kill that gave it; solo-
+    queue regularly does. Surfaced as a low-severity nag when above 0.
     """
     gold: float = 0.0
     hp_pct: float = 1.0      # 1.0 = full health; 0.0 = dead
     mana_pct: float = 1.0    # 1.0 = full mana; 1.0 for non-mana users
     is_mana_user: bool = False
     resource_type: str = ""  # raw LCDA value, kept for diagnostics
+    unspent_skill_points: int = 0
 
 
 def _coerce_float(raw: object, default: float = 0.0) -> float:
@@ -69,8 +74,39 @@ def _safe_pct(current: float, maximum: float) -> float:
     return pct
 
 
+def _count_unspent_skill_points(active_player: dict) -> int:
+    """``player.level − sum(Q/W/E/R levels)``, clamped at 0.
+
+    LCDA's ``abilities`` block uses ``abilityLevel`` (newer patches) or
+    ``level`` (older); both are tried defensively. Missing or malformed
+    fields degrade to 0 unspent — better to under-fire than flood a
+    pre-patched client with bogus warnings.
+    """
+    level = int(active_player.get("level") or 0)
+    if level <= 0:
+        return 0
+    abilities = active_player.get("abilities") or {}
+    if not isinstance(abilities, dict):
+        return 0
+    spent = 0
+    for slot in ("Q", "W", "E", "R"):
+        slot_data = abilities.get(slot)
+        if not isinstance(slot_data, dict):
+            continue
+        # Try both field names — Riot has shipped both across patches.
+        raw = slot_data.get("abilityLevel")
+        if raw is None:
+            raw = slot_data.get("level")
+        try:
+            spent += int(raw or 0)
+        except (TypeError, ValueError):
+            pass
+    return max(0, level - spent)
+
+
 def extract_active_combat_state(active_player: dict | None) -> ActiveCombatState:
-    """Pull HP %, mana %, and gold from LCDA's ``activePlayer`` block.
+    """Pull HP %, mana %, gold, and unspent-skill-point count from LCDA's
+    ``activePlayer`` block.
 
     Returns the default (all-full, no-data) state when input is None or
     missing the expected fields. Defensive across patch differences —
@@ -80,9 +116,10 @@ def extract_active_combat_state(active_player: dict | None) -> ActiveCombatState
         return ActiveCombatState()
 
     gold = _coerce_float(active_player.get("currentGold"), 0.0)
+    unspent = _count_unspent_skill_points(active_player)
     stats = active_player.get("championStats") or {}
     if not isinstance(stats, dict):
-        return ActiveCombatState(gold=gold)
+        return ActiveCombatState(gold=gold, unspent_skill_points=unspent)
 
     hp_cur = _coerce_float(stats.get("currentHealth"))
     hp_max = _coerce_float(stats.get("maxHealth"))
@@ -101,4 +138,5 @@ def extract_active_combat_state(active_player: dict | None) -> ActiveCombatState
         mana_pct=mana_pct,
         is_mana_user=is_mana_user,
         resource_type=resource_type,
+        unspent_skill_points=unspent,
     )

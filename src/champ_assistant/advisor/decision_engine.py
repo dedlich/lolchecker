@@ -3281,6 +3281,62 @@ def rule_recall_check(snapshot: "LcdaSnapshot") -> Recommendation | None:
     return None
 
 
+# ─── Skill-point unspent thresholds ──────────────────────────────────────────
+# Pros tap their level-up keybind in ~1 second. After 60 seconds of game
+# time the wave has hit and any unspent point is a real miss. We gate on
+# HP because nagging during a trade/teamfight is worse than missing the call.
+SKILL_POINT_GAME_TIME_MIN_S: float = 60.0
+SKILL_POINT_HP_GATE_PCT: float = 0.50   # below 50% → in danger, don't nag
+
+
+def rule_unspent_skill_points(snapshot: "LcdaSnapshot") -> Recommendation | None:
+    """Surface "you have an unspent skill point" — the cheapest meaningful
+    coaching call in the game (Charter B5 — micro-coaching).
+
+    Detection: ``unspent_skill_points`` is recomputed every tick from
+    ``activePlayer.abilities`` vs player level. Fire info-level when:
+      * unspent ≥ 1
+      * game_time ≥ 60 s (game-start grace — first wave hasn't crashed yet)
+      * hp_pct ≥ 50 % (below this the player is in a trade; nagging
+        about a skill-up icon while they're trying to survive is worse
+        than missing the cue)
+      * player is alive (hp_pct > 0)
+
+    Solo-queue routinely forgets skill points mid-fight or right after a
+    kill confirmation. Pros never miss this. Externalising the cue
+    closes one of the most frequent skill-cap micro-mistakes.
+    """
+    state = getattr(snapshot, "active_combat", None)
+    if state is None:
+        return None
+    unspent = int(getattr(state, "unspent_skill_points", 0))
+    if unspent <= 0:
+        return None
+    hp_pct = float(getattr(state, "hp_pct", 1.0))
+    if hp_pct <= 0.0:
+        return None  # dead — no skill cast possible
+    if hp_pct < SKILL_POINT_HP_GATE_PCT:
+        return None  # in active combat, don't distract from trade decisions
+    game_time = float(getattr(snapshot, "game_time", 0.0) or 0.0)
+    if game_time < SKILL_POINT_GAME_TIME_MIN_S:
+        return None  # first wave hasn't even hit yet
+
+    plural = "Punkte" if unspent > 1 else "Punkt"
+    return Recommendation(
+        text=f"{unspent} Skill-{plural} offen — Q / W / E / R upgraden",
+        severity="info",
+        category="lane",
+        confidence=0.95,
+        risk="LOW",
+        ttl_s=10.0,
+        kind="skill_point_unspent",
+        reasons=(
+            f"{unspent} ungenutzte Skill-Punkte",
+            "Skill-Up = freier DMG / Sustain / Mobility — kein Grund zu warten",
+        ),
+    )
+
+
 def rule_tilt_detection(snapshot: "LcdaSnapshot") -> Recommendation | None:
     """Surface the active player's death pattern as a coaching call.
 
@@ -3629,6 +3685,8 @@ ALL_RULES: tuple[Callable[["LcdaSnapshot"], Recommendation | None], ...] = (
     rule_lane_opponent_mia,
     # B3 objective setup window — pre-spawn drake/baron/herald coaching.
     rule_objective_setup_window,
+    # B5 skill-point nag — single most-missed micro-action.
+    rule_unspent_skill_points,
     # B4 tilt detection — active player's death pattern coaching.
     rule_tilt_detection,
     # B5 recall window — HP/mana/gold-driven back timing.
@@ -3779,6 +3837,7 @@ def _suppress_dominated(recs: list[Recommendation]) -> list[Recommendation]:
             "mana_check",      # mana doesn't matter when team is doing the work
             "lane_mia",        # team-push beats laning push; group, don't side-lane
             "objective_setup", # ace push moment dominates objective prep
+            "skill_point_unspent",  # micro-nag — irrelevant during ace push
         }
         recs = [r for r in recs if r.kind not in _ace_drop]
         kinds = {r.kind for r in recs}
@@ -3806,6 +3865,7 @@ def _suppress_dominated(recs: list[Recommendation]) -> list[Recommendation]:
             "lane_level_adv",    # lane trades irrelevant when short-handed
             "lane_mia",          # don't tell a short-handed player to side-push alone
             "objective_setup",   # don't push objectives short-handed — wait for ally
+            "skill_point_unspent", # micro-nag drowns out the safety call
         }
         return [r for r in recs if r.kind not in _offensive]
 
@@ -3847,6 +3907,7 @@ def _suppress_dominated(recs: list[Recommendation]) -> list[Recommendation]:
             "gank_risk",         # laning gank warning irrelevant when base is open
             "lane_mia",          # don't tell defenders to chase tempo in lane
             "objective_setup",   # ditto — defending base trumps objective prep
+            "skill_point_unspent", # micro-nag drowns out the defense call
             # NOTE: ally_inhib_respawning intentionally coexists with ally_inhib_down:
             # "defend now + inhib back in 30s" are complementary, not conflicting.
         }
@@ -3888,6 +3949,7 @@ def _suppress_dominated(recs: list[Recommendation]) -> list[Recommendation]:
             "lane_level_adv",    # lane-trade window irrelevant while spiraling
             "lane_mia",          # don't tell a feeding player to side-push alone
             "objective_setup",   # objective prep irrelevant when player is feeding
+            "skill_point_unspent",  # micro-nag drowns out "do nothing" message
             "flash_down", "tp_down", "combat_spell_down",
             "jungler_down", "dragon_soul",
         }

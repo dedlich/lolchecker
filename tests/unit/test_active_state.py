@@ -166,6 +166,7 @@ def _state(**overrides) -> ActiveCombatState:
         mana_pct=overrides.get("mana_pct", 1.0),
         is_mana_user=overrides.get("is_mana_user", True),
         resource_type=overrides.get("resource_type", "MANA"),
+        unspent_skill_points=overrides.get("unspent_skill_points", 0),
     )
     return ActiveCombatState(**base)
 
@@ -311,3 +312,165 @@ def test_recall_critical_survives_ace() -> None:
 def test_recall_check_silent_when_no_state() -> None:
     snap = _Snap(active_combat=None)  # type: ignore
     assert rule_recall_check(snap) is None
+
+
+# ---------------------------------------------------------------------------
+# Skill-point extraction
+# ---------------------------------------------------------------------------
+
+def test_extract_unspent_skill_points_zero_when_fully_spent() -> None:
+    state = extract_active_combat_state({
+        "level": 5,
+        "abilities": {
+            "Q": {"abilityLevel": 3},
+            "W": {"abilityLevel": 1},
+            "E": {"abilityLevel": 1},
+            "R": {"abilityLevel": 0},
+        },
+    })
+    assert state.unspent_skill_points == 0
+
+
+def test_extract_unspent_skill_points_one_when_one_unspent() -> None:
+    state = extract_active_combat_state({
+        "level": 6,
+        "abilities": {
+            "Q": {"abilityLevel": 3},
+            "W": {"abilityLevel": 1},
+            "E": {"abilityLevel": 1},
+            "R": {"abilityLevel": 0},  # didn't take ult yet
+        },
+    })
+    assert state.unspent_skill_points == 1
+
+
+def test_extract_unspent_skill_points_handles_legacy_level_field() -> None:
+    """Older LCDA patches used 'level' instead of 'abilityLevel'."""
+    state = extract_active_combat_state({
+        "level": 4,
+        "abilities": {
+            "Q": {"level": 2},
+            "W": {"level": 1},
+            "E": {"level": 0},
+            "R": {"level": 0},
+        },
+    })
+    assert state.unspent_skill_points == 1
+
+
+def test_extract_unspent_handles_missing_abilities() -> None:
+    """Defensive — abilities dict may be absent on older clients."""
+    state = extract_active_combat_state({"level": 5})
+    # No abilities → no spent points known → all 5 reported as unspent
+    # (better to over-fire than under-fire on missing data so the user
+    # notices the patch incompatibility).
+    assert state.unspent_skill_points == 5
+
+
+def test_extract_unspent_clamps_at_zero() -> None:
+    """Bug-state where ability levels exceed player level shouldn't go negative."""
+    state = extract_active_combat_state({
+        "level": 1,
+        "abilities": {
+            "Q": {"abilityLevel": 5},  # impossible but defensive
+        },
+    })
+    assert state.unspent_skill_points == 0
+
+
+# ---------------------------------------------------------------------------
+# rule_unspent_skill_points
+# ---------------------------------------------------------------------------
+
+from champ_assistant.advisor.decision_engine import rule_unspent_skill_points
+
+
+def test_skill_point_rule_fires_when_unspent_and_safe() -> None:
+    rec = rule_unspent_skill_points(_Snap(
+        game_time=300.0,
+        active_combat=_state(hp_pct=0.85, unspent_skill_points=1),
+    ))
+    assert rec is not None
+    assert rec.kind == "skill_point_unspent"
+    assert rec.severity == "info"
+    assert "Skill" in rec.text
+
+
+def test_skill_point_rule_silent_when_zero() -> None:
+    rec = rule_unspent_skill_points(_Snap(
+        game_time=300.0,
+        active_combat=_state(hp_pct=1.0, unspent_skill_points=0),
+    ))
+    assert rec is None
+
+
+def test_skill_point_rule_silent_below_hp_gate() -> None:
+    """Don't nag during a trade — player needs to focus on combat."""
+    rec = rule_unspent_skill_points(_Snap(
+        game_time=300.0,
+        active_combat=_state(hp_pct=0.30, unspent_skill_points=1),
+    ))
+    assert rec is None
+
+
+def test_skill_point_rule_silent_when_dead() -> None:
+    rec = rule_unspent_skill_points(_Snap(
+        game_time=300.0,
+        active_combat=_state(hp_pct=0.0, unspent_skill_points=1),
+    ))
+    assert rec is None
+
+
+def test_skill_point_rule_silent_in_first_minute() -> None:
+    """Game-start grace — first wave hasn't crashed yet."""
+    rec = rule_unspent_skill_points(_Snap(
+        game_time=30.0,
+        active_combat=_state(hp_pct=1.0, unspent_skill_points=1),
+    ))
+    assert rec is None
+
+
+def test_skill_point_rule_pluralizes_correctly() -> None:
+    rec_single = rule_unspent_skill_points(_Snap(
+        game_time=300.0,
+        active_combat=_state(hp_pct=1.0, unspent_skill_points=1),
+    ))
+    rec_multi = rule_unspent_skill_points(_Snap(
+        game_time=300.0,
+        active_combat=_state(hp_pct=1.0, unspent_skill_points=3),
+    ))
+    assert rec_single is not None and rec_multi is not None
+    assert "Punkt offen" in rec_single.text
+    assert "Punkte offen" in rec_multi.text
+
+
+# Skill-point suppression
+def test_skill_point_suppressed_by_ace() -> None:
+    recs = [_rec("ace", "alert"), _rec("skill_point_unspent", "info")]
+    out = _suppress_dominated(recs)
+    assert not any(r.kind == "skill_point_unspent" for r in out)
+
+
+def test_skill_point_suppressed_by_numbers_disadv() -> None:
+    recs = [_rec("numbers_disadv", "warn"), _rec("skill_point_unspent", "info")]
+    out = _suppress_dominated(recs)
+    assert not any(r.kind == "skill_point_unspent" for r in out)
+
+
+def test_skill_point_suppressed_by_ally_inhib_down() -> None:
+    recs = [_rec("ally_inhib_down", "alert"), _rec("skill_point_unspent", "info")]
+    out = _suppress_dominated(recs)
+    assert not any(r.kind == "skill_point_unspent" for r in out)
+
+
+def test_skill_point_suppressed_by_spiral_tilt() -> None:
+    recs = [_rec("tilt", "alert"), _rec("skill_point_unspent", "info")]
+    out = _suppress_dominated(recs)
+    assert not any(r.kind == "skill_point_unspent" for r in out)
+
+
+def test_skill_point_survives_normal_tilt() -> None:
+    """Non-spiral tilt (warn) shouldn't kill the micro-nag."""
+    recs = [_rec("tilt", "warn"), _rec("skill_point_unspent", "info")]
+    out = _suppress_dominated(recs)
+    assert any(r.kind == "skill_point_unspent" for r in out)
