@@ -60,7 +60,7 @@ SessionView (frozen) → MainOverlay.update_view(view)
 ### In-game pipeline
 
 ```
-LcdaSource (1 Hz HTTP poll of localhost:2999)
+LcdaSource (0.5 Hz HTTP poll of localhost:2999 — DEFAULT_POLL_INTERVAL = 2.0 s)
     │  emits LcdaSnapshot (game_time + objectives + per-player
     │  KDA / level / items_value)
     ▼
