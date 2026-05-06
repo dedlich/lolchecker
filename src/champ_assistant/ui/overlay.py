@@ -35,6 +35,7 @@ from ..lcda.source import LcdaSnapshot
 from . import styles
 from .enemy_row import EnemyRow
 from .ban_panel import BanPanel
+from .live_companion_view import LiveCompanionView
 from .pick_card import PickCard
 from .power_spike_panel import PowerSpikePanel
 from .summoner_tracker import SummonerTrackerPanel
@@ -169,6 +170,13 @@ class MainOverlay(QMainWindow):
         # enemy_rows property and _update_enemies; the visual panel has
         # been removed in favour of the two-column pick/ban layout.
         self._enemy_rows: list[EnemyRow] = []
+
+        # Live Companion — single-window champ-select view (v1.10.78).
+        # Sits above the legacy ban/pick panels and replaces the floating
+        # LobbyStatsWidget. See OPTIMIZATION.md follow-up for full body
+        # (build / runes / items / game plan) wiring.
+        self._live_companion = LiveCompanionView()
+        body_layout.addWidget(self._live_companion)
 
         # Ban suggestions panel at full width.
         self._ban_panel = BanPanel()
@@ -365,12 +373,21 @@ class MainOverlay(QMainWindow):
             view.ban_suggestions_allround,
             self._icon_for_key,
         )
-        # Floating lobby stats widget runs alongside the main overlay's
-        # champ-select panel and reads the same SessionView. Held here so
-        # it gets every refresh without an extra subscription path.
+        # Live Companion picks up the team rosters + damage / phase splits
+        # and renders the unified top header (v1.10.78). Lives above the
+        # legacy ban/pick panels in the body layout.
+        self._live_companion.update_view(view, self._icon_for_key)
+        # LobbyStatsWidget (the old floating ally/enemy summary) is
+        # superseded by Live Companion — keep it hidden while in
+        # champ-select. We still call its update_view in case the user
+        # has it set to visible for in-game / loading-screen surfaces.
         lobby = getattr(self, "_lobby_stats", None)
         if lobby is not None:
             lobby.update_view(view)
+            session = view.session
+            subphase = session.display_subphase() if session is not None else "idle"
+            if subphase in ("ban", "pick", "finalization", "planning"):
+                lobby.hide()
         # Champ-select state machine: pivot which panels are visible based
         # on the current sub-phase (bans → picks → loading-screen profiles).
         self._apply_champ_select_subphase(view)
@@ -738,16 +755,19 @@ class MainOverlay(QMainWindow):
         if subphase == "in_game":
             self._ban_panel.setVisible(False)
             self._picks_row.setVisible(False)
+            self._live_companion.setVisible(False)
             self._set_width(self._W_INGAME)
             return
 
         if subphase == "idle":
             # Pre-lobby / disconnected — keep panels visible at narrow
             # width so the user sees the connection-status hint.
+            self._live_companion.setVisible(False)
             self._set_width(self._W_INGAME)
             return
 
         # Active champ-select — wider window, then per-subphase pivots.
+        self._live_companion.setVisible(True)
         self._set_width(self._W_CHAMP_SELECT)
 
         if subphase == "ban":
