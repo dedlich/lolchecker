@@ -3130,6 +3130,34 @@ def reset_recall_hysteresis() -> None:
     _RECALL_HYSTERESIS.reset()
 
 
+# ─── Bounty hysteresis ────────────────────────────────────────────────────────
+# Active-player bounty awareness fires once per "episode" (each escalation
+# tier and each fresh-life entry). Without state, the rule would re-fire
+# every 2 s tick while the streak holds, drowning out everything else.
+
+class _BountyHysteresis:
+    """Track the highest bounty tier we've already announced this life,
+    plus the death count we last saw, so we can detect "respawned →
+    re-arm" transitions.
+    """
+    __slots__ = ("last_fired_tier", "last_seen_deaths")
+
+    def __init__(self) -> None:
+        self.reset()
+
+    def reset(self) -> None:
+        self.last_fired_tier = 0
+        self.last_seen_deaths = 0
+
+
+_BOUNTY_HYSTERESIS = _BountyHysteresis()
+
+
+def reset_bounty_hysteresis() -> None:
+    """Test-only: drop the bounty-fired tier back to 0."""
+    _BOUNTY_HYSTERESIS.reset()
+
+
 def rule_recall_check(snapshot: "LcdaSnapshot") -> Recommendation | None:
     """Recall-window coaching driven by HP %, mana %, and gold (Charter B5).
 
@@ -3333,6 +3361,98 @@ def rule_unspent_skill_points(snapshot: "LcdaSnapshot") -> Recommendation | None
         reasons=(
             f"{unspent} ungenutzte Skill-Punkte",
             "Skill-Up = freier DMG / Sustain / Mobility — kein Grund zu warten",
+        ),
+    )
+
+
+# ─── Bounty awareness thresholds ─────────────────────────────────────────────
+# Riot's actual bounty schedule (as of patch 14.x):
+#   3 unanswered kills → +150g shutdown
+#   4-5 unanswered    → +200-300g
+#   6-7 unanswered    → +400-500g
+#   8+               → +500g (capped) — "Legendary"
+# League's announcer terms anchor the messages so the user immediately
+# recognizes "oh that's the Killing Spree / Unstoppable / Godlike threshold".
+BOUNTY_TIER_INFO_S: int = 3      # Killing Spree
+BOUNTY_TIER_WARN_S: int = 5      # Unstoppable
+BOUNTY_TIER_GODLIKE_S: int = 7   # Godlike+
+
+
+def rule_active_bounty(snapshot: "LcdaSnapshot") -> Recommendation | None:
+    """Surface "you have a bounty on your head" once per escalation tier.
+
+    The mirror image of ``tilt.bounty_lost`` — that modifier fires *after*
+    the bounty was given to the enemy. This rule fires *before*: while
+    the player still has the streak, so they can adjust their risk profile
+    in time. Pros switch to "play with team, no flanks, ward around me,
+    recall early at low HP" immediately. Solo queue does not.
+
+    Three tiers, fires once each per life:
+    * 3-4 streak — info, "Killing Spree (+150g)"
+    * 5-6 streak — warn, "Unstoppable (+300g)"
+    * 7+ streak  — warn, "Godlike (+500g)"
+
+    Hysteresis is per-life: ``_BOUNTY_HYSTERESIS.last_seen_deaths`` flips
+    to the active player's current death count, so any death (which
+    nukes the bounty) re-arms every tier for the next streak.
+    """
+    active = _active_player(snapshot)
+    if active is None:
+        return None
+
+    # Reset on death — bounty is wiped, the next streak earns its own messages.
+    deaths = int(getattr(active, "deaths", 0) or 0)
+    h = _BOUNTY_HYSTERESIS
+    if deaths > h.last_seen_deaths:
+        h.reset()
+        h.last_seen_deaths = deaths
+
+    streak = _kill_streak(active, list(getattr(snapshot, "raw_events", []) or []))
+    if streak < BOUNTY_TIER_INFO_S:
+        return None
+
+    # Pick the highest tier we haven't yet announced this life.
+    if streak >= BOUNTY_TIER_GODLIKE_S:
+        tier = BOUNTY_TIER_GODLIKE_S
+    elif streak >= BOUNTY_TIER_WARN_S:
+        tier = BOUNTY_TIER_WARN_S
+    else:
+        tier = BOUNTY_TIER_INFO_S
+    if tier <= h.last_fired_tier:
+        return None  # already announced this tier or higher this life
+    h.last_fired_tier = tier
+
+    if tier == BOUNTY_TIER_GODLIKE_S:
+        text = (
+            f"GODLIKE ({streak}-Streak, +500g Bounty) — "
+            "wie Carry spielen: hinten, mit Frontline, kein Engage"
+        )
+        severity, ttl_s, confidence, risk = "warn", 35.0, 0.92, "HIGH"
+    elif tier == BOUNTY_TIER_WARN_S:
+        text = (
+            f"UNSTOPPABLE ({streak}-Streak, +300g Bounty) — "
+            "KEIN Solo-Play, Vision um dich, früh recallen bei Low-HP"
+        )
+        severity, ttl_s, confidence, risk = "warn", 30.0, 0.88, "MEDIUM"
+    else:
+        text = (
+            f"Killing Spree ({streak}-Streak, +150g Bounty) — "
+            "mit Team gruppieren, keine 1v1, Vision-Pressure setzen"
+        )
+        severity, ttl_s, confidence, risk = "info", 25.0, 0.80, "MEDIUM"
+
+    return Recommendation(
+        text=text,
+        severity=severity,
+        category="safety",
+        confidence=confidence,
+        risk=risk,
+        ttl_s=ttl_s,
+        kind="active_bounty",
+        reasons=(
+            f"Killstreak: {streak} (kein Tod seit Streak-Start)",
+            "Riot Bounty-System: ab 3 Kills extra Gold beim Töten",
+            "Mehr Vision + weniger Solo = Streak halten = Spiel gewinnen",
         ),
     )
 
@@ -3687,6 +3807,8 @@ ALL_RULES: tuple[Callable[["LcdaSnapshot"], Recommendation | None], ...] = (
     rule_objective_setup_window,
     # B5 skill-point nag — single most-missed micro-action.
     rule_unspent_skill_points,
+    # B5 bounty awareness — proactive "you have a target on you" coaching.
+    rule_active_bounty,
     # B4 tilt detection — active player's death pattern coaching.
     rule_tilt_detection,
     # B5 recall window — HP/mana/gold-driven back timing.
@@ -3838,6 +3960,7 @@ def _suppress_dominated(recs: list[Recommendation]) -> list[Recommendation]:
             "lane_mia",        # team-push beats laning push; group, don't side-lane
             "objective_setup", # ace push moment dominates objective prep
             "skill_point_unspent",  # micro-nag — irrelevant during ace push
+            "active_bounty",        # bounty doesn't matter when team is winning the play
         }
         recs = [r for r in recs if r.kind not in _ace_drop]
         kinds = {r.kind for r in recs}
@@ -3866,6 +3989,7 @@ def _suppress_dominated(recs: list[Recommendation]) -> list[Recommendation]:
             "lane_mia",          # don't tell a short-handed player to side-push alone
             "objective_setup",   # don't push objectives short-handed — wait for ally
             "skill_point_unspent", # micro-nag drowns out the safety call
+            "active_bounty",       # numbers_disadv is the more-urgent safety call
         }
         return [r for r in recs if r.kind not in _offensive]
 
@@ -3908,6 +4032,7 @@ def _suppress_dominated(recs: list[Recommendation]) -> list[Recommendation]:
             "lane_mia",          # don't tell defenders to chase tempo in lane
             "objective_setup",   # ditto — defending base trumps objective prep
             "skill_point_unspent", # micro-nag drowns out the defense call
+            "active_bounty",       # bounty coaching irrelevant when defending base
             # NOTE: ally_inhib_respawning intentionally coexists with ally_inhib_down:
             # "defend now + inhib back in 30s" are complementary, not conflicting.
         }
