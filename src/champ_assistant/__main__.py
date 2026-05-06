@@ -63,153 +63,23 @@ def _resource_root() -> Path:
     return app_paths.resource_root()
 
 
-DEFAULT_FIXTURE_DIR = _resource_root() / "tests" / "fixtures" / "sessions"
-DEFAULT_DATA_DIR = _resource_root() / "data"
+# DEFAULT_FIXTURE_DIR / DEFAULT_DATA_DIR + build_parser → cli.py
+from champ_assistant.cli import (  # noqa: E402,F401
+    DEFAULT_DATA_DIR,
+    DEFAULT_FIXTURE_DIR,
+    build_parser,
+)
 
 
-# Bootstrap-only champion dict. The orchestrator needs SOME champion table
-# at construction time, before the async DataDragon hydration in
-# _hydrate_champions_and_icons replaces it with the live ~170-champion
-# roster. This 30-champion list IS NOT the production source of truth —
-# any session that runs past hydration sees the full DataDragon list.
-#
-# Hydration failure (offline + empty cache) falls back to this list and
-# logs a loud warning — see "DEGRADED" path in
-# _hydrate_champions_and_icons. State invariant: by the time the user
-# is in champ-select, ``assistant.champions`` should have grown past
-# this list. ``docs/OPTIMIZATION.md §1.4`` proposes routing everything
-# through ``data.datadragon.load_champion_index()`` (sync API) and
-# failing loud on empty cache; tracked there as future work.
-_STARTER_CHAMPIONS: list[Champion] = [
-    Champion(id=1, key="Annie", name="Annie", tags=["Mage"]),
-    Champion(id=3, key="Galio", name="Galio", tags=["Tank", "Mage"]),
-    Champion(id=7, key="LeBlanc", name="LeBlanc", tags=["Assassin", "Mage"]),
-    Champion(id=16, key="Soraka", name="Soraka", tags=["Support"]),
-    Champion(id=21, key="MissFortune", name="Miss Fortune", tags=["Marksman"]),
-    Champion(id=22, key="Ashe", name="Ashe", tags=["Marksman", "Support"]),
-    Champion(id=51, key="Caitlyn", name="Caitlyn", tags=["Marksman"]),
-    Champion(id=53, key="Blitzcrank", name="Blitzcrank", tags=["Tank", "Fighter"]),
-    Champion(id=60, key="Elise", name="Elise", tags=["Mage", "Fighter"]),
-    Champion(id=64, key="Lee Sin", name="Lee Sin", tags=["Fighter", "Assassin"]),
-    Champion(id=67, key="Vayne", name="Vayne", tags=["Marksman", "Assassin"]),
-    Champion(id=76, key="Nidalee", name="Nidalee", tags=["Assassin", "Fighter"]),
-    Champion(id=81, key="Ezreal", name="Ezreal", tags=["Marksman", "Mage"]),
-    Champion(id=86, key="Garen", name="Garen", tags=["Fighter", "Tank"]),
-    Champion(id=89, key="Leona", name="Leona", tags=["Tank", "Support"]),
-    Champion(id=90, key="Malzahar", name="Malzahar", tags=["Mage", "Assassin"]),
-    Champion(id=103, key="Ahri", name="Ahri", tags=["Mage", "Assassin"]),
-    Champion(id=111, key="Nautilus", name="Nautilus", tags=["Tank", "Fighter"]),
-    Champion(id=117, key="Lulu", name="Lulu", tags=["Support", "Mage"]),
-    Champion(id=120, key="Hecarim", name="Hecarim", tags=["Fighter", "Tank"]),
-    Champion(id=122, key="Darius", name="Darius", tags=["Fighter", "Tank"]),
-    Champion(id=145, key="Kaisa", name="Kai'Sa", tags=["Marksman"]),
-    Champion(id=157, key="Yasuo", name="Yasuo", tags=["Fighter", "Assassin"]),
-    Champion(id=164, key="Camille", name="Camille", tags=["Fighter", "Assassin"]),
-    Champion(id=222, key="Jinx", name="Jinx", tags=["Marksman"]),
-    Champion(id=234, key="Viego", name="Viego", tags=["Fighter", "Assassin"]),
-    Champion(id=412, key="Thresh", name="Thresh", tags=["Tank", "Support"]),
-    Champion(id=711, key="Vex", name="Vex", tags=["Mage"]),
-    Champion(id=875, key="Sett", name="Sett", tags=["Fighter", "Tank"]),
-    Champion(id=897, key="KSante", name="K'Sante", tags=["Tank", "Fighter"]),
-]
-
-
-def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(
-        prog="champ-assistant",
-        description="LoL Champ Select Assistant — counters & pick suggestions.",
-    )
-    parser.add_argument("--dry-run", action="store_true",
-                        help="Run without a real League client; replay JSON fixtures.")
-    parser.add_argument("--fixture", type=Path, default=None,
-                        help=f"Fixture file or directory (default: {DEFAULT_FIXTURE_DIR})")
-    parser.add_argument("--cycle", action="store_true",
-                        help="Cycle through all fixtures (with --dry-run).")
-    parser.add_argument("--interval", type=float, default=5.0,
-                        help="Seconds between fixture cycles (default: 5).")
-    parser.add_argument("--stress", action="store_true",
-                        help="Emit randomized state updates (with --dry-run).")
-    parser.add_argument("--rate", type=float, default=10.0,
-                        help="Stress-mode update rate in Hz (default: 10).")
-    parser.add_argument("--demo-recommendations", action="store_true",
-                        help="Render all decision-engine rules in the "
-                             "recommendation panel for visual testing "
-                             "(no live game required).")
-    parser.add_argument("--no-ui", action="store_true",
-                        help="Skip the Qt window (print events instead).")
-    parser.add_argument("--data-dir", type=Path, default=DEFAULT_DATA_DIR,
-                        help=f"Static data directory (default: {DEFAULT_DATA_DIR})")
-    parser.add_argument("--log-level", default="INFO",
-                        choices=["DEBUG", "INFO", "WARNING", "ERROR"])
-    # Bootstrap installer args — hidden from --help; set by apply_update when
-    # launching the newly extracted exe to install itself.
-    parser.add_argument("--bootstrap-staged", metavar="DIR", help=argparse.SUPPRESS)
-    parser.add_argument("--bootstrap-install", metavar="DIR", help=argparse.SUPPRESS)
-    parser.add_argument("--bootstrap-parent-pid", type=int, metavar="PID",
-                        help=argparse.SUPPRESS)
-    return parser
-
-
-def _make_source(args: argparse.Namespace) -> LcuSource:
-    if args.dry_run:
-        fixture = args.fixture or DEFAULT_FIXTURE_DIR
-        return FixtureLcuSource(
-            fixture, cycle=args.cycle, stress=args.stress,
-            interval=args.interval, rate=args.rate,
-        )
-    return RealLcuSource()
-
-
-def _starter_champion_index() -> dict[int, Champion]:
-    return {c.id: c for c in _STARTER_CHAMPIONS}
-
-
-def _build_assistant(args: argparse.Namespace, overlay: MainOverlay) -> ChampAssistant:
-    # Builds are optional — older bundles may not ship builds.json. Default
-    # to an empty BuildLibrary so PickCards render without runes/items.
-    builds: BuildLibrary
-    try:
-        builds = load_builds(args.data_dir / "builds.json")
-    except DataLoadError:
-        builds = BuildLibrary()
-
-    # Runtime counter fetching is opt-in via GROQ_API_KEY (free tier at
-    # https://console.groq.com). Without a key the store is constructed
-    # disabled and never makes a network call — falls back to seed data.
-    cache_dir = args.data_dir.parent / "ddragon_cache" / "runtime_counters"
-    from champ_assistant import secrets as _sec
-    runtime_counters = RuntimeCounterStore(
-        cache_dir,
-        api_key=_sec.llm_api_key(),
-        provider=_sec.llm_provider(),
-    )
-
-    # Enemy profiling — opt-in via Settings dialog (Riot API key persisted
-    # in keyring). Disabled service falls through silently.
-    profile_service = _build_profile_service()
-
-    return ChampAssistant(
-        source=_make_source(args),
-        overlay=overlay,
-        counters=load_counters(args.data_dir / "counters.json"),
-        tiers=load_tiers(args.data_dir / "tiers.json"),
-        tags=load_tags(args.data_dir / "tags.json"),
-        champions=_starter_champion_index(),
-        builds=builds,
-        runtime_counters=runtime_counters,
-        profile_service=profile_service,
-    )
-
-
-def _build_profile_service():  # type: ignore[no-untyped-def]
-    """Construct a ProfileService from persisted keyring credentials."""
-    from champ_assistant import secrets
-    from champ_assistant.profiling import ProfileService, RiotApiClient
-
-    api_key = secrets.riot_api_key()
-    region = secrets.riot_region()
-    client = RiotApiClient(api_key, region=region)
-    return ProfileService(client)
+# _STARTER_CHAMPIONS, _make_source, _starter_champion_index, _build_assistant,
+# _build_profile_service → runtime_factory.py
+from champ_assistant.runtime_factory import (  # noqa: E402,F401
+    _STARTER_CHAMPIONS,
+    _build_assistant,
+    _build_profile_service,
+    _make_source,
+    _starter_champion_index,
+)
 
 
 def _enable_gpu_backend() -> None:
@@ -1780,104 +1650,7 @@ def _load_dotenv_files() -> None:
                 pass
 
 
-def _bootstrap_install(
-    staged_dir: Path,
-    install_dir: Path,
-    *,
-    parent_pid: int,
-) -> int:
-    """Minimal no-UI mode: wait for old app to exit, copy files, relaunch.
-
-    Runs when the new exe is launched from the staging directory with
-    --bootstrap-install. Does not import Qt. Writes diagnostics to the
-    standard update log so the next normal start can surface failures.
-    """
-    import ctypes
-    import shutil
-    import time
-
-    if sys.platform.startswith("win"):
-        localappdata = os.environ.get("LOCALAPPDATA") or str(Path.home() / "AppData" / "Local")
-        log_path = Path(localappdata) / "ChampAssistant" / "logs" / "last-update.log"
-    else:
-        log_path = Path.home() / ".champ-assistant" / "logs" / "last-update.log"
-
-    log_path.parent.mkdir(parents=True, exist_ok=True)
-
-    def _log(msg: str) -> None:
-        try:
-            with log_path.open("a", encoding="utf-8") as fh:
-                fh.write(f"[bootstrap] {time.strftime('%Y-%m-%d %H:%M:%S')} {msg}\n")
-        except OSError:
-            pass
-
-    # Overwrite any stale log from a previous run.
-    try:
-        log_path.write_text("", encoding="utf-8")
-    except OSError:
-        pass
-
-    _log(f"start. staged={staged_dir} install={install_dir} parent_pid={parent_pid}")
-
-    # --- Wait for old app to exit ---
-    if parent_pid and sys.platform.startswith("win"):
-        SYNCHRONIZE = 0x00100000
-        kernel32 = ctypes.windll.kernel32  # type: ignore[attr-defined]
-        handle = kernel32.OpenProcess(SYNCHRONIZE, False, parent_pid)
-        if handle:
-            kernel32.WaitForSingleObject(handle, 30_000)  # max 30 s
-            kernel32.CloseHandle(handle)
-            _log("parent exited (WaitForSingleObject)")
-        else:
-            _log("parent_pid not found — already exited")
-    elif parent_pid:
-        import subprocess as _sp
-        deadline = time.time() + 30.0
-        while time.time() < deadline:
-            try:
-                _sp.run(["kill", "-0", str(parent_pid)], capture_output=True, check=True)
-            except Exception:
-                break
-            time.sleep(0.5)
-        _log("parent gone (poll)")
-
-    time.sleep(1)  # extra margin for file handle release
-
-    # --- Copy staged_dir → install_dir ---
-    # shutil.copytree with dirs_exist_ok overwrites existing files and adds new
-    # ones. Reading from the running staged exe is allowed (Windows grants shared
-    # read access to running executables). Writing to install_dir is fine because
-    # the old app has exited.
-    _log(f"copying {staged_dir} → {install_dir}")
-    for attempt in range(1, 4):
-        try:
-            shutil.copytree(str(staged_dir), str(install_dir), dirs_exist_ok=True)
-            _log("copy OK")
-            break
-        except OSError as exc:
-            _log(f"copy attempt {attempt} failed: {exc}")
-            if attempt < 3:
-                time.sleep(2)
-            else:
-                _log("FAIL: could not copy files after 3 attempts")
-                return 1
-
-    # --- Launch from install_dir ---
-    from champ_assistant.update_check import EXE_NAME
-    new_exe = install_dir / EXE_NAME
-    if not new_exe.is_file():
-        _log(f"FAIL: {new_exe} not found after copy")
-        return 1
-
-    try:
-        import subprocess as _sp
-        _sp.Popen([str(new_exe)], cwd=str(install_dir))
-        _log(f"SUCCESS: launched {new_exe}")
-    except OSError as exc:
-        _log(f"FAIL: could not launch {new_exe}: {exc}")
-        return 1
-
-    return 0
+from champ_assistant.bootstrap_installer import _bootstrap_install  # noqa: E402,F401
 
 
 def main(argv: list[str] | None = None) -> int:
