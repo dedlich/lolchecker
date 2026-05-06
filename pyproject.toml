@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "champ-assistant"
-version = "1.10.66"
+version = "1.10.67"
 description = "LoL Champ Select Assistant — Live counters, team-comp picks via LCU."
 readme = "README.md"
 requires-python = ">=3.11"
@@ -88,9 +88,17 @@ markers = [
 
 [tool.coverage.run]
 branch = true
-source = ["champ_assistant"]
+# Coverage is gated on the pure-logic packages only (per OPTIMIZATION.md §4.3).
+# UI / lifecycle / boot stay untracked because their tests are integration-
+# heavy and the line coverage they produce is misleading. Ratchet up by 5
+# points per quarter.
+source = [
+    "champ_assistant.advisor",
+    "champ_assistant.lcda",
+]
 
 [tool.coverage.report]
+fail_under = 70
 exclude_lines = [
     "pragma: no cover",
     "raise NotImplementedError",
