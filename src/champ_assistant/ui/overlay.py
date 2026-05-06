@@ -376,7 +376,11 @@ class MainOverlay(QMainWindow):
         # Live Companion picks up the team rosters + damage / phase splits
         # and renders the unified top header (v1.10.78). Lives above the
         # legacy ban/pick panels in the body layout.
-        self._live_companion.update_view(view, self._icon_for_key)
+        self._live_companion.update_view(
+            view, self._icon_for_key,
+            rune_icons=self._rune_icons,
+            item_icons=self._item_icons,
+        )
         # LobbyStatsWidget (the old floating ally/enemy summary) is
         # superseded by Live Companion — keep it hidden while in
         # champ-select. We still call its update_view in case the user

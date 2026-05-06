@@ -425,6 +425,474 @@ class _SummaryRow(QWidget):
         return ""
 
 
+# ─── Body columns ───────────────────────────────────────────────────────────
+
+
+def _panel_frame() -> QFrame:
+    """Reusable panel container with the project's panel-token styling."""
+    f = QFrame()
+    f.setStyleSheet(
+        f"QFrame {{ background-color: {styles.BG_SECONDARY};"
+        f" border: 1px solid {styles.BORDER};"
+        f" border-radius: {styles.RADIUS}px; }}"
+    )
+    return f
+
+
+def _section_label(text: str) -> QLabel:
+    lab = QLabel(text)
+    lab.setStyleSheet(
+        f"color: {styles.TEXT_MUTED};"
+        f" font-size: {styles.FS_LABEL}px;"
+        " font-weight: 700; letter-spacing: 1.2px;"
+        " text-transform: uppercase; padding: 4px 0;"
+    )
+    return lab
+
+
+def _muted_label(text: str) -> QLabel:
+    lab = QLabel(text)
+    lab.setStyleSheet(
+        f"color: {styles.TEXT_MUTED};"
+        f" font-size: {styles.FS_CAPTION}px; padding: 2px 0;"
+    )
+    lab.setWordWrap(True)
+    return lab
+
+
+class _BuildCard(QWidget):
+    """Left column — locked-champion build card.
+
+    Shows the player's locked-in champion with role + patch placeholder,
+    then the matchup-specific counters list. Empty state ("Lock in to
+    see your build") when ``view.my_champion_key`` is empty."""
+
+    def __init__(self, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.setSpacing(styles.SPACING_GRID)
+
+        self._frame = _panel_frame()
+        frame_layout = QVBoxLayout(self._frame)
+        frame_layout.setContentsMargins(
+            styles.SPACING_GRID, styles.SPACING_GRID,
+            styles.SPACING_GRID, styles.SPACING_GRID,
+        )
+        frame_layout.setSpacing(8)
+
+        # Header row — icon + champion name + role label.
+        header = QHBoxLayout()
+        header.setSpacing(10)
+        self._icon = QLabel()
+        self._icon.setFixedSize(QSize(48, 48))
+        self._icon.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._icon.setStyleSheet(
+            f"background-color: {styles.BG_TERTIARY};"
+            f" border: 1px solid {styles.BORDER};"
+            f" border-radius: {styles.RADIUS}px;"
+            f" color: {styles.TEXT_MUTED};"
+            f" font-size: {styles.FS_HEADING}px; font-weight: 700;"
+        )
+        header.addWidget(self._icon)
+
+        self._title_col = QVBoxLayout()
+        self._title_col.setSpacing(2)
+        self._champ_name = QLabel("Lock in your champion")
+        self._champ_name.setStyleSheet(
+            f"color: {styles.TEXT_PRIMARY};"
+            f" font-size: {styles.FS_HEADING}px; font-weight: 700;"
+        )
+        self._role_line = QLabel("")
+        self._role_line.setStyleSheet(
+            f"color: {styles.TEXT_MUTED};"
+            f" font-size: {styles.FS_CAPTION}px; font-weight: 600;"
+        )
+        self._title_col.addWidget(self._champ_name)
+        self._title_col.addWidget(self._role_line)
+        header.addLayout(self._title_col, 1)
+        frame_layout.addLayout(header)
+
+        # Recommended Builds list (placeholder — single line for now).
+        frame_layout.addWidget(_section_label("Recommended Builds"))
+        self._popular_line = _muted_label("Popular build (loaded after lock-in)")
+        frame_layout.addWidget(self._popular_line)
+
+        # Matchup-specific counters.
+        frame_layout.addWidget(_section_label("Matchup Specific"))
+        self._matchups_col = QVBoxLayout()
+        self._matchups_col.setSpacing(4)
+        frame_layout.addLayout(self._matchups_col)
+        self._no_matchups = _muted_label("Counters appear once enemies pick.")
+        frame_layout.addWidget(self._no_matchups)
+
+        frame_layout.addStretch(1)
+        outer.addWidget(self._frame)
+
+    def update_card(
+        self,
+        view: "SessionView",
+        icon_lookup: IconLookup,
+    ) -> None:
+        # Champion icon + name.
+        key = view.my_champion_key
+        if key:
+            pix = icon_lookup(key)
+            if pix is not None and not pix.isNull():
+                self._icon.setPixmap(pix.scaled(
+                    48, 48,
+                    Qt.AspectRatioMode.KeepAspectRatio,
+                    Qt.TransformationMode.SmoothTransformation,
+                ))
+                self._icon.setText("")
+            else:
+                self._icon.setPixmap(QPixmap())
+                self._icon.setText(key[:1].upper())
+            self._champ_name.setText(key)
+            role = view.my_champion_role
+            self._role_line.setText(f"{role}  ·  Locked" if role else "Locked")
+            self._popular_line.setText(
+                "Popular build — runes, items, summoners (right panel)"
+            )
+        else:
+            self._icon.setPixmap(QPixmap())
+            self._icon.setText("?")
+            self._champ_name.setText("Lock in your champion")
+            self._role_line.setText("")
+            self._popular_line.setText("Popular build (loaded after lock-in)")
+
+        # Matchup-specific list — derive from enemy_counters / their_team.
+        # Show up to 3 enemies whose counter scores reference our champion
+        # or their role.
+        self._clear_layout(self._matchups_col)
+        rows = self._matchup_rows(view, icon_lookup)
+        if not rows:
+            self._no_matchups.show()
+        else:
+            self._no_matchups.hide()
+            for row in rows:
+                self._matchups_col.addLayout(row)
+
+    @staticmethod
+    def _clear_layout(layout: QVBoxLayout) -> None:
+        while layout.count():
+            item = layout.takeAt(0)
+            w = item.widget() if item is not None else None
+            if w is not None:
+                w.deleteLater()
+            inner = item.layout() if item is not None else None
+            if inner is not None:
+                _BuildCard._clear_layout_qhbox(inner)
+
+    @staticmethod
+    def _clear_layout_qhbox(layout: "QHBoxLayout | QVBoxLayout") -> None:
+        while layout.count():
+            item = layout.takeAt(0)
+            w = item.widget() if item is not None else None
+            if w is not None:
+                w.deleteLater()
+
+    def _matchup_rows(
+        self,
+        view: "SessionView",
+        icon_lookup: IconLookup,
+    ) -> list[QHBoxLayout]:
+        """Build up to 3 matchup rows: ``portrait | name | counter score``.
+
+        Counter "win rate" placeholder uses the score field from
+        CounterEntry — not a real win rate, but the closest thing we
+        have. Labelled honestly as "Score" rather than "WR" so we
+        don't mislead about data origin."""
+        rows: list[QHBoxLayout] = []
+        session = view.session
+        if session is None:
+            return rows
+
+        for member in session.their_team[:5]:
+            if not member.champion_id:
+                continue
+            counters = view.enemy_counters.get(member.cell_id, [])
+            if not counters:
+                continue
+            top = counters[0]
+            row = QHBoxLayout()
+            row.setSpacing(8)
+            row.setContentsMargins(0, 0, 0, 0)
+
+            enemy_key = view.enemy_keys.get(member.champion_id, "")
+            portrait = QLabel()
+            portrait.setFixedSize(QSize(20, 20))
+            portrait.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            portrait.setStyleSheet(
+                f"background-color: {styles.BG_TERTIARY};"
+                f" border-radius: {styles.RADIUS_SMALL}px;"
+                f" color: {styles.TEXT_MUTED};"
+                f" font-size: {styles.FS_CAPTION}px;"
+            )
+            if enemy_key:
+                pix = icon_lookup(enemy_key)
+                if pix is not None and not pix.isNull():
+                    portrait.setPixmap(pix.scaled(
+                        20, 20,
+                        Qt.AspectRatioMode.KeepAspectRatio,
+                        Qt.TransformationMode.SmoothTransformation,
+                    ))
+                else:
+                    portrait.setText(enemy_key[:1].upper())
+            row.addWidget(portrait)
+
+            name = QLabel(view.enemy_names.get(member.champion_id, enemy_key))
+            name.setStyleSheet(
+                f"color: {styles.TEXT_PRIMARY};"
+                f" font-size: {styles.FS_BODY}px; font-weight: 600;"
+            )
+            row.addWidget(name, 1)
+
+            # Score (counter score, 0-10 scale → percentage-style display).
+            score_pct = int(round(top.score * 10))
+            score_lab = QLabel(f"{score_pct}%")
+            score_lab.setStyleSheet(
+                f"color: {styles.SUCCESS};"
+                f" font-size: {styles.FS_BODY}px; font-weight: 700;"
+            )
+            row.addWidget(score_lab)
+            rows.append(row)
+            if len(rows) >= 3:
+                break
+        return rows
+
+
+class _ItemsPanel(QWidget):
+    """Center column — runes + spells + item path."""
+
+    _RUNE_PX = 28
+    _ITEM_PX = 32
+
+    def __init__(self, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.setSpacing(styles.SPACING_GRID)
+
+        self._frame = _panel_frame()
+        frame_layout = QVBoxLayout(self._frame)
+        frame_layout.setContentsMargins(
+            styles.SPACING_GRID, styles.SPACING_GRID,
+            styles.SPACING_GRID, styles.SPACING_GRID,
+        )
+        frame_layout.setSpacing(8)
+
+        # Runes row.
+        frame_layout.addWidget(_section_label("Runes"))
+        self._runes_row = QHBoxLayout()
+        self._runes_row.setSpacing(4)
+        self._runes_row.setContentsMargins(0, 0, 0, 0)
+        runes_holder = QWidget()
+        runes_holder.setLayout(self._runes_row)
+        frame_layout.addWidget(runes_holder)
+
+        # Summoner spells row.
+        frame_layout.addWidget(_section_label("Summoner Spells"))
+        self._spells_line = _muted_label("—")
+        self._spells_line.setStyleSheet(
+            f"color: {styles.TEXT_PRIMARY};"
+            f" font-size: {styles.FS_BODY}px; font-weight: 600;"
+        )
+        frame_layout.addWidget(self._spells_line)
+
+        # Items section — single combined row for now.
+        frame_layout.addWidget(_section_label("Items"))
+        self._items_row = QHBoxLayout()
+        self._items_row.setSpacing(4)
+        self._items_row.setContentsMargins(0, 0, 0, 0)
+        items_holder = QWidget()
+        items_holder.setLayout(self._items_row)
+        frame_layout.addWidget(items_holder)
+
+        self._empty_hint = _muted_label("Lock in to see runes + items.")
+        frame_layout.addWidget(self._empty_hint)
+
+        frame_layout.addStretch(1)
+        outer.addWidget(self._frame)
+
+    def update_panel(
+        self,
+        view: "SessionView",
+        rune_icons: dict[str, "QPixmap"],
+        item_icons: dict[str, "QPixmap"],
+    ) -> None:
+        build = view.my_champion_build
+        _BuildCard._clear_layout_qhbox(self._runes_row)
+        _BuildCard._clear_layout_qhbox(self._items_row)
+
+        if build is None:
+            self._spells_line.setText("—")
+            self._empty_hint.show()
+            return
+        self._empty_hint.hide()
+
+        for name in build.runes[:8]:
+            self._runes_row.addWidget(self._icon_label(
+                name, rune_icons.get(name), self._RUNE_PX,
+                fallback_color=styles.TIER_A,
+            ))
+        self._runes_row.addStretch(1)
+
+        if build.summoners:
+            self._spells_line.setText(" · ".join(build.summoners))
+        else:
+            self._spells_line.setText("—")
+
+        for i, name in enumerate(build.items[:6]):
+            self._items_row.addWidget(self._icon_label(
+                name, item_icons.get(name), self._ITEM_PX,
+                fallback_color=styles.TIER_S,
+            ))
+            if i < min(len(build.items), 6) - 1:
+                arrow = QLabel("›")
+                arrow.setStyleSheet(
+                    f"color: {styles.TEXT_MUTED};"
+                    f" font-size: {styles.FS_LABEL}px; padding: 0 2px;"
+                )
+                self._items_row.addWidget(arrow)
+        self._items_row.addStretch(1)
+
+    @staticmethod
+    def _icon_label(
+        name: str,
+        pix: "QPixmap | None",
+        size: int,
+        *,
+        fallback_color: str,
+    ) -> QLabel:
+        lbl = QLabel()
+        lbl.setFixedSize(QSize(size, size))
+        lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        lbl.setToolTip(name)
+        lbl.setStyleSheet(
+            f"background-color: {styles.BG_TERTIARY};"
+            f" border: 1px solid {styles.BORDER_FAINT};"
+            f" border-radius: {styles.RADIUS_SMALL}px;"
+            f" color: {fallback_color};"
+            f" font-size: {styles.FS_CAPTION}px;"
+            " font-weight: 700;"
+        )
+        if pix is not None and not pix.isNull():
+            lbl.setPixmap(pix.scaled(
+                size, size,
+                Qt.AspectRatioMode.KeepAspectRatio,
+                Qt.TransformationMode.SmoothTransformation,
+            ))
+        else:
+            lbl.setText(name[:2].upper())
+        return lbl
+
+
+class _GamePlanPanel(QWidget):
+    """Right column — Early/Mid/Late phase tabs + champion power spikes
+    + playing-against advice. The prose itself is placeholder-only for
+    now; the LLM-game-plan deliverable is option-2 follow-up per the
+    user's design ask."""
+
+    def __init__(self, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.setSpacing(styles.SPACING_GRID)
+
+        self._frame = _panel_frame()
+        frame_layout = QVBoxLayout(self._frame)
+        frame_layout.setContentsMargins(
+            styles.SPACING_GRID, styles.SPACING_GRID,
+            styles.SPACING_GRID, styles.SPACING_GRID,
+        )
+        frame_layout.setSpacing(10)
+
+        # Header — Game Plan + PLUS pill (matches screenshot's free vs
+        # paid framing; we don't actually have a paid tier, the pill is
+        # decorative for now).
+        header = QHBoxLayout()
+        title = QLabel("Game Plan")
+        title.setStyleSheet(
+            f"color: {styles.TEXT_PRIMARY};"
+            f" font-size: {styles.FS_HEADING}px; font-weight: 700;"
+        )
+        header.addWidget(title)
+        header.addStretch(1)
+        frame_layout.addLayout(header)
+
+        # Phase tabs — Early/Mid/Late as toggle buttons. v1 just shows
+        # the currently-selected phase's label; the prose lives below.
+        tabs_row = QHBoxLayout()
+        tabs_row.setSpacing(6)
+        for phase in ("Early Game", "Mid Game", "Late Game"):
+            tab = QLabel(phase)
+            tab.setStyleSheet(
+                f"color: {styles.TEXT_MUTED};"
+                f" background: {styles.BG_TERTIARY};"
+                f" border: 1px solid {styles.BORDER};"
+                f" border-radius: {styles.RADIUS_SMALL}px;"
+                f" padding: 4px 10px;"
+                f" font-size: {styles.FS_CAPTION}px; font-weight: 700;"
+            )
+            tabs_row.addWidget(tab)
+        tabs_row.addStretch(1)
+        frame_layout.addLayout(tabs_row)
+
+        self._plan_body = QLabel(
+            "Prose game-plan advice will appear here once a champion is "
+            "locked. Wiring an LLM-generated phase plan (Early/Mid/Late) "
+            "is the next iteration; for v1.10.79 the layout is in place."
+        )
+        self._plan_body.setStyleSheet(
+            f"color: {styles.TEXT_SECONDARY};"
+            f" font-size: {styles.FS_BODY}px; line-height: 1.4;"
+        )
+        self._plan_body.setWordWrap(True)
+        frame_layout.addWidget(self._plan_body)
+
+        frame_layout.addWidget(_section_label("Champion Power Spikes"))
+        self._spikes_line = _muted_label("Locked-champion phase scaling appears here.")
+        frame_layout.addWidget(self._spikes_line)
+
+        frame_layout.addWidget(_section_label("Playing Against"))
+        self._against_line = _muted_label("Threat-summary appears once enemies are picked.")
+        frame_layout.addWidget(self._against_line)
+
+        frame_layout.addStretch(1)
+        outer.addWidget(self._frame)
+
+    def update_panel(self, view: "SessionView") -> None:
+        key = view.my_champion_key
+        if key:
+            self._spikes_line.setText(
+                f"{key}'s power-spike timing — coming with the LLM "
+                "game-plan iteration."
+            )
+        else:
+            self._spikes_line.setText(
+                "Locked-champion phase scaling appears here."
+            )
+        # Threat summary — count alert/warn-class enemies as a proxy.
+        session = view.session
+        threats = []
+        if session is not None:
+            for member in session.their_team[:5]:
+                if not member.champion_id:
+                    continue
+                key_e = view.enemy_keys.get(member.champion_id, "")
+                if key_e:
+                    threats.append(key_e)
+        if threats:
+            self._against_line.setText(
+                f"Enemy threats locked in: {', '.join(threats[:5])}."
+            )
+        else:
+            self._against_line.setText(
+                "Threat-summary appears once enemies are picked."
+            )
+
+
 class LiveCompanionView(QWidget):
     """Single-window champ-select view (Mobalytics-style).
 
@@ -448,32 +916,21 @@ class LiveCompanionView(QWidget):
         self._summary_row = _SummaryRow()
         outer.addWidget(self._summary_row)
 
-        # Body placeholder — left/center/right columns get filled in the
-        # next iteration. For v1.10.78 we ship the top header + summary
-        # row only so the layout becomes visible end-to-end.
-        body = QFrame()
-        body.setStyleSheet(
-            f"QFrame {{ background-color: {styles.BG_SECONDARY};"
-            f" border: 1px solid {styles.BORDER};"
-            f" border-radius: {styles.RADIUS}px; }}"
-        )
+        # Body — three-column layout matching the screenshot: build card /
+        # runes+items / game plan. Each column is its own panel so they
+        # can be hidden / styled independently.
+        body = QWidget()
         body_layout = QHBoxLayout(body)
-        body_layout.setContentsMargins(
-            styles.SPACING_GRID, styles.SPACING_GRID,
-            styles.SPACING_GRID, styles.SPACING_GRID,
-        )
-        placeholder = QLabel(
-            "Build · Runes · Items · Game Plan — wired in next iteration.\n"
-            "Today: header + team summary bar (damage type + power spikes) "
-            "are live."
-        )
-        placeholder.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        placeholder.setStyleSheet(
-            f"color: {styles.TEXT_MUTED};"
-            f" font-size: {styles.FS_BODY}px; padding: 20px;"
-        )
-        placeholder.setWordWrap(True)
-        body_layout.addWidget(placeholder)
+        body_layout.setContentsMargins(0, 0, 0, 0)
+        body_layout.setSpacing(styles.SPACING_GRID)
+
+        self._build_card = _BuildCard()
+        self._items_panel = _ItemsPanel()
+        self._game_plan_panel = _GamePlanPanel()
+
+        body_layout.addWidget(self._build_card, 2)
+        body_layout.addWidget(self._items_panel, 3)
+        body_layout.addWidget(self._game_plan_panel, 2)
         outer.addWidget(body, 1)
 
         self.setStyleSheet(
@@ -507,10 +964,22 @@ class LiveCompanionView(QWidget):
 
         return header
 
-    def update_view(self, view: "SessionView", icon_lookup: IconLookup) -> None:
+    def update_view(
+        self,
+        view: "SessionView",
+        icon_lookup: IconLookup,
+        *,
+        rune_icons: "dict[str, QPixmap] | None" = None,
+        item_icons: "dict[str, QPixmap] | None" = None,
+    ) -> None:
         """Called from the overlay on every SessionView refresh."""
         self._summary_row.update_summary(
             view,
-            tags_lookup=lambda _key: [],  # tag map plumbing follows in next commit
+            tags_lookup=lambda _key: [],  # tag map plumbing follows
             icon_lookup=icon_lookup,
         )
+        self._build_card.update_card(view, icon_lookup)
+        self._items_panel.update_panel(
+            view, rune_icons or {}, item_icons or {},
+        )
+        self._game_plan_panel.update_panel(view)
