@@ -148,11 +148,11 @@ def test_extract_zip_unpacks_contents(tmp_path: Path) -> None:
     zp = tmp_path / "release.zip"
     with zipfile.ZipFile(zp, "w") as zf:
         zf.writestr("champ-assistant.exe", b"exe-bytes")
-        zf.writestr("_internal/data/counters.json", b"{}")
+        zf.writestr("_internal/static/counters.json", b"{}")
     out = tmp_path / "staged"
     extract_zip(zp, out)
     assert (out / "champ-assistant.exe").read_bytes() == b"exe-bytes"
-    assert (out / "_internal" / "data" / "counters.json").read_bytes() == b"{}"
+    assert (out / "_internal" / "static" / "counters.json").read_bytes() == b"{}"
 
 
 def test_launch_bootstrap_installer_raises_when_exe_missing(tmp_path: Path) -> None:

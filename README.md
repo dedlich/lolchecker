@@ -191,7 +191,7 @@ src/champ_assistant/
 ├── advisor/               # picks / bans / build adapter / decision engine
 ├── lcu/                   # League Client lockfile + WS + API
 ├── lcda/                  # Live Client Data API (in-game JSON poll)
-├── data/                  # DataDragon + builds.json + counters / tiers / tags
+├── data/                  # DataDragon CDN + JSON loader + Pydantic models
 ├── profiling/             # Riot Web API client + EnemyProfile composer
 ├── ui/                    # Qt widgets + design tokens
 ├── vision/                # mss + numpy color-heuristic detectors (Windows-only)

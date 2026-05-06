@@ -13,7 +13,7 @@ from pathlib import Path
 from champ_assistant import app_paths
 
 DEFAULT_FIXTURE_DIR = app_paths.resource_root() / "tests" / "fixtures" / "sessions"
-DEFAULT_DATA_DIR = app_paths.resource_root() / "data"
+DEFAULT_DATA_DIR = app_paths.resource_root() / "static"
 
 
 def build_parser() -> argparse.ArgumentParser:

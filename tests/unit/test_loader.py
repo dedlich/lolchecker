@@ -18,7 +18,7 @@ from champ_assistant.data.loader import (
 )
 
 
-REPO_DATA_DIR = Path(__file__).resolve().parents[2] / "data"
+REPO_DATA_DIR = Path(__file__).resolve().parents[2] / "static"
 
 
 # ---------------------------------------------------------------------------

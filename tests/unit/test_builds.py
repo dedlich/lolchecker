@@ -70,7 +70,7 @@ def test_load_builds_invalid_role(tmp_path: Path) -> None:
 
 
 def test_production_builds_file_loads() -> None:
-    repo_data = Path(__file__).resolve().parents[2] / "data"
+    repo_data = Path(__file__).resolve().parents[2] / "static"
     lib = load_builds(repo_data / "builds.json")
     # We seeded ~30 champions in v0.4.0.
     assert len(lib.builds) >= 25

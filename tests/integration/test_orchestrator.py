@@ -23,7 +23,7 @@ from champ_assistant.ui.view_model import SessionView  # noqa: E402
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-DATA_DIR = REPO_ROOT / "data"
+DATA_DIR = REPO_ROOT / "static"
 FIXTURES_DIR = REPO_ROOT / "tests" / "fixtures" / "sessions"
 
 

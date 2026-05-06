@@ -13,7 +13,7 @@ def test_resource_root_in_source_layout() -> None:
     """In a regular source checkout, _resource_root points at the repo root."""
     root = _resource_root()
     assert (root / "src" / "champ_assistant").is_dir()
-    assert (root / "data").is_dir()
+    assert (root / "static").is_dir()
 
 
 def test_resource_root_in_frozen_mode(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -29,5 +29,5 @@ def test_resource_root_frozen_without_meipass(monkeypatch: pytest.MonkeyPatch) -
     monkeypatch.setattr(sys, "frozen", True, raising=False)
     monkeypatch.delattr(sys, "_MEIPASS", raising=False)
     root = _resource_root()
-    # Source layout still resolves to the repo root with src/ + data/.
+    # Source layout still resolves to the repo root with src/ + static/.
     assert (root / "src" / "champ_assistant").is_dir()

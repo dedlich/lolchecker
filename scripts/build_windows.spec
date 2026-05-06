@@ -24,11 +24,13 @@ a = Analysis(
     pathex=[str(ROOT / "src")],
     binaries=[],
     datas=[
-        # Static data — counters / tier list / tags read at runtime.
-        (str(ROOT / "data" / "counters.json"), "data"),
-        (str(ROOT / "data" / "tiers.json"), "data"),
-        (str(ROOT / "data" / "tags.json"), "data"),
-        (str(ROOT / "data" / "builds.json"), "data"),
+        # Static content — counters / tier list / tags read at runtime.
+        # Bundle dest renamed from "data" → "static" per OPTIMIZATION.md §4.5
+        # so it stops colliding with the ``champ_assistant.data`` Python package.
+        (str(ROOT / "static" / "counters.json"), "static"),
+        (str(ROOT / "static" / "tiers.json"), "static"),
+        (str(ROOT / "static" / "tags.json"), "static"),
+        (str(ROOT / "static" / "builds.json"), "static"),
         # Demo fixtures so --dry-run works in the packaged exe (default
         # FIXTURE_DIR resolves under _MEIPASS/tests/fixtures/sessions).
         # Skip 12_corrupt.json — it's a parser-robustness test asset, not

@@ -133,7 +133,7 @@ In-game Live Client Data API (`https://127.0.0.1:2999/liveclientdata/...`).
 
 * `models.py` — Pydantic v2 frozen dataclasses for every domain object
   (Champion, ChampSelectSession, ChampionBuild + variants, etc.)
-* `loader.py` — atomic JSON loaders for `data/{builds,counters,tiers,tags}.json`
+* `loader.py` — atomic JSON loaders for `static/{builds,counters,tiers,tags}.json`
 * `datadragon.py` — DataDragon CDN client with disk-cached PNG bytes
 * `runtime_counters.py` — patch-update workflow for counters.json
 * `items_data.py` + `perks_data.py` — name → ID maps for LCU rune-page / item-set

@@ -36,7 +36,7 @@ from champ_assistant.lcu.sources import FixtureLcuSource  # noqa: E402
 from champ_assistant.ui.overlay import MainOverlay  # noqa: E402
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-DATA_DIR = REPO_ROOT / "data"
+DATA_DIR = REPO_ROOT / "static"
 FIXTURES = REPO_ROOT / "tests" / "fixtures" / "sessions"
 
 
