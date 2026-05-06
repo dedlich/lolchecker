@@ -162,6 +162,7 @@ def rule_far_behind_safe(snapshot: "LcdaSnapshot") -> Recommendation | None:
         confidence=0.80,
         risk="HIGH",
         ttl_s=30.0,
+        kind="far_behind_safe",
         reasons=(
             f"Team-Gold-Diff: {gold} (unter -{GOLD_DEFICIT_THRESHOLD})",
             "Fights statistisch verloren",
