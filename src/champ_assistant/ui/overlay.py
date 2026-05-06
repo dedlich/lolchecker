@@ -33,7 +33,6 @@ from .. import overlay_config
 from ..lcda.source import LcdaSnapshot
 from . import styles
 from .enemy_row import EnemyRow
-from .ban_panel import BanPanel
 from .live_companion_view import LiveCompanionView
 from .pick_card import PickCard
 from .power_spike_panel import PowerSpikePanel
@@ -163,15 +162,12 @@ class MainOverlay(QMainWindow):
         self._live_companion = LiveCompanionView()
         body_layout.addWidget(self._live_companion)
 
-        # Ban suggestions panel at full width.
-        self._ban_panel = BanPanel()
-        self._ban_panel.ban_hover_requested.connect(self.ban_hover_requested.emit)
-        body_layout.addWidget(self._ban_panel)
-
-        # Pick suggestions used to live here as ``_picks_row`` — now in
-        # LiveCompanion's left column (PicksColumn). Bubble its click
-        # signal up so existing pick_hover_requested consumers keep working.
+        # Pick + ban suggestions both live inside LiveCompanion now (left
+        # column — PicksColumn / BansColumn). Bubble their hover signals
+        # up to MainOverlay so the existing apply-pick / apply-ban LCU
+        # plumbing keeps working without rewiring boot.py.
         self._live_companion.pick_hover_requested.connect(self.pick_hover_requested.emit)
+        self._live_companion.ban_hover_requested.connect(self.ban_hover_requested.emit)
 
         # The legacy "Your Build" visual panel is fully duplicated by
         # LiveCompanion's center column (build header, runes row, items
@@ -280,11 +276,8 @@ class MainOverlay(QMainWindow):
         self._status_bar.set_state(view.connection_state)
         self._update_enemies(view)
         self._update_my_build(view)
-        self._ban_panel.update_suggestions_categorized(
-            view.ban_suggestions_lane,
-            view.ban_suggestions_allround,
-            self._icon_for_key,
-        )
+        # Ban + pick suggestions render inside LiveCompanion (BansColumn /
+        # PicksColumn). The legacy BanPanel widget was absorbed in v1.10.82.
         # Live Companion is the only champ-select surface now — picks up
         # the team rosters + damage / phase splits + locked-champion
         # build, renders the unified header + summary + 3-column body.
@@ -467,68 +460,39 @@ class MainOverlay(QMainWindow):
         stays compact. The objective and summoner panels manage their
         own visibility from LCDA snapshots.
         """
-        # Ban + pick panels collapse during a live game so the overlay
-        # stays compact. Visibility is driven by _apply_champ_select_subphase
-        # for champ-select; here we just hide them entirely in-game.
-        if in_game and not in_champ_select:
-            self._ban_panel.setVisible(False)
+        # No-op: every champ-select panel now lives inside LiveCompanion,
+        # which manages its own visibility from the snapshot. This hook is
+        # kept so the lifecycle wiring in boot.py stays untouched.
+        return
 
     # -- champ-select state machine --------------------------------------
 
-    # Width per phase. Champ-select needs room for enemy panel + picks
-    # side-by-side; in-game shrinks back to a narrow strip. Stored as
-    # min/preferred widths so the user's manual resize still wins on
-    # a re-drag, but our pivots set a sane starting point on phase
-    # transitions.
+    # Width per phase. Champ-select needs room for the LiveCompanion body;
+    # in-game shrinks back to a narrow strip. Stored as min/preferred
+    # widths so the user's manual resize still wins on a re-drag.
     _W_CHAMP_SELECT = 880
     _W_INGAME = 420
 
     def _apply_champ_select_subphase(self, view: SessionView) -> None:
-        """Drive panel visibility from the session's display_subphase.
+        """Drive LiveCompanion visibility from the session's display_subphase.
 
-        Each subphase exposes a different focus:
-          * ``ban`` — ban suggestions front and center, picks hidden.
-          * ``pick`` / ``finalization`` — enemy counters + own picks
-            visible, ban panel collapsed (already locked-in).
-          * ``loading`` — both teams' player-profile dump (lobby_stats);
-            ban + pick panels hidden, the floating lobby widget owns
-            the screen real estate.
-          * ``idle`` / ``in_game`` — champ-select row entirely hidden
-            so the overlay stays compact during the live game.
+        ``in_game`` / ``idle`` collapse the window to a narrow strip and
+        hide LiveCompanion entirely. Every active champ-select subphase
+        (ban / pick / finalization / planning / loading) shows it; the
+        per-section visibility (BansColumn empty-state vs populated, etc.)
+        is owned by the columns themselves.
         """
         session = view.session
         subphase = session.display_subphase() if session is not None else "idle"
 
-        if subphase == "in_game":
-            self._ban_panel.setVisible(False)
+        if subphase in ("in_game", "idle"):
             self._live_companion.setVisible(False)
             self._set_width(self._W_INGAME)
             return
 
-        if subphase == "idle":
-            # Pre-lobby / disconnected — keep panels visible at narrow
-            # width so the user sees the connection-status hint.
-            self._live_companion.setVisible(False)
-            self._set_width(self._W_INGAME)
-            return
-
-        # Active champ-select — wider window, then per-subphase pivots.
+        # Active champ-select — wider window so LiveCompanion has room.
         self._live_companion.setVisible(True)
         self._set_width(self._W_CHAMP_SELECT)
-
-        if subphase == "ban":
-            # Ban-step focus: bans front (picks live in LiveCompanion).
-            self._ban_panel.setVisible(True)
-        elif subphase in ("pick", "finalization", "planning"):
-            # Pick/finalization: bans collapse (history, not actionable
-            # anymore). LiveCompanion's PicksColumn carries suggestions.
-            self._ban_panel.setVisible(False)
-        elif subphase == "loading":
-            # Loading screen — both ban + pick panels hide.
-            self._ban_panel.setVisible(False)
-        else:
-            # Unknown phase — leave bans visible as a safe fallback.
-            self._ban_panel.setVisible(True)
 
     def _set_width(self, target_w: int) -> None:
         """Resize the window to ``target_w`` while respecting the user's

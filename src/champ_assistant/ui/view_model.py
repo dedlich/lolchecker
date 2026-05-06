@@ -99,3 +99,10 @@ class SessionView(BaseModel):
     my_champion_build: ChampionBuild | None = None
     """Recommended build (runes/items/summoners/skill_order) for the locked champion.
     None when champion not yet locked or no build data available."""
+
+    game_plan_text: str = ""
+    """LLM-generated game-plan paragraph for the locked champion in the
+    confirmed matchup. Empty until a cached prose is available — populated
+    from ``GamePlanLLMService.get_cached`` in ``_build_view``. The
+    background prefetch fires on lock-in so this lights up on the
+    snapshot AFTER the LLM responds, not the lock-in tick itself."""

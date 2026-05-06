@@ -116,6 +116,16 @@ def _build_assistant(args: argparse.Namespace, overlay: MainOverlay) -> ChampAss
         provider=_sec.llm_provider(),
     )
 
+    # Game-plan prose — same provider, separate cache namespace. Disabled
+    # without an API key (returns None, the right-column shows placeholder).
+    from champ_assistant.advisor.game_plan_llm import GamePlanLLMService
+    game_plan_cache_dir = args.data_dir.parent / "ddragon_cache" / "game_plans"
+    game_plan_llm = GamePlanLLMService(
+        game_plan_cache_dir,
+        api_key=_sec.llm_api_key(),
+        provider=_sec.llm_provider(),
+    )
+
     # Enemy profiling — opt-in via Settings dialog (Riot API key persisted
     # in keyring). Disabled service falls through silently.
     profile_service = _build_profile_service()
@@ -129,5 +139,6 @@ def _build_assistant(args: argparse.Namespace, overlay: MainOverlay) -> ChampAss
         champions=_starter_champion_index(),
         builds=builds,
         runtime_counters=runtime_counters,
+        game_plan_llm=game_plan_llm,
         profile_service=profile_service,
     )

@@ -50,7 +50,7 @@ from PyQt6.QtWidgets import (
 )
 
 from . import styles
-from .live_companion_sections import PicksColumn
+from .live_companion_sections import BansColumn, PicksColumn
 
 if TYPE_CHECKING:
     from ..data.models import ChampSelectMember
@@ -866,6 +866,19 @@ class _GamePlanPanel(QWidget):
 
     def update_panel(self, view: "SessionView") -> None:
         key = view.my_champion_key
+        # LLM-generated game plan if available; otherwise empty-state text.
+        if view.game_plan_text:
+            self._plan_body.setText(view.game_plan_text)
+        elif key:
+            self._plan_body.setText(
+                f"Generating game plan for {key}… (lands on the next "
+                "snapshot once the LLM responds)."
+            )
+        else:
+            self._plan_body.setText(
+                "Lock in your champion to generate a matchup-aware game "
+                "plan covering win condition, key matchup, and tempo."
+            )
         if key:
             self._spikes_line.setText(
                 f"{key}'s power-spike timing — coming with the LLM "
@@ -904,6 +917,7 @@ class LiveCompanionView(QWidget):
     """
 
     pick_hover_requested = pyqtSignal(str)
+    ban_hover_requested = pyqtSignal(str)
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -936,6 +950,9 @@ class LiveCompanionView(QWidget):
         left_layout.setSpacing(styles.SPACING_GRID)
         self._build_card = _BuildCard()
         left_layout.addWidget(self._build_card)
+        self._bans_column = BansColumn()
+        self._bans_column.ban_hover_requested.connect(self.ban_hover_requested.emit)
+        left_layout.addWidget(self._bans_column)
         self._picks_column = PicksColumn()
         self._picks_column.pick_hover_requested.connect(self.pick_hover_requested.emit)
         left_layout.addWidget(self._picks_column)
@@ -995,6 +1012,7 @@ class LiveCompanionView(QWidget):
             icon_lookup=icon_lookup,
         )
         self._build_card.update_card(view, icon_lookup)
+        self._bans_column.update_bans(view, icon_lookup)
         self._picks_column.update_picks(view, icon_lookup)
         self._items_panel.update_panel(
             view, rune_icons or {}, item_icons or {},

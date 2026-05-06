@@ -5,6 +5,7 @@ own file rather than swelling the main view module.
 """
 from __future__ import annotations
 
+from .bans_column import BansColumn
 from .picks_column import PicksColumn
 
-__all__ = ["PicksColumn"]
+__all__ = ["BansColumn", "PicksColumn"]

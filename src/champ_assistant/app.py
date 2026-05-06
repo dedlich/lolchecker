@@ -33,6 +33,7 @@ from .data.models import (
     TeamMember,
     TierList,
 )
+from .advisor.game_plan_llm import GamePlanLLMService
 from .data.runtime_counters import RuntimeCounterStore
 from .lcu.sources import LcuSource
 from .ui.overlay import MainOverlay
@@ -66,6 +67,7 @@ class ChampAssistant:
         champions: dict[int, Champion],
         builds: BuildLibrary | None = None,
         runtime_counters: RuntimeCounterStore | None = None,
+        game_plan_llm: GamePlanLLMService | None = None,
         profile_service: object | None = None,
         view_callback: Callable[[SessionView], None] | None = None,
     ) -> None:
@@ -77,7 +79,9 @@ class ChampAssistant:
         self.champions = champions
         self.builds = builds or BuildLibrary()
         self._runtime_counters = runtime_counters
+        self._game_plan_llm = game_plan_llm
         self._profile_service = profile_service
+        self._game_plan_prefetched_for: str = ""
         # Track in-flight async fan-outs by key to avoid duplicate
         # scheduling. The Coalescer guarantees the key is discarded on
         # task completion (exception or success) so we don't have to
@@ -224,7 +228,68 @@ class ChampAssistant:
         view = build_session_view(session, self._make_view_deps())
         if session is not None:
             self._maybe_fetch_profiles(session)
+            self._maybe_prefetch_game_plan(view)
+        # Surface any cached game-plan prose so the right-column reads it.
+        if self._game_plan_llm is not None and view.my_champion_key:
+            cached = self._game_plan_llm.get_cached(
+                champion=view.my_champion_key,
+                role=str(view.my_champion_role or ""),
+                allies=self._team_keys_from_session(session, ally=True),
+                enemies=self._team_keys_from_session(session, ally=False),
+            )
+            if cached:
+                view = view.model_copy(update={"game_plan_text": cached})
         return view
+
+    def _team_keys_from_session(
+        self,
+        session: "ChampSelectSession | None",
+        *,
+        ally: bool,
+    ) -> list[str]:
+        if session is None:
+            return []
+        members = session.my_team if ally else session.their_team
+        keys: list[str] = []
+        for m in members:
+            if not m.champion_id:
+                continue
+            champ = self.champions.get(m.champion_id)
+            if champ is not None:
+                keys.append(champ.key)
+        return keys
+
+    def _maybe_prefetch_game_plan(self, view: SessionView) -> None:
+        """Fire-and-forget LLM prefetch when the local champion locks in.
+
+        Triggers ONCE per (champ, role, enemy_team) signature so swapping
+        a hover doesn't re-pay the API cost. Result lands in the disk
+        cache; the next ``_build_view`` snapshot picks it up via
+        ``get_cached``.
+        """
+        if self._game_plan_llm is None or not self._game_plan_llm.enabled:
+            return
+        champ = view.my_champion_key
+        role = str(view.my_champion_role or "")
+        if not champ:
+            return
+        session = self._latest_session
+        allies = self._team_keys_from_session(session, ally=True)
+        enemies = self._team_keys_from_session(session, ally=False)
+        sig = f"{champ}|{role}|{','.join(sorted(allies))}|{','.join(sorted(enemies))}"
+        if sig == self._game_plan_prefetched_for:
+            return
+        self._game_plan_prefetched_for = sig
+        try:
+            asyncio.ensure_future(
+                self._game_plan_llm.prefetch(
+                    champion=champ, role=role,
+                    allies=allies, enemies=enemies,
+                )
+            )
+        except RuntimeError:
+            # No running event loop (e.g. headless tests) — skip silently.
+            pass
 
     def _maybe_fetch_profiles(self, session: ChampSelectSession) -> None:
         """If a Riot API key is configured, fire off async profile lookups
