@@ -21,11 +21,15 @@ jobs:
           python-version: "3.11"
           cache: pip
 
-      - name: Install package + build deps
+      - name: Install pinned deps from lockfile
         shell: pwsh
         run: |
           python -m pip install --upgrade pip
-          pip install -e ".[dev,build]"
+          # Per OPTIMIZATION.md §4.4 — install from the committed lock so
+          # the build is reproducible across runs. Then install the package
+          # itself without re-resolving deps (they're already pinned above).
+          pip install -r requirements.lock
+          pip install -e . --no-deps
 
       - name: Build Windows executable
         shell: pwsh

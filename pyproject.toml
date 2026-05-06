@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "champ-assistant"
-version = "1.10.71"
+version = "1.10.72"
 description = "LoL Champ Select Assistant — Live counters, team-comp picks via LCU."
 readme = "README.md"
 requires-python = ">=3.11"
@@ -50,6 +50,10 @@ dev = [
     # memray does not support Windows (RuntimeError at build time), so gate it.
     "py-spy>=0.3",
     'memray>=1.13; sys_platform != "win32"',
+    # Lockfile generation for reproducible builds (OPTIMIZATION.md §4.4).
+    # Run ``pip-compile --extra=build --output-file=requirements.lock pyproject.toml``
+    # to regenerate when dependencies change.
+    "pip-tools>=7.5",
 ]
 build = [
     "pyinstaller>=6.6",
