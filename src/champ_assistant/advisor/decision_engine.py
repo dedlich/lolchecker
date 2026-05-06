@@ -3313,6 +3313,35 @@ def reset_teamfight_outcome_hysteresis() -> None:
     _TEAMFIGHT_OUTCOME_HYSTERESIS.reset()
 
 
+# ─── Shutdown-taken hysteresis ───────────────────────────────────────────────
+# Tracks the highest streak each enemy reached *while alive* + which death
+# instance we already announced shutdown for. The pre-death tier matters
+# because _kill_streak immediately drops to 0 once the death event lands in
+# raw_events — by then we'd see "no streak" and miss the conversion call.
+
+class _ShutdownTakenHysteresis:
+    """Per-enemy "highest tier seen while alive" + "deaths count we've
+    already announced shutdown for" tracker.
+    """
+    __slots__ = ("last_alive_tier", "fired_for_death")
+
+    def __init__(self) -> None:
+        self.last_alive_tier: dict[str, int] = {}
+        self.fired_for_death: dict[str, int] = {}
+
+    def reset(self) -> None:
+        self.last_alive_tier.clear()
+        self.fired_for_death.clear()
+
+
+_SHUTDOWN_TAKEN_HYSTERESIS = _ShutdownTakenHysteresis()
+
+
+def reset_shutdown_taken_hysteresis() -> None:
+    """Test-only: drop the shutdown-taken state."""
+    _SHUTDOWN_TAKEN_HYSTERESIS.reset()
+
+
 def rule_recall_check(snapshot: "LcdaSnapshot") -> Recommendation | None:
     """Recall-window coaching driven by HP %, mana %, and gold (Charter B5).
 
@@ -4237,6 +4266,145 @@ def rule_teamfight_outcome(snapshot: "LcdaSnapshot") -> Recommendation | None:
     )
 
 
+def _streak_to_tier(streak: int) -> int:
+    """Map a kill-streak count to the bounty tier it corresponds to (or 0)."""
+    if streak >= BOUNTY_TIER_GODLIKE_S:
+        return BOUNTY_TIER_GODLIKE_S
+    if streak >= BOUNTY_TIER_WARN_S:
+        return BOUNTY_TIER_WARN_S
+    if streak >= BOUNTY_TIER_INFO_S:
+        return BOUNTY_TIER_INFO_S
+    return 0
+
+
+def _shutdown_phase_advice(game_time: float, tier: int) -> str:
+    """Phase-aware "what to convert the shutdown into" line. Higher-bounty
+    shutdowns earn bigger plays — at +500g you're force-resetting the game,
+    not popping a single plate."""
+    big = tier >= BOUNTY_TIER_GODLIKE_S
+    if game_time < 840.0:        # < 14:00
+        return "Plates + Drache forcen, Wave-Pressure" if not big else \
+               "Plates + Drache + Tower hard pushen — Tempo-Reset"
+    if game_time < 1500.0:       # 14:00 – 25:00
+        return "Drake / Tower forcen, Vision in ihrem Jungle" if not big else \
+               "Baron oder Inhib forcen — Game-Reset-Window"
+    return "Inhib oder Elder forcen, Vision-Sweep" if not big else \
+           "Baron + Inhib JETZT — Win-Condition"
+
+
+def rule_shutdown_taken(snapshot: "LcdaSnapshot") -> Recommendation | None:
+    """Fire when a bountied enemy just died — convert the +150/+300/+500g
+    shutdown gold + their long respawn timer into objectives (Charter B5).
+
+    The complement to rule_enemy_bounty:
+      * rule_enemy_bounty   — "Jinx is on UNSTOPPABLE — pick on her"
+      * rule_shutdown_taken — "Jinx down with shutdown — push for Drake NOW"
+
+    Solo queue celebrates the kill but doesn't convert the next 30-60 s
+    of respawn-timer + bonus gold into map state. Pros do exactly this:
+    ping the team to rotate to whichever objective is closest to up.
+
+    Mechanics
+    ---------
+    Tracks each enemy's highest tier reached *while alive* —
+    ``_kill_streak`` resets to 0 the moment the death event lands in
+    raw_events, so by the time we see ``is_alive=False`` the streak
+    info is already gone. Capturing it pre-death and reading it on the
+    death tick recovers the conversion signal.
+
+    ``fired_for_death`` keys on the enemy's death-counter so the rec
+    fires once per death-instance, not every tick they're on respawn.
+
+    Three tiers, by pre-death streak:
+    * tier 3-4 → info — "Shutdown auf X (+150g) — Tempo: …"
+    * tier 5-6 → warn — "Shutdown auf X (+300g) — Drake/Baron forcen"
+    * tier 7+  → alert — "Shutdown X (+500g) — Game-Reset, Baron + Inhib JETZT"
+    """
+    enemies = list(getattr(snapshot, "enemies", []) or [])
+    if not enemies:
+        return None
+    events = list(getattr(snapshot, "raw_events", []) or [])
+    h = _SHUTDOWN_TAKEN_HYSTERESIS
+
+    # Pass 1 — refresh per-enemy "tier while alive" so we have it
+    # captured for the moment they die.
+    for e in enemies:
+        name = str(getattr(e, "champion_name", "") or "")
+        if not name:
+            continue
+        if not getattr(e, "is_alive", True):
+            continue
+        current_tier = _streak_to_tier(_kill_streak(e, events))
+        # Always store the highest-yet seen tier (don't drop it back when
+        # they get a kill that doesn't escalate the tier).
+        h.last_alive_tier[name] = max(
+            h.last_alive_tier.get(name, 0), current_tier,
+        )
+
+    # Pass 2 — pick the most-actionable shutdown to announce: highest
+    # pre-death tier among enemies who just died and haven't been
+    # announced yet for this death-instance.
+    best: tuple[int, int, str] | None = None  # (tier, deaths, name)
+    for e in enemies:
+        if getattr(e, "is_alive", True):
+            continue
+        name = str(getattr(e, "champion_name", "") or "")
+        if not name:
+            continue
+        deaths = int(getattr(e, "deaths", 0) or 0)
+        if deaths <= h.fired_for_death.get(name, -1):
+            continue  # already announced for this death
+        pre_death_tier = h.last_alive_tier.get(name, 0)
+        if pre_death_tier < BOUNTY_TIER_INFO_S:
+            continue  # they didn't have a streak — no shutdown to convert
+        candidate = (pre_death_tier, deaths, name)
+        if best is None or candidate > best:
+            best = candidate
+
+    if best is None:
+        return None
+    tier, deaths, name = best
+    h.fired_for_death[name] = deaths
+    # Reset their alive-tier so a fresh life with a fresh streak earns a
+    # new shutdown announcement when it ends.
+    h.last_alive_tier[name] = 0
+
+    game_time = float(getattr(snapshot, "game_time", 0.0) or 0.0)
+    advice = _shutdown_phase_advice(game_time, tier)
+
+    if tier >= BOUNTY_TIER_GODLIKE_S:
+        text = (
+            f"SHUTDOWN auf {name} (+500g) — GAME-RESET-Fenster. "
+            f"{advice}"
+        )
+        severity, ttl_s, confidence, risk = "alert", 35.0, 0.92, "LOW"
+    elif tier >= BOUNTY_TIER_WARN_S:
+        text = (
+            f"Shutdown auf {name} (+300g) — Konvertieren: {advice}"
+        )
+        severity, ttl_s, confidence, risk = "warn", 30.0, 0.88, "LOW"
+    else:
+        text = (
+            f"Shutdown auf {name} (+150g) — Tempo nutzen: {advice}"
+        )
+        severity, ttl_s, confidence, risk = "info", 25.0, 0.80, "LOW"
+
+    return Recommendation(
+        text=text,
+        severity=severity,
+        category="tempo",
+        confidence=confidence,
+        risk=risk,
+        ttl_s=ttl_s,
+        kind="shutdown_taken",
+        reasons=(
+            f"{name} starb auf Streak (Tier {tier} — Bounty kassiert)",
+            "Pro-Maxime: Shutdown-Gold IMMER in Map-State konvertieren",
+            "Solo-Queue-Throw: Kill bestätigen + nichts pushen = Bounty verschwendet",
+        ),
+    )
+
+
 def rule_tilt_detection(snapshot: "LcdaSnapshot") -> Recommendation | None:
     """Surface the active player's death pattern as a coaching call.
 
@@ -4601,6 +4769,8 @@ ALL_RULES: tuple[Callable[["LcdaSnapshot"], Recommendation | None], ...] = (
     rule_first_blood,
     # B5 teamfight outcome — post-fight conversion / recovery coaching.
     rule_teamfight_outcome,
+    # B5 shutdown taken — convert bountied-enemy death into map state.
+    rule_shutdown_taken,
     # B4 tilt detection — active player's death pattern coaching.
     rule_tilt_detection,
     # B5 recall window — HP/mana/gold-driven back timing.
@@ -4760,6 +4930,7 @@ def _suppress_dominated(recs: list[Recommendation]) -> list[Recommendation]:
             "first_blood",          # FB momentum coaching irrelevant during ace push
             "teamfight_won",        # ace IS the conversion call — redundant
             "teamfight_won_big",
+            "shutdown_taken",       # ace already includes the gold + map-state windfall
         }
         recs = [r for r in recs if r.kind not in _ace_drop]
         kinds = {r.kind for r in recs}
@@ -4796,6 +4967,7 @@ def _suppress_dominated(recs: list[Recommendation]) -> list[Recommendation]:
             "first_blood",         # the more-urgent "play safe" already dominates
             "teamfight_won",       # can't claim "we won" while short-handed
             "teamfight_won_big",
+            "shutdown_taken",      # don't tell short-handed players to push for objectives
             # teamfight_lost / teamfight_lost_big SURVIVE — they explain
             # WHY we're short-handed and the "no engage" message is valuable.
         }
@@ -4849,6 +5021,7 @@ def _suppress_dominated(recs: list[Recommendation]) -> list[Recommendation]:
             "teamfight_won_big",
             "teamfight_lost",      # ditto — the urgent "defend base" call wins
             "teamfight_lost_big",
+            "shutdown_taken",      # objective conversion irrelevant — defend base
             # NOTE: ally_inhib_respawning intentionally coexists with ally_inhib_down:
             # "defend now + inhib back in 30s" are complementary, not conflicting.
         }
@@ -4899,6 +5072,7 @@ def _suppress_dominated(recs: list[Recommendation]) -> list[Recommendation]:
             "plate_window",      # don't tell a feeding player to push for plates
             "teamfight_won",     # feeding player isn't pushing the win — let team handle
             "teamfight_won_big",
+            "shutdown_taken",    # feeding player shouldn't be the one pushing
             "flash_down", "tp_down", "combat_spell_down",
             "jungler_down", "dragon_soul",
         }
