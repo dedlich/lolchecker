@@ -49,6 +49,7 @@ from ._core import *  # noqa: F401,F403
 from ._state import *  # noqa: F401,F403
 from ._rules import *  # noqa: F401,F403
 from ._evaluate import *  # noqa: F401,F403
+from ._debug import dump_engine_state  # noqa: F401
 
 # Underscore-prefixed names that tests + a few external consumers use
 # directly. Wildcard imports skip names starting with `_`, so we
