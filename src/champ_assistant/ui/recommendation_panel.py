@@ -25,7 +25,6 @@ from PyQt6.QtCore import (
 from PyQt6.QtGui import QColor, QPainter, QPaintEvent
 from PyQt6.QtWidgets import (
     QFrame,
-    QGraphicsDropShadowEffect,
     QGraphicsOpacityEffect,
     QHBoxLayout,
     QLabel,
@@ -99,19 +98,17 @@ class _RecRow(QFrame):
 
         self._text = QLabel("")
         self._text.setWordWrap(True)
+        # Per-row translucent dark "pill" behind the text so the message
+        # stays readable on top of the in-game scene without painting the
+        # whole panel as a card. Padding keeps the pill snug around the
+        # text rather than extending to the row edges.
         self._text.setStyleSheet(
-            f"color: {styles.TEXT_PRIMARY};"
-            f" font-size: {styles.FS_BODY}px; font-weight: 800;"
-            " background: transparent;"
+            f"QLabel {{ color: {styles.TEXT_PRIMARY};"
+            f" font-size: {styles.FS_BODY}px; font-weight: 700;"
+            f" background-color: rgba(0, 0, 0, 180);"
+            f" border-radius: {styles.RADIUS_SMALL}px;"
+            f" padding: 4px 8px; }}"
         )
-        # Strong drop-shadow turns the text into a "haloed" message that
-        # stays readable over the brightest game pixels (white health-bar,
-        # gold drake, light minimap regions).
-        shadow = QGraphicsDropShadowEffect(self._text)
-        shadow.setBlurRadius(8)
-        shadow.setOffset(0, 0)
-        shadow.setColor(QColor(0, 0, 0, 255))
-        self._text.setGraphicsEffect(shadow)
         layout.addWidget(self._text, 1)
         # Meta label still allocated so existing render() paths don't crash,
         # but it's hidden in chat-mode — no TTL/confidence chrome.
@@ -228,7 +225,7 @@ class RecommendationPanel(FloatingWidget):
 
     KEY = "recommendation_panel"
     DEFAULT_POS = (40, 40)
-    DEFAULT_SIZE = (440, 320)
+    DEFAULT_SIZE = (440, 520)
 
     def __init__(self) -> None:
         super().__init__()

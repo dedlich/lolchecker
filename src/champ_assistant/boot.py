@@ -132,6 +132,91 @@ def _safe_start(name: str, fn: Callable[[], None]) -> bool:
         return False
 
 
+async def _compute_and_push_meraki_build(
+    *,
+    champion_key: str,
+    cache_dir: Path,
+    key_to_id,  # type: ignore[no-untyped-def]
+) -> None:
+    """Champ-select-time Meraki build push.
+
+    Fires from ``_on_apply_build`` on lock-in BEFORE the in-game shop
+    loads. Uses an empty GameContext (no live snapshot yet); the LCDA
+    path's later run will overwrite this with real team-comp adjustments.
+    Same item-set title means the second push replaces (not duplicates)
+    this one.
+    """
+    log = logging.getLogger("champ_assistant.build_engine")
+    if not champion_key:
+        return
+    try:
+        from champ_assistant.advisor.build_engine import (
+            GameContext,
+            detect_archetype,
+            recommend_items,
+        )
+        from champ_assistant.data.champion_scaling import extract_scaling_profile
+        from champ_assistant.data.meraki import MerakiClient, MerakiError
+    except Exception:  # noqa: BLE001 — degrade silently
+        log.exception("champ_select_meraki_import_failed")
+        return
+    try:
+        meraki_cache = cache_dir / "meraki"
+        meraki_cache.mkdir(parents=True, exist_ok=True)
+        async with MerakiClient(meraki_cache) as mc:
+            champion_dict = await mc.fetch_champion(champion_key)
+            items_dict = await mc.fetch_items()
+        archetype = detect_archetype(champion_dict)
+        scaling = extract_scaling_profile(champion_dict)
+        result = recommend_items(
+            champion_dict, items_dict, archetype, GameContext(), scaling=scaling,
+        )
+        log.info(
+            "build_engine_done_champ_select champion=%s play_style=%s core=%d situational=%d",
+            champion_key, archetype.play_style,
+            len(result.core_items), len(result.situational_items),
+        )
+    except MerakiError as exc:
+        log.warning("champ_select_meraki_error champion=%s: %s", champion_key, exc)
+        return
+    except Exception:  # noqa: BLE001
+        log.exception("champ_select_meraki_failed champion=%s", champion_key)
+        return
+
+    # Push via the LCU. Skip silently when the client isn't reachable.
+    from champ_assistant.lcu.client import LcuClient, LcuClientError
+    from champ_assistant.lcu.item_sets import apply_item_set_from_result
+    from champ_assistant.lcu.lockfile import (
+        LockfileNotFound,
+        find_lockfile,
+        parse_lockfile,
+    )
+    try:
+        lockfile = parse_lockfile(find_lockfile())
+    except LockfileNotFound:
+        log.debug("champ_select_meraki_skipped: lockfile not found")
+        return
+    try:
+        async with LcuClient(lockfile) as lcu:
+            pushed = await apply_item_set_from_result(
+                lcu,
+                champion_key=champion_key,
+                champion_id=int(key_to_id(champion_key) or 0),
+                build_result=result,
+            )
+            if pushed is not None:
+                blocks = pushed.get("blocks") or []
+                total = sum(len(b.get("items") or []) for b in blocks)
+                log.info(
+                    "blueprint_pushed_champ_select champion=%s blocks=%d items=%d",
+                    champion_key, len(blocks), total,
+                )
+    except LcuClientError as exc:
+        log.warning("champ_select_meraki_push_failed champion=%s: %s", champion_key, exc)
+    except Exception:  # noqa: BLE001
+        log.exception("champ_select_meraki_push_error champion=%s", champion_key)
+
+
 def _run_with_ui(args: argparse.Namespace) -> int:
     # ------------------------------------------------------------------
     # Deterministic startup (P7): each subsystem is registered with the
@@ -359,6 +444,23 @@ def _run_with_ui(args: argparse.Namespace) -> int:
                 overlay.status_bar.set_info(
                     f"Apply Build {champion_key}: {' + '.join(applied)} aktiviert",
                     color="#7FCC7F",
+                )
+            # Fire the Meraki 3-block build NOW so the in-game shop sees
+            # it on first load. Without this the static apply_item_set
+            # above is the only set that lands before the shop caches its
+            # set list, and the Meraki push from the LCDA path arrives
+            # too late to be visible in-shop.
+            try:
+                await _compute_and_push_meraki_build(
+                    champion_key=champion_key,
+                    cache_dir=args.data_dir.parent / "ddragon_cache",
+                    key_to_id=lambda k: next(
+                        (c.id for c in assistant.champions.values() if c.key == k), 0,
+                    ),
+                )
+            except Exception:  # noqa: BLE001 — never block status from a Meraki crash
+                logging.getLogger(__name__).exception(
+                    "champ_select_meraki_failed champion=%s", champion_key,
                 )
         import asyncio
         try:
@@ -594,6 +696,10 @@ def _run_with_ui(args: argparse.Namespace) -> int:
         # tests/lint/test_no_input_hooks.py for the Vanguard rationale.
         def _drive_scoreboard_peek(old, new) -> None:  # type: ignore[no-untyped-def]
             if old.scoreboard_visible != new.scoreboard_visible:
+                # Honor the flip directly. Vision-detection used to false-
+                # positive on loading screens, but with that subsystem off
+                # this signal only flips from the Ctrl+Alt+B hotkey, where
+                # the user always means "show now".
                 scoreboard.set_peek_visible(new.scoreboard_visible)
         store.subscribe(_drive_scoreboard_peek)
     minimap = None
@@ -722,24 +828,21 @@ def _run_with_ui(args: argparse.Namespace) -> int:
     # Windows-only check inside MinimapCapture.
     # ------------------------------------------------------------------
     scoreboard_visibility_service = None
-    scoreboard_overlay_panel = None
-    scoreboard_overlay_controller = None
     if persisted.enable_scoreboard_detection and not startup_mode.safe:
         from PyQt6.QtCore import Qt as _SBQt
         from champ_assistant.vision.scoreboard_visibility_service import (
             ScoreboardVisibilityService,
         )
-        from champ_assistant.ui.scoreboard_overlay import (
-            GoldDifferencePanel,
-            ScoreboardOverlayController,
-        )
 
         scoreboard_visibility_service = ScoreboardVisibilityService()
 
         # Vision thread → main thread state-store update via queued
-        # signal. Engine-side mutation always lands on the Qt main
-        # thread (StateStore is technically thread-safe but we keep
-        # all writes on one thread for predictability).
+        # signal. ``state.scoreboard_visible`` then drives the per-lane
+        # ScoreboardWidget's ``set_peek_visible`` (wired further down in
+        # the floating-widget block). The legacy GoldDifferencePanel +
+        # ScoreboardOverlayController combo was retired because the new
+        # ScoreboardWidget already covers the per-lane gold + spell
+        # tracker the user wanted.
         def _on_scoreboard_visibility(visible: bool) -> None:
             store.update(scoreboard_visible=visible)
 
@@ -747,14 +850,8 @@ def _run_with_ui(args: argparse.Namespace) -> int:
             _on_scoreboard_visibility, _SBQt.ConnectionType.QueuedConnection,
         )
 
-        scoreboard_overlay_panel = GoldDifferencePanel()
-        scoreboard_overlay_controller = ScoreboardOverlayController(
-            state_store=store, panel=scoreboard_overlay_panel,
-        )
-
         _safe_start("scoreboard_visibility", scoreboard_visibility_service.start)
         lifecycle.register("scoreboard_visibility", scoreboard_visibility_service.stop)
-        lifecycle.register("scoreboard_overlay", scoreboard_overlay_controller.stop)
     else:
         if not persisted.enable_scoreboard_detection:
             logging.getLogger(__name__).info(
