@@ -70,6 +70,7 @@ from ._core import (
     _player_ids,
     _recent_ally_turret_losses,
     _team_gold_diff,
+    _team_id_set,
     _team_kill_diff,
 )
 
@@ -430,358 +431,10 @@ def rule_late_game_group(snapshot: "LcdaSnapshot") -> Recommendation | None:
 # Window rules — pro-level objective + fight decision trees
 # --------------------------------------------------------------------------
 
-def rule_dragon_window(snapshot: "LcdaSnapshot") -> Recommendation | None:
-    """Pro-level Dragon call. Factors: timer, stack count + soul-point,
-    drake type, dead-enemy free-window, gold/numbers. Replaces the
-    simpler rule_drake_priority + rule_drake_give_up in ALL_RULES.
-    Elder Dragon is handled by rule_elder_window — deferred here."""
-    remaining = _objective_remaining(snapshot, "Dragon")
-    if remaining is None or remaining > DRAKE_SETUP_WINDOW_S:
-        return None
-
-    game_time = getattr(snapshot, "game_time", 0.0)
-    allies = list(getattr(snapshot, "allies", []) or [])
-    enemies = list(getattr(snapshot, "enemies", []) or [])
-    if not allies or not enemies:
-        return None  # team identity not established; can't compute window quality
-    allies_alive = _alive_count(allies)
-    enemies_alive = _alive_count(enemies)
-    numbers_diff = allies_alive - enemies_alive
-    gold = _team_gold_diff(snapshot)
-
-    ally_stacks = _drake_stack_count(snapshot)
-    enemy_stacks = _enemy_drake_stack_count(snapshot)
-    soul_point = ally_stacks >= 3          # taking this = OUR soul
-    enemy_soul_point = enemy_stacks >= 3   # must deny their soul
-
-    drake_obj = next(
-        (o for o in (getattr(snapshot, "objectives", []) or [])
-         if getattr(o, "name", "") == "Dragon"),
-        None,
-    )
-    # Elder gets its own dedicated rule with higher-urgency messaging.
-    if getattr(drake_obj, "detail", None) == "Elder":
-        return None
-
-    drake_name = _DRAKE_DISPLAY.get(
-        getattr(drake_obj, "detail", None) or "", "Drache"
-    )
-
-    dead_enemies = [e for e in enemies if not getattr(e, "is_alive", True)]
-    free_window = numbers_diff > 0 and len(dead_enemies) > 0
-
-    # Hard give-up: significantly behind + no edge
-    if gold < -GOLD_DEFICIT_THRESHOLD and numbers_diff <= 0 and not soul_point and not free_window:
-        return Recommendation(
-            text=f"Drache ({int(remaining)}s) abgeben — Side pushen",
-            severity="warn",
-            category="objective",
-            confidence=0.83,
-            risk="HIGH",
-            ttl_s=remaining,
-            kind="dragon_give",
-            reasons=(
-                f"Drache in {int(remaining)}s",
-                f"Gold-Diff: {gold:+d} (unter -{GOLD_DEFICIT_THRESHOLD})",
-                f"Numbers: {allies_alive}v{enemies_alive}",
-                "Contest = negatives Expected Value",
-            ),
-        )
-
-    # Free-take window: enemies dead, we have numbers advantage
-    if free_window:
-        dead_names = " + ".join(
-            getattr(e, "champion_name", "?") for e in dead_enemies[:2]
-        )
-        return Recommendation(
-            text=f"Drache JETZT {allies_alive}v{enemies_alive} — {dead_names} tot!",
-            severity="alert",
-            category="objective",
-            confidence=0.95,
-            risk="LOW",
-            ttl_s=remaining,
-            kind="dragon_free",
-            reasons=(
-                f"FREE TAKE — {dead_names} tot ({numbers_diff} man up)",
-                f"{drake_name} spawnt in {int(remaining)}s",
-                f"Stacks: Wir {ally_stacks} — Gegner {enemy_stacks}",
-                f"Gold-Diff: {gold:+d}",
-            ),
-        )
-
-    # Soul-point urgency
-    if soul_point:
-        return Recommendation(
-            text=f"{drake_name} in {int(remaining)}s — SOUL POINT! JETZT gehen",
-            severity="alert",
-            category="objective",
-            confidence=0.92,
-            risk="MEDIUM",
-            ttl_s=remaining,
-            kind="dragon_take",
-            reasons=(
-                f"SOUL POINT — Wir bei {ally_stacks}/4 Stacks!",
-                f"Gold-Diff: {gold:+d} | {allies_alive}v{enemies_alive} alive",
-            ),
-        )
-    if enemy_soul_point:
-        return Recommendation(
-            text=f"Drache in {int(remaining)}s — Gegner-Soul STOPPEN!",
-            severity="alert",
-            category="objective",
-            confidence=0.90,
-            risk="HIGH",
-            ttl_s=remaining,
-            kind="dragon_take",
-            reasons=(
-                f"GEGNER Soul Point ({enemy_stacks}/4 Stacks) — VERHINDERN!",
-                f"Gold-Diff: {gold:+d} | {allies_alive}v{enemies_alive} alive",
-            ),
-        )
-
-    # Active fight window (≤30s) or setup phase
-    active = remaining <= DRAKE_PRIORITY_WINDOW_S and gold >= -GOLD_LEAD_THRESHOLD
-    severity = "alert" if active else "warn"
-    confidence = 0.84 if active else 0.78
-    stack_suffix = f" ({ally_stacks}/4)" if ally_stacks > 0 else ""
-    action = "JETZT Vision + Group" if active else "Vision + Group starten"
-
-    return Recommendation(
-        text=f"{drake_name}{stack_suffix} in {int(remaining)}s — {action}",
-        severity=severity,
-        category="objective",
-        confidence=confidence,
-        risk="MEDIUM",
-        ttl_s=remaining,
-        kind="dragon_take",
-        reasons=(
-            f"{drake_name} spawnt in {int(remaining)}s",
-            *(
-                (f"Stacks: Wir {ally_stacks} — Gegner {enemy_stacks}",)
-                if ally_stacks > 0 or enemy_stacks > 0 else ()
-            ),
-            f"Gold-Diff: {gold:+d} | {allies_alive}v{enemies_alive} alive",
-        ),
-    )
+# rule_dragon_window → rules/objectives.py
 
 
-def rule_elder_window(snapshot: "LcdaSnapshot") -> Recommendation | None:
-    """Elder Dragon — highest-stakes drake. Fires only when Elder is the
-    active spawn. Combined with Dragon Soul it is essentially a GG button;
-    must always be contested or seized.
-
-    Fires with a wider setup window (120s, same as Baron) because Elder
-    vision / wave-clear preparation takes longer than regular drakes."""
-    remaining = _objective_remaining(snapshot, "Dragon")
-    if remaining is None or remaining > BARON_SETUP_WINDOW_S:
-        return None
-
-    drake_obj = next(
-        (o for o in (getattr(snapshot, "objectives", []) or [])
-         if getattr(o, "name", "") == "Dragon"),
-        None,
-    )
-    if getattr(drake_obj, "detail", None) != "Elder":
-        return None  # not Elder — handled by rule_dragon_window
-
-    allies = list(getattr(snapshot, "allies", []) or [])
-    enemies = list(getattr(snapshot, "enemies", []) or [])
-    if not allies or not enemies:
-        return None
-    allies_alive = _alive_count(allies)
-    enemies_alive = _alive_count(enemies)
-    numbers_diff = allies_alive - enemies_alive
-    gold = _team_gold_diff(snapshot)
-
-    ally_stacks = _drake_stack_count(snapshot)
-    enemy_stacks = _enemy_drake_stack_count(snapshot)
-    ally_has_soul = ally_stacks >= 4
-    enemy_has_soul = enemy_stacks >= 4
-
-    dead_enemies = [e for e in enemies if not getattr(e, "is_alive", True)]
-    free_window = numbers_diff > 0 and len(dead_enemies) > 0
-
-    # Free-take: numbers advantage + dead enemies
-    if free_window:
-        dead_names = " + ".join(
-            getattr(e, "champion_name", "?") for e in dead_enemies[:2]
-        )
-        soul_suffix = " + Soul = GG!" if ally_has_soul else ""
-        return Recommendation(
-            text=f"Elder JETZT nehmen{soul_suffix} — {dead_names} tot!",
-            severity="alert",
-            category="objective",
-            confidence=0.97,
-            risk="LOW",
-            ttl_s=remaining,
-            kind="elder_take",
-            reasons=(
-                f"FREE ELDER — {dead_names} tot ({numbers_diff} man up)",
-                f"Elder in {int(remaining)}s",
-                *(("Wir haben Dragon Soul — Elder + Soul = GG!",) if ally_has_soul else ()),
-                f"Gold-Diff: {gold:+d} | {allies_alive}v{enemies_alive} alive",
-            ),
-        )
-
-    # Ally has Dragon Soul → Elder closes the game
-    if ally_has_soul:
-        severity = "alert" if remaining <= BARON_PRIORITY_WINDOW_S else "warn"
-        return Recommendation(
-            text=f"Elder in {int(remaining)}s — Soul + Elder = GG JETZT!",
-            severity=severity,
-            category="objective",
-            confidence=0.94,
-            risk="MEDIUM",
-            ttl_s=remaining,
-            kind="elder_take",
-            reasons=(
-                "Wir haben Dragon Soul — Elder-Buff = Execute-Schaden!",
-                f"Elder in {int(remaining)}s — Soul + Elder ist unschlagbar",
-                f"Gold-Diff: {gold:+d} | {allies_alive}v{enemies_alive} alive",
-            ),
-        )
-
-    # Enemy has Dragon Soul → must contest Elder at all costs
-    if enemy_has_soul:
-        return Recommendation(
-            text=f"Elder VERHINDERN in {int(remaining)}s — Gegner-Soul + Elder = GG!",
-            severity="alert",
-            category="objective",
-            confidence=0.92,
-            risk="HIGH",
-            ttl_s=remaining,
-            kind="elder_take",
-            reasons=(
-                f"Gegner hat Dragon Soul ({enemy_stacks} Stacks)!",
-                "Elder geben = Gegner unschlagbar — Contest ist Pflicht!",
-                f"Elder in {int(remaining)}s | Gold-Diff: {gold:+d}",
-                f"Numbers: {allies_alive}v{enemies_alive}",
-            ),
-        )
-
-    # Neither team has soul (early Elder, uncommon)
-    active = remaining <= BARON_PRIORITY_WINDOW_S
-    severity = "alert" if active else "warn"
-    return Recommendation(
-        text=f"Elder-Drache in {int(remaining)}s — Gruppenbildung!",
-        severity=severity,
-        category="objective",
-        confidence=0.88,
-        risk="MEDIUM",
-        ttl_s=remaining,
-        kind="elder_take",
-        reasons=(
-            f"Elder Drake in {int(remaining)}s — Execute-Buff für ganzes Team",
-            f"Gold-Diff: {gold:+d} | {allies_alive}v{enemies_alive} alive",
-        ),
-    )
-
-
-def rule_baron_window(snapshot: "LcdaSnapshot") -> Recommendation | None:
-    """Pro-level Baron call. 120s setup window (vision + waves), 45s
-    fight window. Higher stakes than Drake — one throw = potential GG.
-    Replaces rule_baron_priority + rule_baron_give_up in ALL_RULES."""
-    remaining = _objective_remaining(snapshot, "Baron")
-    if remaining is None or remaining > BARON_SETUP_WINDOW_S:
-        return None
-
-    game_time = getattr(snapshot, "game_time", 0.0)
-    allies = list(getattr(snapshot, "allies", []) or [])
-    enemies = list(getattr(snapshot, "enemies", []) or [])
-    if not allies or not enemies:
-        return None
-    allies_alive = _alive_count(allies)
-    enemies_alive = _alive_count(enemies)
-    numbers_diff = allies_alive - enemies_alive
-    gold = _team_gold_diff(snapshot)
-    levels = _avg_level_diff(snapshot)
-    is_late = game_time >= LATE_GAME_S
-
-    dead_enemies = [e for e in enemies if not getattr(e, "is_alive", True)]
-    free_window = numbers_diff > 0 and len(dead_enemies) > 0
-
-    # Hard no-go: behind + no edge
-    if gold < -GOLD_DEFICIT_THRESHOLD and numbers_diff <= 0 and not free_window:
-        return Recommendation(
-            text=f"Baron ({int(remaining)}s) abgeben — Konter suchen",
-            severity="warn",
-            category="objective",
-            confidence=0.85,
-            risk="HIGH",
-            ttl_s=remaining,
-            kind="baron_give",
-            reasons=(
-                f"Baron in {int(remaining)}s",
-                f"Gold-Diff: {gold:+d} (deutlich hinten)",
-                f"Numbers: {allies_alive}v{enemies_alive}",
-                "Baron-Throw = sofortiges GG",
-            ),
-        )
-
-    # Free-take window: enemies dead, numbers advantage
-    if free_window:
-        dead_names = " + ".join(
-            getattr(e, "champion_name", "?") for e in dead_enemies[:2]
-        )
-        confidence = min(0.97, 0.96 + (0.02 if is_late else 0.0))
-        return Recommendation(
-            text=f"Baron JETZT {allies_alive}v{enemies_alive} — {dead_names} tot!",
-            severity="alert",
-            category="objective",
-            confidence=confidence,
-            risk="LOW",
-            ttl_s=remaining,
-            kind="baron_free",
-            reasons=(
-                f"FREE BARON — {dead_names} tot ({numbers_diff} man up)",
-                f"Baron spawnt in {int(remaining)}s",
-                f"Gold-Diff: {gold:+d} | Level: {levels:+.1f}",
-                *(("Late Game — Baron = potenzieller Game-Winner",) if is_late else ()),
-            ),
-        )
-
-    # Active fight window (≤45s)
-    if remaining <= BARON_PRIORITY_WINDOW_S:
-        confidence = min(0.92, 0.88 + (0.03 if is_late else 0.0))
-        context = f"+{gold}" if gold >= GOLD_LEAD_THRESHOLD else f"{allies_alive}v{enemies_alive}"
-        return Recommendation(
-            text=f"Baron in {int(remaining)}s ({context}) — Pit-Control forcen",
-            severity="alert",
-            category="objective",
-            confidence=confidence,
-            risk="MEDIUM",
-            ttl_s=remaining,
-            kind="baron_take",
-            reasons=(
-                f"Baron spawnt in {int(remaining)}s",
-                f"Gold-Diff: {gold:+d} | Level: {levels:+.1f}",
-                f"Numbers: {allies_alive}v{enemies_alive} alive",
-                *(("Late Game — Baron-Buff = potenzieller Game-Winner",) if is_late else ()),
-            ),
-        )
-
-    # Setup phase — vision + wave clear
-    confidence = min(0.85, 0.78 + (0.05 if is_late else 0.0))
-    if remaining <= 90:
-        action = "Waves + Vision (Tri-Bush, River)"
-    else:
-        action = f"Waves claren, Pinks kaufen ({int(remaining)}s)"
-
-    return Recommendation(
-        text=f"Baron in {int(remaining)}s — {action}",
-        severity="warn",
-        category="objective",
-        confidence=confidence,
-        risk="MEDIUM",
-        ttl_s=remaining,
-        kind="baron_take",
-        reasons=(
-            f"Baron spawnt in {int(remaining)}s",
-            f"Gold-Diff: {gold:+d} | Level: {levels:+.1f}",
-            f"Numbers: {allies_alive}v{enemies_alive} alive",
-            *(("Late Game — Setup ist kritisch",) if is_late else ()),
-        ),
-    )
+# rule_elder_window + rule_baron_window → rules/objectives.py
 
 
 def rule_fight_opportunity(snapshot: "LcdaSnapshot") -> Recommendation | None:
@@ -1101,21 +754,29 @@ from .rules.inhibitors import (  # noqa: E402
     rule_enemy_inhib_expiring,
     rule_enemy_inhibitor_down,
 )
-from .rules.objectives import (  # noqa: E402
+from .rules.objectives import (  # noqa: E402,F401
+    OBJECTIVE_TAKEN_RECENT_S,
+    SETUP_WINDOW_MAX_S,
+    SETUP_WINDOW_MIN_S,
     rule_ally_herald_window,
     rule_baron_buff_expiring,
     rule_baron_give_up,
     rule_baron_priority,
+    rule_baron_window,
     rule_drake_give_up,
     rule_drake_priority,
     rule_dragon_soul_pressure,
+    rule_dragon_window,
     rule_elder_buff_expiring,
+    rule_elder_window,
     rule_enemy_baron_buff,
     rule_enemy_dragon_soul,
     rule_enemy_elder_buff,
     rule_enemy_herald_danger,
     rule_enemy_jungler_down,
     rule_herald_priority,
+    rule_objective_setup_window,
+    rule_objective_taken_by_ally,
     rule_void_grubs,
 )
 # Summoner-cooldown rules — NOT in ``ALL_RULES``; ``_evaluate.evaluate``
@@ -1696,20 +1357,6 @@ def rule_plate_window(snapshot: "LcdaSnapshot") -> Recommendation | None:
     )
 
 
-def _team_id_set(players: list) -> set[str]:
-    """Build the set of identifiers for a team (summoner_name + champion_name
-    of every member). Used by rule_first_blood to decide which side killed."""
-    ids: set[str] = set()
-    for p in players:
-        sn = str(getattr(p, "summoner_name", "") or "")
-        cn = str(getattr(p, "champion_name", "") or "")
-        if sn:
-            ids.add(sn)
-        if cn:
-            ids.add(cn)
-    return ids
-
-
 def rule_first_blood(snapshot: "LcdaSnapshot") -> Recommendation | None:
     """First-Blood awareness — fires once when the first ChampionKill is
     detected (Charter B5 — early-game momentum coaching).
@@ -2064,140 +1711,11 @@ def rule_shutdown_taken(snapshot: "LcdaSnapshot") -> Recommendation | None:
     )
 
 
-# ─── Objective-taken thresholds ──────────────────────────────────────────────
-# After taking a major objective, the buff window is finite. Pros immediately
-# convert into map state — most importantly into Inhib pressure for Baron and
-# tower/drake stacks for the others. Solo queue often drops the buff.
-OBJECTIVE_TAKEN_RECENT_S: float = 20.0   # how recently the kill must have happened
+# OBJECTIVE_TAKEN_RECENT_S + _OBJECTIVE_LABEL + _objective_taken_advice +
+# rule_objective_taken_by_ally → rules/objectives.py
 
 
-_OBJECTIVE_LABEL: dict[str, str] = {
-    "BaronKill":   "Baron",
-    "DragonKill":  "Drache",
-    "HeraldKill":  "Herald",
-}
-
-
-def _objective_taken_advice(
-    event_name: str, drake_detail: str, ally_drake_count: int, game_time: float,
-) -> tuple[str, str, str, float, float, str]:
-    """Return ``(text_suffix, severity, risk, ttl_s, confidence, kind)`` for
-    the just-taken objective, factoring in the dragon-soul / elder edge cases.
-
-    Tier scaling:
-      * Baron      → alert, push all 3 lanes, force inhib
-      * Elder      → alert, 3-min execute, force inhib JETZT
-      * Soul drake → alert, permanent buff, force baron / inhib
-      * Regular dr → info,  next drake setup, vision
-      * Herald     → info,  eye-of-herald → tower
-    """
-    if event_name == "BaronKill":
-        return (
-            "BARON taken — alle 3 Lanes pushen, Inhib forcen, Vision-Sweep",
-            "alert", "LOW", 30.0, 0.92, "objective_taken_baron",
-        )
-    if event_name == "DragonKill":
-        # Elder Dragon: only spawns after a soul has been claimed.
-        if (drake_detail or "").lower() == "elder":
-            return (
-                "ELDER taken — 3-min Execute aktiv, INHIB JETZT, kein Wait",
-                "alert", "LOW", 30.0, 0.92, "objective_taken_elder",
-            )
-        # Soul drake: 4th drake claim seals the soul buff (permanent for this game).
-        if ally_drake_count >= 4:
-            return (
-                "SOUL taken — permanenter Buff. Baron oder Inhib forcen.",
-                "alert", "LOW", 30.0, 0.90, "objective_taken_soul",
-            )
-        # Regular drake.
-        return (
-            "Drache taken — nächste Drake setup, Vision pflanzen",
-            "info", "LOW", 25.0, 0.80, "objective_taken_drake",
-        )
-    # Herald.
-    if game_time < 840.0:
-        advice = "Eye-of-Herald nutzen, Top oder Mid Tower aufknacken"
-    else:
-        advice = "Herald-Charge nutzen, Plates oder Tower"
-    return (advice, "info", "LOW", 25.0, 0.80, "objective_taken_herald")
-
-
-def rule_objective_taken_by_ally(snapshot: "LcdaSnapshot") -> Recommendation | None:
-    """Fire when the ally team just killed Baron / Dragon / Herald. The
-    *post-kill* conversion call (Charter B5).
-
-    Distinct from existing rules:
-      * rule_dragon_window / rule_baron_window — fire while objective is UP
-      * rule_baron_buff_expiring — fires near the END of the buff
-      * rule_dragon_soul_pressure — fires PRE-soul (3 stacks)
-
-    This rule is the missing AT-THE-MOMENT-OF-KILL signal: "you just took
-    it, here's the immediate next play". Solo queue routinely takes Baron
-    and then rotates BACK to drake, dropping the inhib pressure window.
-
-    Picks the most recent ally-team objective kill within
-    OBJECTIVE_TAKEN_RECENT_S seconds of game_time, fires once per
-    EventTime so the cumulative event log can't re-fire the same kill.
-    """
-    events = list(getattr(snapshot, "raw_events", []) or [])
-    if not events:
-        return None
-    game_time = float(getattr(snapshot, "game_time", 0.0) or 0.0)
-    allies = list(getattr(snapshot, "allies", []) or [])
-    ally_ids = _team_id_set(allies)
-    if not ally_ids:
-        return None
-    h = _OBJECTIVE_TAKEN_HYSTERESIS
-
-    # Find the most recent ally-team objective kill in the recent window.
-    candidate: dict | None = None
-    candidate_t = -1.0
-    for evt in events:
-        name = evt.get("EventName") or ""
-        if name not in _OBJECTIVE_LABEL:
-            continue
-        killer = str(evt.get("KillerName") or "")
-        if killer not in ally_ids:
-            continue
-        t = float(evt.get("EventTime", 0) or 0)
-        if game_time - t > OBJECTIVE_TAKEN_RECENT_S:
-            continue
-        if t > candidate_t:
-            candidate = evt
-            candidate_t = t
-
-    if candidate is None:
-        return None
-    name = candidate.get("EventName", "") or ""
-    key = (name, float(candidate.get("EventTime", 0) or 0))
-    if key in h.fired_event_times:
-        return None
-    h.fired_event_times.add(key)
-
-    # Pull the dragon stack count for soul / elder detection.
-    ally_aggregate = getattr(snapshot, "ally_aggregate", None)
-    ally_drakes = int(getattr(ally_aggregate, "dragons", 0) or 0)
-    drake_detail = str(candidate.get("DragonType") or "")
-
-    advice_text, severity, risk, ttl_s, confidence, kind = _objective_taken_advice(
-        name, drake_detail, ally_drakes, game_time,
-    )
-    label = _OBJECTIVE_LABEL.get(name, name)
-
-    return Recommendation(
-        text=f"{label} GETÖTET — {advice_text}",
-        severity=severity,
-        category="objective",
-        confidence=confidence,
-        risk=risk,
-        ttl_s=ttl_s,
-        kind=kind,
-        reasons=(
-            f"{label}-Kill von Team registriert (T={int(candidate_t)}s)",
-            "Pro-Maxime: Buffs SOFORT in Map-State konvertieren",
-            "Solo-Queue-Throw: Baron töten + zurück zur Drake = Buff verschwendet",
-        ),
-    )
+# (function bodies removed — see comment above)
 
 
 # OBJECTIVE_BOUNTY_* constants + rule_objective_bounty_active body → rules/bounty.py
@@ -2294,161 +1812,8 @@ def _lane_mia_advice(active_position: str, game_time: float) -> str:
     return table.get(active_position, "Welle pushen + Vision setzen")
 
 
-# ─── Objective setup-window thresholds ────────────────────────────────────────
-# Pre-spawn coaching for drake / baron / herald / void grubs. The existing
-# rule_dragon_window / rule_baron_window fire WHEN the objective is up — this
-# rule fires the 30-90s window *before* spawn, when waves still have time to
-# crash and rotation is the play.
-#
-# Why 30-90s:
-#   90s — earliest you'd start prepping. Beyond this is too far out to
-#         influence the wave that'll crash at spawn.
-#   30s — last possible push. Below 30s the wave is already locked in;
-#         you're either there or you're not, and the existing
-#         drake/baron-window rules cover the actual fight.
-SETUP_WINDOW_MIN_S: float = 30.0
-SETUP_WINDOW_MAX_S: float = 90.0
-
-# Priority ordering when multiple objectives sit in the setup window
-# at the same time. Baron > Dragon > Herald > Void Grubs reflects what
-# pros actually contest first when forced to pick.
-_OBJECTIVE_PRIORITY: dict[str, int] = {
-    "Baron":     4,
-    "Dragon":    3,
-    "Herald":    2,
-    "VoidGrubs": 1,
-}
-
-# Per-objective × position setup advice. Six lane-specific strings per
-# objective is overkill for V1; instead we tag advice by "near vs far" —
-# whether the active player's lane is on the same side as the pit.
-# Drake = bot side; Baron / Herald / Void Grubs = top side.
-_OBJECTIVE_SIDE: dict[str, str] = {
-    "Dragon":    "BOTTOM",
-    "Baron":     "TOP",
-    "Herald":    "TOP",
-    "VoidGrubs": "TOP",
-}
-
-
-def _objective_setup_advice(
-    objective: str, active_position: str, game_time: float,
-) -> str:
-    """Pro-tuned setup line per objective × proximity to pit.
-
-    "Near pit": active player's lane is on the same map side as the
-    objective. They prep vision + push their wave in place.
-    "Far pit": active player needs to rotate. Push hard, get TP up,
-    or coordinate a wave swap with team.
-    """
-    pit_side = _OBJECTIVE_SIDE.get(objective, "")
-    near_pit = active_position == pit_side or (
-        # Bot 2-vs-2: support lane is bottom too.
-        active_position == "UTILITY" and pit_side == "BOTTOM"
-    )
-
-    if objective == "Dragon":
-        if near_pit:
-            return "Welle pushen, Pixel-Buschwerk warden, Pit-Control"
-        if active_position == "MIDDLE":
-            return "Mid-Welle shoven, dann rotieren, Vision setzen"
-        if active_position == "JUNGLE":
-            return "Pit + Drachen-Buschwerk warden, Smite ready"
-        # TOP — far from pit
-        return "Welle hard pushen, TP bereithalten, dann rotieren"
-
-    if objective == "Baron":
-        if near_pit:
-            return "Pit-Vision setzen, Welle pushen, Tank-Position"
-        if active_position == "MIDDLE":
-            return "Mid pushen + River-Vision, dann zum Pit"
-        if active_position == "JUNGLE":
-            return "Pit + River warden, Smite ready, Vision-Sweeper"
-        # BOTTOM / UTILITY — far from baron
-        return "Bot-Welle resetten, dann zum Pit gruppieren"
-
-    if objective == "Herald":
-        if near_pit:
-            return "Welle pushen, River-Buschwerk warden, Pit-Control"
-        if active_position == "MIDDLE":
-            return "Mid pushen, dann zum Top-River rotieren"
-        if active_position == "JUNGLE":
-            return "Pit + Top-River warden, Smite ready"
-        # BOTTOM / UTILITY — far from herald
-        return "Welle pushen, Drache-Setup oder Top-Side mitspielen"
-
-    if objective == "VoidGrubs":
-        if near_pit:
-            return "Welle pushen, Pit-Vision, Top-Side gruppieren"
-        if active_position == "JUNGLE":
-            return "Pit warden + Smite ready, Top mitnehmen"
-        return "Welle pushen, Vision-Pressure, Top-Side mitspielen"
-
-    return "Welle pushen + Vision setzen"
-
-
-def rule_objective_setup_window(snapshot: "LcdaSnapshot") -> Recommendation | None:
-    """Fire 30–90 s before drake / baron / herald / void grubs spawn so the
-    player has time to crash a wave + set vision + rotate (Charter B3).
-
-    Picks the highest-priority objective in the setup window; one rec per
-    tick at most. Existing ``rule_dragon_window`` / ``rule_baron_window``
-    take over once the objective is actually up.
-
-    Position-aware advice differentiates "near-pit" (push in place + vision)
-    from "far-pit" (push hard + rotate / TP). JUNGLE always gets vision +
-    smite-ready advice since they're the one expected to reach the pit first.
-    """
-    objectives = list(getattr(snapshot, "objectives", []) or [])
-    if not objectives:
-        return None
-    game_time = float(getattr(snapshot, "game_time", 0.0) or 0.0)
-
-    # Find the most-actionable objective: highest priority among any
-    # whose remaining-time falls inside the setup window.
-    best: tuple[int, float, str] | None = None  # (priority, remaining, name)
-    for obj in objectives:
-        name = str(getattr(obj, "name", "") or "")
-        remaining = obj.remaining(game_time) if hasattr(obj, "remaining") else None
-        if remaining is None:
-            continue
-        if not (SETUP_WINDOW_MIN_S <= remaining <= SETUP_WINDOW_MAX_S):
-            continue
-        prio = _OBJECTIVE_PRIORITY.get(name, 0)
-        if prio == 0:
-            continue
-        if best is None or prio > best[0]:
-            best = (prio, remaining, name)
-
-    if best is None:
-        return None
-    _, remaining, name = best
-
-    # Active-player position drives the advice variant.
-    active_player = _active_player(snapshot)
-    active_position = str(getattr(active_player, "position", "") or "")
-    advice = _objective_setup_advice(name, active_position, game_time)
-
-    label = {
-        "Dragon": "Drache",
-        "Baron": "Baron",
-        "Herald": "Herald",
-        "VoidGrubs": "Void Grubs",
-    }.get(name, name)
-
-    return Recommendation(
-        text=f"{label} in {int(remaining)}s — {advice}",
-        severity="info",
-        category="objective",
-        confidence=0.80,
-        risk="LOW",
-        ttl_s=20.0,
-        kind="objective_setup",
-        reasons=(
-            f"{label} spawnt in {int(remaining)}s",
-            "Setup-Fenster: Welle crashen lassen + Vision = on-time bei Spawn",
-        ),
-    )
+# SETUP_WINDOW_* + _OBJECTIVE_PRIORITY + _OBJECTIVE_SIDE + _objective_setup_advice +
+# rule_objective_setup_window → rules/objectives.py
 
 
 def rule_lane_opponent_mia(snapshot: "LcdaSnapshot") -> Recommendation | None:

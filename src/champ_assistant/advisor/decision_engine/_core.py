@@ -316,6 +316,20 @@ def _active_player(snapshot: "LcdaSnapshot") -> object | None:
     return None
 
 
+def _team_id_set(players: list) -> set[str]:
+    """Build the set of identifiers for a team (summoner_name + champion_name
+    of every member). Used by rules that decide which side caused an event."""
+    ids: set[str] = set()
+    for p in players:
+        sn = str(getattr(p, "summoner_name", "") or "")
+        cn = str(getattr(p, "champion_name", "") or "")
+        if sn:
+            ids.add(sn)
+        if cn:
+            ids.add(cn)
+    return ids
+
+
 def _team_gold_diff(snapshot: "LcdaSnapshot") -> int:
     """Allies items_value minus enemies items_value. Positive when
     we're ahead. None aggregates collapse to 0 — be defensive."""
