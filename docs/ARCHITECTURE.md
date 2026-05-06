@@ -94,10 +94,13 @@ network, no I/O. Testable in isolation. Examples:
 * `build_adapter.adapt_build(base, role, enemy_team_keys, tags)`
 * `decision_engine.evaluate(snapshot) -> list[Recommendation]`
 
-The decision engine has 11 curated rules (drake_priority, drake_give_up,
-baron_priority, baron_give_up, herald_priority, gold_lead_push, far_behind_safe,
-level_deficit, kill_lead_snowball, kill_deficit_defensive, late_game_group). Each is
-a pure function; buggy rules are isolated by per-rule try/except in `evaluate`.
+The decision engine has **57 callable rules** (53 in `ALL_RULES` + 3 spell-tracker
+rules + `rule_situational_build`). Each is a pure function; buggy rules are isolated
+by per-rule try/except in `evaluate`. The full catalog grouped by category lives in
+[../RULES.md](../RULES.md), which is kept in sync with the code by
+`tests/lint/test_rules_catalog.py` (CI fails if a callable rule lacks a
+`### `rule_xxx`` heading or vice-versa). Per-rule timing + activation telemetry
+flushes to `rule_timing.log` on shutdown for live diagnostics.
 
 ### `lcu/`
 

@@ -45,8 +45,9 @@ order before it ships.
 * **Tab-scoreboard gold-diff panel** — only renders while the in-game TAB scoreboard is
   visible (vision-based detection). Shows team totals + per-lane matchup deltas with
   directional arrows, mirroring the in-game scoreboard layout.
-* **Decision engine** with 11 curated heuristics → recommendations as a notification-
-  center-style panel (severity-colored strip + category glyph + body text). Examples:
+* **Decision engine** with 57 curated rules (catalog: [RULES.md](RULES.md)) →
+  recommendations as a notification-center-style panel (severity-colored strip +
+  category glyph + body text). Examples:
   * `Drache spawnt in 25s — Vision setzen, Side gruppieren` (alert)
   * `+4500 Gold — Vision pushen, nächstes Objective vorbereiten` (info)
   * `-6200 Gold — Safe spielen, keine Fights` (warn)
@@ -164,10 +165,12 @@ Short version:
   health_monitor, lifecycle.
 * **A — Performance** — done. performance_monitor, render_scheduler, lazy init,
   Low Resource Mode. A2 (bottleneck removal) waits on production data.
-* **B — Smartest** — B1 done (decision_engine, 11 rules, recommendation panel).
-  B2-B5 (gank window, objective priority service, risk score, full
-  recommendation pipeline) blocked by lack of enemy-position / ult-CD data
-  sources.
+* **B — Smartest** — B1-B5 implemented as 57 rules in the decision engine
+  (gank window, lane MIA, tilt detection, recall windows, bounty matrix,
+  objective setup, teamfight outcome, etc.). See [RULES.md](RULES.md) for
+  the full catalog. Per-rule timing + activation telemetry shipped for
+  live tuning. Further coaching depth is gated on data sources LCDA
+  doesn't expose (enemy spell cooldowns, ward state, map coordinates).
 * **Loading-screen detail view** — pipeline + rendering done. Full Porofessor-style
   fullscreen card view is the next sizable IA shift.
 

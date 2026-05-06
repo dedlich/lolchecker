@@ -72,8 +72,19 @@ DEFAULT_FIXTURE_DIR = _resource_root() / "tests" / "fixtures" / "sessions"
 DEFAULT_DATA_DIR = _resource_root() / "data"
 
 
-# Hardcoded starter dict for Phase 6. Phase 7 replaces this with a live
-# DataDragon fetch (cached on disk). Numeric IDs are Riot's official ones.
+# Bootstrap-only champion dict. The orchestrator needs SOME champion table
+# at construction time, before the async DataDragon hydration in
+# _hydrate_champions_and_icons replaces it with the live ~170-champion
+# roster. This 30-champion list IS NOT the production source of truth —
+# any session that runs past hydration sees the full DataDragon list.
+#
+# Hydration failure (offline + empty cache) falls back to this list and
+# logs a loud warning — see "DEGRADED" path in
+# _hydrate_champions_and_icons. State invariant: by the time the user
+# is in champ-select, ``assistant.champions`` should have grown past
+# this list. ``docs/OPTIMIZATION.md §1.4`` proposes routing everything
+# through ``data.datadragon.load_champion_index()`` (sync API) and
+# failing loud on empty cache; tracked there as future work.
 _STARTER_CHAMPIONS: list[Champion] = [
     Champion(id=1, key="Annie", name="Annie", tags=["Mage"]),
     Champion(id=3, key="Galio", name="Galio", tags=["Tank", "Mage"]),
@@ -1371,8 +1382,26 @@ async def _hydrate_champions_and_icons(
                 assistant.update_champions(champions)
                 log.info("champions_loaded count=%d", len(champions))
             except Exception:
-                log.exception("champions_fetch_failed")
+                # Network down + empty cache — bootstrap fallback. Counters
+                # and tier lookups against the ~140 champions NOT in the
+                # 30-entry starter list will silently miss. Surface the
+                # degraded state so live users notice.
+                log.exception(
+                    "champions_fetch_failed — DEGRADED MODE: only %d champions "
+                    "available (vs. ~170 in production). Counter / tier lookups "
+                    "for missing champions will return empty.",
+                    len(_STARTER_CHAMPIONS),
+                )
                 champions = {c.id: c for c in _STARTER_CHAMPIONS}
+            # Post-hydration sanity: even successful fetches can return a
+            # truncated list if DataDragon's CDN is misbehaving. Below 100
+            # champions in 2026 = something is wrong.
+            if len(champions) < 100:
+                log.warning(
+                    "champion_roster_suspicious count=%d (expected ~170) — "
+                    "counter / tier lookups may be incomplete",
+                    len(champions),
+                )
 
             # Refresh tier list from Lolalytics (6 h TTL, non-blocking).
             try:
