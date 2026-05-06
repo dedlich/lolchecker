@@ -3087,17 +3087,47 @@ GOLD_LARGE_SPIKE: float = 1600.0      # Pickaxe / BF Sword tier
 RECALL_PHASE_END_S: float = 1200.0    # 20:00
 
 
-# Hysteresis state for the recall rule — module-level dedup so each
+# Hysteresis state for the recall rule — process-wide dedup so each
 # tier doesn't re-fire every 2 s while its trigger condition persists.
 # All four tiers re-arm only after the player crosses the corresponding
 # rearm threshold (HP > 35 %, mana > 30 %, gold spent below threshold).
-_RECALL_CRITICAL_ARMED: bool = True
-_RECALL_RESOURCE_ARMED: bool = True
-_RECALL_GOLD_ARMED: bool = True
-_RECALL_MANA_ARMED: bool = True
 HP_RECALL_REARM_PCT: float = 0.35
 MANA_RECALL_REARM_PCT: float = 0.30
 GOLD_RECALL_REARM_BUFFER: float = 200.0  # gold must drop this far below threshold
+
+
+class _RecallHysteresis:
+    """Per-process armed/disarmed flags for the four recall tiers.
+
+    Single mutable singleton (``_RECALL_HYSTERESIS``) — kept as a class
+    rather than four module globals so tests can call ``reset()`` to
+    isolate per-test runs. The ``rule_recall_check`` function disarms
+    a tier when it fires the rec, and re-arms it once the player's
+    state recovers above the rearm threshold.
+    """
+    __slots__ = ("critical", "resource", "gold", "mana")
+
+    def __init__(self) -> None:
+        self.reset()
+
+    def reset(self) -> None:
+        self.critical = True
+        self.resource = True
+        self.gold = True
+        self.mana = True
+
+
+_RECALL_HYSTERESIS = _RecallHysteresis()
+
+
+def reset_recall_hysteresis() -> None:
+    """Test-only: drop all four tier flags back to armed.
+
+    Without this, two unit tests sharing the same player state will
+    mutually disarm each other (the first call disarms a tier, the
+    second sees it disarmed and returns None unexpectedly).
+    """
+    _RECALL_HYSTERESIS.reset()
 
 
 def rule_recall_check(snapshot: "LcdaSnapshot") -> Recommendation | None:
@@ -3124,8 +3154,6 @@ def rule_recall_check(snapshot: "LcdaSnapshot") -> Recommendation | None:
     for tier 1 (critical HP); recall timing past 20:00 is dictated by
     team rotation, not personal resources.
     """
-    global _RECALL_CRITICAL_ARMED, _RECALL_RESOURCE_ARMED
-    global _RECALL_GOLD_ARMED, _RECALL_MANA_ARMED
     state = getattr(snapshot, "active_combat", None)
     if state is None:
         return None
@@ -3134,33 +3162,31 @@ def rule_recall_check(snapshot: "LcdaSnapshot") -> Recommendation | None:
     gold = float(getattr(state, "gold", 0.0))
     is_mana_user = bool(getattr(state, "is_mana_user", False))
     game_time = float(getattr(snapshot, "game_time", 0.0) or 0.0)
+    h = _RECALL_HYSTERESIS
 
     # Dead players get no advice — they can't act on it before respawn.
     if hp_pct <= 0.0:
         # Reset hysteresis on death — next life starts fresh.
-        _RECALL_CRITICAL_ARMED = True
-        _RECALL_RESOURCE_ARMED = True
-        _RECALL_GOLD_ARMED = True
-        _RECALL_MANA_ARMED = True
+        h.reset()
         return None
 
     # Re-arm each tier once its rearm threshold is crossed. Without this
     # the rules fire every snapshot tick while their trigger condition
     # persists, producing dozens of identical recs per game.
     if hp_pct >= HP_RECALL_REARM_PCT:
-        _RECALL_CRITICAL_ARMED = True
+        h.critical = True
     if hp_pct >= HP_LOW_PCT and (not is_mana_user or mana_pct >= MANA_LOW_PCT):
-        _RECALL_RESOURCE_ARMED = True
+        h.resource = True
     if gold < GOLD_COMPONENT_SPIKE - GOLD_RECALL_REARM_BUFFER:
-        _RECALL_GOLD_ARMED = True
+        h.gold = True
     if not is_mana_user or mana_pct >= MANA_RECALL_REARM_PCT:
-        _RECALL_MANA_ARMED = True
+        h.mana = True
 
     # Tier 1 — Critical HP. Fires once per "below 30 %" episode.
-    if hp_pct < HP_CRITICAL_PCT and not _RECALL_CRITICAL_ARMED:
+    if hp_pct < HP_CRITICAL_PCT and not h.critical:
         return None
     if hp_pct < HP_CRITICAL_PCT:
-        _RECALL_CRITICAL_ARMED = False
+        h.critical = False
         pct = int(hp_pct * 100)
         return Recommendation(
             text=f"{pct}% HP — RECALL JETZT, nächster Trade tötet dich",
@@ -3182,9 +3208,9 @@ def rule_recall_check(snapshot: "LcdaSnapshot") -> Recommendation | None:
     if (
         resource_low and gold >= GOLD_BACK_WORTH
         and game_time <= RECALL_PHASE_END_S
-        and _RECALL_RESOURCE_ARMED
+        and h.resource
     ):
-        _RECALL_RESOURCE_ARMED = False
+        h.resource = False
         triggers: list[str] = []
         if hp_pct < HP_LOW_PCT:
             triggers.append(f"HP {int(hp_pct*100)}%")
@@ -3214,9 +3240,9 @@ def rule_recall_check(snapshot: "LcdaSnapshot") -> Recommendation | None:
     if (
         gold >= GOLD_COMPONENT_SPIKE
         and game_time <= RECALL_PHASE_END_S
-        and _RECALL_GOLD_ARMED
+        and h.gold
     ):
-        _RECALL_GOLD_ARMED = False
+        h.gold = False
         return Recommendation(
             text=f"{int(gold)}g — Recall-Fenster, Component-Spike kaufen + sicher zurück",
             severity="info",
@@ -3235,9 +3261,9 @@ def rule_recall_check(snapshot: "LcdaSnapshot") -> Recommendation | None:
     if (
         is_mana_user and mana_pct < MANA_DEPLETED_PCT
         and game_time <= RECALL_PHASE_END_S
-        and _RECALL_MANA_ARMED
+        and h.mana
     ):
-        _RECALL_MANA_ARMED = False
+        h.mana = False
         return Recommendation(
             text=f"Mana {int(mana_pct*100)}% — Gegner-All-In-Fenster offen, Welle freezen + warten",
             severity="info",

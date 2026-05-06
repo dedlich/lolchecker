@@ -3,10 +3,25 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
+import pytest
+
 from champ_assistant.lcda.active_state import (
     ActiveCombatState,
     extract_active_combat_state,
 )
+
+
+@pytest.fixture(autouse=True)
+def _reset_recall_hysteresis():
+    """The recall rule maintains a process-wide armed/disarmed state per
+    tier so it doesn't re-fire every 2 s tick. Tests that call the rule
+    repeatedly with the same trigger conditions must each start armed —
+    otherwise the second test sees a disarmed flag and returns None
+    unexpectedly."""
+    from champ_assistant.advisor.decision_engine import reset_recall_hysteresis
+    reset_recall_hysteresis()
+    yield
+    reset_recall_hysteresis()
 
 
 # ---------------------------------------------------------------------------
