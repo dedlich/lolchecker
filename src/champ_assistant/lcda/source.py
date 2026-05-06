@@ -29,6 +29,7 @@ from .players import (
 )
 from .active_state import ActiveCombatState, extract_active_combat_state
 from .gank_window import GankAlert, detect_gank_risk
+from .lane_state import LaneOpponentMia, detect_lane_opponent_mia
 from .power_spikes import EnemySpike, PowerSpike, detect_enemy_spikes, detect_spikes, extract_active_state
 from .tilt import TiltState, detect_tilt
 
@@ -76,6 +77,10 @@ class LcdaSnapshot:
     # rules. Always populated (defaults to all-full when activePlayer is
     # missing) so rules can read fields without None-checks.
     active_combat: ActiveCombatState = field(default_factory=ActiveCombatState)
+    # Active player's lane opponent absent from CS — companion to gank_alert.
+    # None when nobody is missing, no opponent identified, or active player
+    # is JUNGLE / UTILITY (signal degrades for those positions).
+    lane_opponent_alert: LaneOpponentMia | None = None
 
 
 SnapshotCallback = Callable[[LcdaSnapshot | None], Awaitable[None] | None]
@@ -110,6 +115,10 @@ class LcdaSource:
         self._prev_enemy_counts: dict[str, int] = {}  # champion_name → legendary count
         self._jungler_last_seen_gt: float = 0.0       # gank-window tracking
         self._jungler_was_alive: bool = False
+        # Lane-opponent MIA tracking. Per-enemy CS-delta state across ticks.
+        self._enemy_lane_seen: dict[str, float] = {}
+        self._enemy_lane_cs: dict[str, int] = {}
+        self._enemy_lane_alive: dict[str, bool] = {}
 
     async def run(self) -> None:
         """Loop until ``close()`` is called.
@@ -200,6 +209,22 @@ class LcdaSource:
         self._jungler_last_seen_gt = new_jlsg
         self._jungler_was_alive = new_jwa
 
+        # Lane-opponent MIA — uses LivePlayer enemy_players (already
+        # parsed) so creep_score is accessible without re-parsing.
+        lane_alert, new_lane_seen, new_lane_cs, new_lane_alive = (
+            detect_lane_opponent_mia(
+                active_position=active_position,
+                enemies=enemy_players,
+                game_time=game_time,
+                prev_last_cs_at=self._enemy_lane_seen,
+                prev_cs=self._enemy_lane_cs,
+                prev_alive=self._enemy_lane_alive,
+            )
+        )
+        self._enemy_lane_seen = new_lane_seen
+        self._enemy_lane_cs = new_lane_cs
+        self._enemy_lane_alive = new_lane_alive
+
         # Tilt detection — track the active player's death pattern.
         # Build the active-player and ally-id sets, matching how kill events
         # identify champions (LCDA uses summoner_name in some versions,
@@ -261,6 +286,7 @@ class LcdaSource:
             gank_alert=gank_alert,
             tilt_state=tilt_state,
             active_combat=active_combat,
+            lane_opponent_alert=lane_alert,
         )
 
     @staticmethod

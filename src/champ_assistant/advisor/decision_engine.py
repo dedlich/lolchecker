@@ -3348,6 +3348,77 @@ def rule_tilt_detection(snapshot: "LcdaSnapshot") -> Recommendation | None:
     )
 
 
+# ─── Lane-opponent MIA advice text ────────────────────────────────────────────
+# Phase-aware per-lane action lines. "Push the wave" means a different play
+# at 5 min (warding bushes + scouting drake) than at 14 min (Herald setup +
+# tower plates). These strings are short and concrete on purpose — pros
+# don't think in paragraphs.
+
+_LANE_ADVICE_EARLY: dict[str, str] = {
+    "TOP":     "Welle pushen, Top-Buschwerk wardēn",
+    "MIDDLE":  "Welle pushen, Mid-River wardēn",
+    "BOTTOM":  "Welle pushen, Drachen-Ward setzen",
+}
+_LANE_ADVICE_MID: dict[str, str] = {
+    "TOP":     "Welle pushen, Plates + Herald-Spawn vorbereiten",
+    "MIDDLE":  "Welle pushen, andere Lanes pingen, Mid-Roam vorbereiten",
+    "BOTTOM":  "Welle pushen, Drache/Plates kontestieren",
+}
+LANE_PHASE_EARLY_END_S: float = 480.0   # 8:00 — early lane → mid lane
+
+
+def _lane_mia_advice(active_position: str, game_time: float) -> str:
+    table = _LANE_ADVICE_EARLY if game_time <= LANE_PHASE_EARLY_END_S else _LANE_ADVICE_MID
+    return table.get(active_position, "Welle pushen + Vision setzen")
+
+
+def rule_lane_opponent_mia(snapshot: "LcdaSnapshot") -> Recommendation | None:
+    """Surface "your direct lane opponent is missing" with phase-aware advice
+    (Charter B2 — lane-side companion to ``rule_gank_risk``).
+
+    Two tiers:
+    * info — 30 s no CS while alive: heads-up, push the wave, scout
+    * warn — 60 s no CS: they're committed elsewhere (gank, drake setup,
+             roam, tower swap) — push hard + ping other lanes
+
+    Skipped while opponent is dead (we already know exactly where they
+    are: at base on a respawn timer). Skipped for JUNGLE / UTILITY
+    active players — those positions don't have a single CS-tracked
+    opponent.
+    """
+    alert = getattr(snapshot, "lane_opponent_alert", None)
+    if alert is None:
+        return None
+    name = getattr(alert, "opponent_name", "Gegner")
+    mia = int(getattr(alert, "seconds_mia", 0))
+    severity = str(getattr(alert, "severity", "info"))
+    pos = str(getattr(alert, "active_position", ""))
+    game_time = float(getattr(snapshot, "game_time", 0.0) or 0.0)
+    advice = _lane_mia_advice(pos, game_time)
+
+    if severity == "warn":
+        text = f"{name} {mia}s weg — gankt anderswo. {advice}"
+        risk, ttl_s, confidence = "MEDIUM", 25.0, 0.78
+    else:
+        text = f"{name} weg ({mia}s) — {advice}"
+        risk, ttl_s, confidence = "LOW", 18.0, 0.70
+
+    return Recommendation(
+        text=text,
+        severity=severity,
+        category="tempo",
+        confidence=confidence,
+        risk=risk,
+        ttl_s=ttl_s,
+        kind="lane_mia",
+        reasons=(
+            f"{name} hat seit {mia}s kein CS gemacht",
+            f"Position: {pos}",
+            "Welle pushen = ihr CS leakt + du tempogewinnst",
+        ),
+    )
+
+
 def rule_gank_risk(snapshot: "LcdaSnapshot") -> Recommendation | None:
     """Warn when the enemy jungler has been unaccounted-for long enough
     to be approaching a lane undetected (Charter B2).
@@ -3397,6 +3468,8 @@ ALL_RULES: tuple[Callable[["LcdaSnapshot"], Recommendation | None], ...] = (
     rule_enemy_item_spike,
     # B2 gank window — enemy jungler MIA during laning phase.
     rule_gank_risk,
+    # B2 lane-opponent MIA — your direct lane opponent absent from CS.
+    rule_lane_opponent_mia,
     # B4 tilt detection — active player's death pattern coaching.
     rule_tilt_detection,
     # B5 recall window — HP/mana/gold-driven back timing.
@@ -3545,6 +3618,7 @@ def _suppress_dominated(recs: list[Recommendation]) -> list[Recommendation]:
             "recall_resource", # 4v0 push moment — back can wait until after the play
             "recall_gold",     # ditto — don't recall through an ace window
             "mana_check",      # mana doesn't matter when team is doing the work
+            "lane_mia",        # team-push beats laning push; group, don't side-lane
         }
         recs = [r for r in recs if r.kind not in _ace_drop]
         kinds = {r.kind for r in recs}
@@ -3570,6 +3644,7 @@ def _suppress_dominated(recs: list[Recommendation]) -> list[Recommendation]:
             "power_spike",       # "fight now!" irrelevant when team is short-handed
             "cs_deficit",        # farming advice irrelevant while team is down
             "lane_level_adv",    # lane trades irrelevant when short-handed
+            "lane_mia",          # don't tell a short-handed player to side-push alone
         }
         return [r for r in recs if r.kind not in _offensive]
 
@@ -3609,6 +3684,7 @@ def _suppress_dominated(recs: list[Recommendation]) -> list[Recommendation]:
             "cs_deficit",        # farming advice irrelevant while defending base
             "lane_level_adv",    # lane-trade window irrelevant while base is open
             "gank_risk",         # laning gank warning irrelevant when base is open
+            "lane_mia",          # don't tell defenders to chase tempo in lane
             # NOTE: ally_inhib_respawning intentionally coexists with ally_inhib_down:
             # "defend now + inhib back in 30s" are complementary, not conflicting.
         }
@@ -3647,6 +3723,7 @@ def _suppress_dominated(recs: list[Recommendation]) -> list[Recommendation]:
             "fight", "numbers_adv", "gold_lead", "kill_lead",
             "power_spike",       # ult-up "play now" contradicts "do nothing"
             "lane_level_adv",    # lane-trade window irrelevant while spiraling
+            "lane_mia",          # don't tell a feeding player to side-push alone
             "flash_down", "tp_down", "combat_spell_down",
             "jungler_down", "dragon_soul",
         }
