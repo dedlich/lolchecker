@@ -27,7 +27,7 @@ from pathlib import Path
 # is the ratchet — any clean-up PR that removes ignores must update
 # this file in the same commit so the new (lower) ceiling becomes the
 # floor for future PRs.
-_TYPE_IGNORE_TOTAL = 95
+_TYPE_IGNORE_TOTAL = 94
 _NOQA_TOTAL = 87
 
 _TYPE_IGNORE_RE = re.compile(r"#\s*type:\s*ignore", re.IGNORECASE)

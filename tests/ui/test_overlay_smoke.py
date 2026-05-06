@@ -74,7 +74,13 @@ def test_update_view_with_session_does_not_crash() -> None:
 
 
 def test_update_view_renders_pick_rows(qtbot) -> None:  # type: ignore[no-untyped-def]
-    """picks_counter / picks_synergy populate the two-column pick panel."""
+    """picks_counter / picks_synergy populate LiveCompanion's PicksColumn.
+
+    The legacy ``_picks_row`` panel was retired in v1.10.81 — pick
+    suggestions now live in ``LiveCompanionView._picks_column``. The
+    empty-state label hides as soon as there's at least one suggestion,
+    which is the property we assert here without poking column internals.
+    """
     overlay = MainOverlay()
     qtbot.addWidget(overlay)
     view = SessionView(
@@ -97,24 +103,26 @@ def test_update_view_renders_pick_rows(qtbot) -> None:  # type: ignore[no-untype
         ],
     )
     overlay.update_view(view)
-    # Panel is not hidden when there are counter/synergy picks.
-    assert not overlay._picks_row.isHidden()
+    picks = overlay._live_companion._picks_column
+    # Empty-state label hides once there's at least one pick.
+    assert picks._empty_state.isHidden()
 
 
 def test_update_view_clears_picks_on_empty(qtbot) -> None:  # type: ignore[no-untyped-def]
     overlay = MainOverlay()
     qtbot.addWidget(overlay)
-    # First with picks
     overlay.update_view(
         SessionView(
             picks_counter=[PickSuggestion(champion_key="X", score=50, tier="A", reasons=[])],
         )
     )
-    assert not overlay._picks_row.isHidden()
-    # Then empty — panel hides
+    picks = overlay._live_companion._picks_column
+    assert picks._empty_state.isHidden()
     overlay.update_view(SessionView())
-    qtbot.wait(10)  # let deleteLater process
-    assert overlay._picks_row.isHidden()
+    qtbot.wait(10)
+    # ``isHidden`` reflects explicit hide()/show() calls regardless of
+    # parent visibility, which is what we actually want to assert here.
+    assert not picks._empty_state.isHidden()
 
 
 def test_hotkeys_are_registered(qtbot) -> None:  # type: ignore[no-untyped-def]

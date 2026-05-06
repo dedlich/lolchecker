@@ -38,7 +38,7 @@ from __future__ import annotations
 from collections.abc import Callable, Sequence
 from typing import TYPE_CHECKING
 
-from PyQt6.QtCore import Qt, QSize
+from PyQt6.QtCore import Qt, QSize, pyqtSignal
 from PyQt6.QtGui import QPixmap
 from PyQt6.QtWidgets import (
     QFrame,
@@ -50,6 +50,7 @@ from PyQt6.QtWidgets import (
 )
 
 from . import styles
+from .live_companion_sections import PicksColumn
 
 if TYPE_CHECKING:
     from ..data.models import ChampSelectMember
@@ -902,6 +903,8 @@ class LiveCompanionView(QWidget):
     every SessionView refresh.
     """
 
+    pick_hover_requested = pyqtSignal(str)
+
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
@@ -917,19 +920,31 @@ class LiveCompanionView(QWidget):
         self._summary_row = _SummaryRow()
         outer.addWidget(self._summary_row)
 
-        # Body — three-column layout matching the screenshot: build card /
-        # runes+items / game plan. Each column is its own panel so they
-        # can be hidden / styled independently.
+        # Body — three-column layout matching the screenshot: build card +
+        # picks suggestions / runes+items / game plan. Each column is its
+        # own panel so they can be hidden / styled independently.
         body = QWidget()
         body_layout = QHBoxLayout(body)
         body_layout.setContentsMargins(0, 0, 0, 0)
         body_layout.setSpacing(styles.SPACING_GRID)
 
+        # Left column: build card stacked on top of pick suggestions.
+        # Both share the same width slot so the layout stays aligned.
+        left_col = QWidget()
+        left_layout = QVBoxLayout(left_col)
+        left_layout.setContentsMargins(0, 0, 0, 0)
+        left_layout.setSpacing(styles.SPACING_GRID)
         self._build_card = _BuildCard()
+        left_layout.addWidget(self._build_card)
+        self._picks_column = PicksColumn()
+        self._picks_column.pick_hover_requested.connect(self.pick_hover_requested.emit)
+        left_layout.addWidget(self._picks_column)
+        left_layout.addStretch(1)
+
         self._items_panel = _ItemsPanel()
         self._game_plan_panel = _GamePlanPanel()
 
-        body_layout.addWidget(self._build_card, 2)
+        body_layout.addWidget(left_col, 2)
         body_layout.addWidget(self._items_panel, 3)
         body_layout.addWidget(self._game_plan_panel, 2)
         outer.addWidget(body, 1)
@@ -980,6 +995,7 @@ class LiveCompanionView(QWidget):
             icon_lookup=icon_lookup,
         )
         self._build_card.update_card(view, icon_lookup)
+        self._picks_column.update_picks(view, icon_lookup)
         self._items_panel.update_panel(
             view, rune_icons or {}, item_icons or {},
         )

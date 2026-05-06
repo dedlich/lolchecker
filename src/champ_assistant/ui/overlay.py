@@ -25,7 +25,6 @@ from PyQt6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QMainWindow,
-    QPushButton,
     QVBoxLayout,
     QWidget,
 )
@@ -42,20 +41,6 @@ from .summoner_tracker import SummonerTrackerPanel
 from .title_bar import TitleBar
 from .view_model import SessionView
 from .widgets import ConnectionStatusBar
-
-
-class _ClickableFrame(QFrame):
-    """QFrame that calls ``on_click`` on a left mouse press."""
-
-    def __init__(self, on_click, parent=None) -> None:  # type: ignore[no-untyped-def]
-        super().__init__(parent)
-        self._on_click = on_click
-        self.setCursor(Qt.CursorShape.PointingHandCursor)
-
-    def mousePressEvent(self, event: QMouseEvent | None) -> None:  # type: ignore[override]
-        if event is not None and event.button() == Qt.MouseButton.LeftButton:
-            self._on_click()
-        super().mousePressEvent(event)
 
 
 class MainOverlay(QMainWindow):
@@ -183,88 +168,16 @@ class MainOverlay(QMainWindow):
         self._ban_panel.ban_hover_requested.connect(self.ban_hover_requested.emit)
         body_layout.addWidget(self._ban_panel)
 
-        # Compact pick panel (two-column: counter picks | synergy picks)
-        self._picks_row = QFrame()
-        self._picks_row.setProperty("panel", True)
-        picks_outer = QVBoxLayout(self._picks_row)
-        picks_outer.setContentsMargins(10, 8, 10, 8)
-        picks_outer.setSpacing(6)
+        # Pick suggestions used to live here as ``_picks_row`` — now in
+        # LiveCompanion's left column (PicksColumn). Bubble its click
+        # signal up so existing pick_hover_requested consumers keep working.
+        self._live_companion.pick_hover_requested.connect(self.pick_hover_requested.emit)
 
-        picks_header = QHBoxLayout()
-        picks_header.setSpacing(styles.SPACING_GRID)
-        counter_title = QLabel("Counter Picks")
-        counter_title.setObjectName("sectionTitle")
-        synergy_title = QLabel("Synergy Picks")
-        synergy_title.setObjectName("sectionTitle")
-        picks_header.addWidget(counter_title, 1)
-        picks_header.addWidget(synergy_title, 1)
-        picks_outer.addLayout(picks_header)
-
-        picks_cols = QHBoxLayout()
-        picks_cols.setSpacing(styles.SPACING_GRID)
-        self._counter_col = QVBoxLayout()
-        self._counter_col.setSpacing(3)
-        self._synergy_col = QVBoxLayout()
-        self._synergy_col.setSpacing(3)
-        picks_cols.addLayout(self._counter_col, 1)
-        picks_cols.addLayout(self._synergy_col, 1)
-        picks_outer.addLayout(picks_cols)
-
-        self._picks_no_data = QLabel("Pick suggestions appear once enemies start locking in.")
-        self._picks_no_data.setStyleSheet(
-            f"color: {styles.TEXT_MUTED}; font-size: {styles.FS_LABEL}px;"
-            f" padding: 8px 4px; font-style: italic;"
-        )
-        self._picks_no_data.setWordWrap(True)
-        picks_outer.addWidget(self._picks_no_data)
-
-        body_layout.addWidget(self._picks_row)
-
-        # My champion build panel — appears after the local player locks their pick.
-        self._my_build_panel = QFrame()
-        self._my_build_panel.setProperty("panel", True)
-        my_build_outer = QVBoxLayout(self._my_build_panel)
-        my_build_outer.setContentsMargins(10, 8, 10, 8)
-        my_build_outer.setSpacing(6)
-
-        my_build_header = QHBoxLayout()
-        my_build_header.setSpacing(styles.SPACING_GRID)
-        self._my_build_champ_icon = QLabel()
-        self._my_build_champ_icon.setFixedSize(28, 28)
-        self._my_build_champ_icon.setScaledContents(True)
-        self._my_build_champ_icon.setStyleSheet(
-            f"background-color: {styles.BG_PRIMARY};"
-            f" border-radius: {styles.RADIUS_SMALL}px;"
-            f" border: 1px solid {styles.BORDER_FAINT};"
-        )
-        my_build_header.addWidget(self._my_build_champ_icon)
-        self._my_build_champ_label = QLabel("Your Build")
-        self._my_build_champ_label.setObjectName("sectionTitle")
-        my_build_header.addWidget(self._my_build_champ_label, 1)
-
-        self._my_build_apply_btn = QPushButton("Apply")
-        self._my_build_apply_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self._my_build_apply_btn.setStyleSheet(
-            f"QPushButton {{ background-color: {styles.ACCENT}; color: #fff;"
-            f" border: none; border-radius: {styles.RADIUS_SMALL}px;"
-            f" font-size: {styles.FS_CAPTION}px; font-weight: 700;"
-            f" padding: 2px 10px; }}"
-            f"QPushButton:hover {{ background-color: {styles.ACCENT_BRIGHT}; }}"
-        )
-        self._my_build_apply_btn.clicked.connect(self._on_apply_build_clicked)
-        self._my_build_apply_btn.hide()
-        my_build_header.addWidget(self._my_build_apply_btn)
-        my_build_outer.addLayout(my_build_header)
-
-        self._my_build_rows = QVBoxLayout()
-        self._my_build_rows.setSpacing(2)
-        my_build_outer.addLayout(self._my_build_rows)
-
-        body_layout.addWidget(self._my_build_panel)
-        self._my_build_panel.hide()
-
-        # Pending build data for the Apply button handler.
-        self._my_build_pending: tuple[str, list[str], list[str]] | None = None
+        # The legacy "Your Build" visual panel is fully duplicated by
+        # LiveCompanion's center column (build header, runes row, items
+        # row). The auto-apply trigger lives on in ``_update_my_build``
+        # so locking-in a champion still pushes runes + items to LCU.
+        self._auto_applied_for_champ: str | None = None
 
         self._power_spike_panel = PowerSpikePanel()
         body_layout.addWidget(self._power_spike_panel)
@@ -366,7 +279,6 @@ class MainOverlay(QMainWindow):
         self._last_view = view
         self._status_bar.set_state(view.connection_state)
         self._update_enemies(view)
-        self._update_picks(view)
         self._update_my_build(view)
         self._ban_panel.update_suggestions_categorized(
             view.ban_suggestions_lane,
@@ -421,182 +333,23 @@ class MainOverlay(QMainWindow):
             else:
                 row.clear()
 
-    def _update_picks(self, view: SessionView) -> None:
-        counter = view.picks_counter
-        synergy = view.picks_synergy
-
-        for col in (self._counter_col, self._synergy_col):
-            while col.count():
-                item = col.takeAt(0)
-                w = item.widget() if item is not None else None
-                if w is not None:
-                    w.deleteLater()
-
-        if not counter and not synergy:
-            self._picks_no_data.show()
-            self._picks_row.hide()
-            return
-
-        self._picks_row.show()
-        self._picks_no_data.hide()
-
-        for s in counter[:5]:
-            row = self._make_pick_row(s)
-            self._counter_col.addWidget(row)
-
-        for s in synergy[:5]:
-            row = self._make_pick_row(s)
-            self._synergy_col.addWidget(row)
-
-    def _make_pick_row(self, s: "PickSuggestion") -> QFrame:
-        from PyQt6.QtWidgets import QFrame, QHBoxLayout, QLabel, QVBoxLayout
-        row = _ClickableFrame(lambda: self.pick_hover_requested.emit(s.champion_key))
-        row.setProperty("role", "row")
-        row.setStyleSheet(
-            f"QFrame[role='row'] {{ background-color: {styles.BG_TERTIARY};"
-            f" border-radius: {styles.RADIUS}px;"
-            f" border-left: 3px solid {styles.ACCENT}; }}"
-            f" QFrame[role='row']:hover {{ background-color: {styles.BG_INTERACT}; }}"
-        )
-        h = QHBoxLayout(row)
-        h.setContentsMargins(8, 4, 8, 4)
-        h.setSpacing(6)
-
-        icon_label = QLabel()
-        icon_label.setFixedSize(24, 24)
-        icon_label.setScaledContents(True)
-        icon_label.setStyleSheet(
-            f"background-color: {styles.BG_PRIMARY};"
-            f" border-radius: {styles.RADIUS_SMALL}px;"
-        )
-        pix = self._icon_for_key(s.champion_key)
-        if pix is not None and not pix.isNull():
-            icon_label.setPixmap(pix)
-        h.addWidget(icon_label)
-
-        text_col = QVBoxLayout()
-        text_col.setSpacing(1)
-        text_col.setContentsMargins(0, 0, 0, 0)
-        name_lbl = QLabel(s.champion_key)
-        name_lbl.setStyleSheet(
-            f"font-weight: 700; font-size: {styles.FS_BODY}px; color: {styles.TEXT_PRIMARY};"
-        )
-        text_col.addWidget(name_lbl)
-        if s.reasons:
-            reason_lbl = QLabel(s.reasons[0])
-            reason_lbl.setStyleSheet(
-                f"color: {styles.TEXT_MUTED}; font-size: {styles.FS_CAPTION}px;"
-            )
-            text_col.addWidget(reason_lbl)
-        h.addLayout(text_col, 1)
-
-        score_lbl = QLabel(f"{s.score:.0f}")
-        score_lbl.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-        score_lbl.setStyleSheet(
-            f"color: {styles.ACCENT}; font-family: {styles.FONT_MONO};"
-            f" font-size: {styles.FS_BODY}px; font-weight: 700;"
-        )
-        score_lbl.setFixedWidth(36)
-        h.addWidget(score_lbl)
-        return row
-
     def _update_my_build(self, view: SessionView) -> None:
-        """Render the local player's build panel after they lock their champion."""
-        while self._my_build_rows.count():
-            item = self._my_build_rows.takeAt(0)
-            w = item.widget() if item is not None else None
-            if w is not None:
-                w.deleteLater()
-
+        """Auto-apply runes + static item set the moment the user locks
+        their champion in champ-select. The visual rendering used to live
+        here too — that's now LiveCompanion's job; this method is
+        the auto-apply trigger only.
+        """
         build = view.my_champion_build
         champ_key = view.my_champion_key
         if not champ_key or build is None:
-            self._my_build_panel.hide()
-            self._my_build_pending = None
-            self._my_build_apply_btn.hide()
-            # Reset auto-apply tracker so the next champion gets a fresh push.
             self._auto_applied_for_champ = None
             return
-
-        self._my_build_pending = (champ_key, list(build.runes), list(build.items))
-        self._my_build_apply_btn.show()
-        self._my_build_panel.show()
-        # Auto-apply once per champion lock — pushes runes + static item set
-        # during champ select so League's in-game shop loads with our build
-        # already in place. The user can still click Apply Build to re-push
-        # if they hover-swap.
-        if getattr(self, "_auto_applied_for_champ", None) != champ_key:
-            self._auto_applied_for_champ = champ_key
-            self.apply_build_requested.emit(
-                champ_key, list(build.runes), list(build.items),
-            )
-
-        # Update header icon + champion name
-        role_label = (view.my_champion_role or "").replace("BOT", "ADC")
-        header_text = f"{champ_key}" + (f"  ·  {role_label}" if role_label else "")
-        self._my_build_champ_label.setText(header_text)
-        pix = self._icon_for_key(champ_key)
-        if pix is not None and not pix.isNull():
-            self._my_build_champ_icon.setPixmap(pix)
-
-        # Summoner spells row
-        if build.summoners:
-            self._my_build_rows.addWidget(
-                self._build_info_row("Spells", "  ·  ".join(build.summoners), styles.SUCCESS)
-            )
-
-        # Skill order row
-        if build.skill_order:
-            order_text = " > ".join(build.skill_order)
-            self._my_build_rows.addWidget(
-                self._build_info_row("Skill Max", order_text, styles.ACCENT)
-            )
-
-        # Runes row
-        if build.runes:
-            keystone = build.runes[0]
-            secondary = "  ·  ".join(build.runes[1:4]) if len(build.runes) > 1 else ""
-            self._my_build_rows.addWidget(
-                self._build_info_row("Keystone", keystone, styles.TIER_S)
-            )
-            if secondary:
-                self._my_build_rows.addWidget(
-                    self._build_info_row("Runes", secondary, styles.TEXT_SECONDARY)
-                )
-
-        # Items row
-        if build.items:
-            self._my_build_rows.addWidget(
-                self._build_info_row("Items", "  ·  ".join(build.items[:4]), styles.WARNING)
-            )
-
-    def _on_apply_build_clicked(self) -> None:
-        if self._my_build_pending is None:
+        if self._auto_applied_for_champ == champ_key:
             return
-        champ_key, runes, items = self._my_build_pending
-        self.apply_build_requested.emit(champ_key, runes, items)
-
-    def _build_info_row(self, label: str, value: str, value_color: str) -> QFrame:
-        from PyQt6.QtWidgets import QFrame, QHBoxLayout, QLabel
-        row = QFrame()
-        h = QHBoxLayout(row)
-        h.setContentsMargins(0, 1, 0, 1)
-        h.setSpacing(6)
-
-        lbl = QLabel(label)
-        lbl.setFixedWidth(60)
-        lbl.setStyleSheet(
-            f"color: {styles.TEXT_MUTED}; font-size: {styles.FS_CAPTION}px; font-weight: 600;"
+        self._auto_applied_for_champ = champ_key
+        self.apply_build_requested.emit(
+            champ_key, list(build.runes), list(build.items),
         )
-        h.addWidget(lbl)
-
-        val = QLabel(value)
-        val.setStyleSheet(
-            f"color: {value_color}; font-size: {styles.FS_CAPTION}px;"
-        )
-        val.setWordWrap(True)
-        h.addWidget(val, 1)
-        return row
 
     # -- in-game panels visibility ---------------------------------------
 
@@ -719,7 +472,6 @@ class MainOverlay(QMainWindow):
         # for champ-select; here we just hide them entirely in-game.
         if in_game and not in_champ_select:
             self._ban_panel.setVisible(False)
-            self._picks_row.setVisible(False)
 
     # -- champ-select state machine --------------------------------------
 
@@ -749,7 +501,6 @@ class MainOverlay(QMainWindow):
 
         if subphase == "in_game":
             self._ban_panel.setVisible(False)
-            self._picks_row.setVisible(False)
             self._live_companion.setVisible(False)
             self._set_width(self._W_INGAME)
             return
@@ -766,25 +517,18 @@ class MainOverlay(QMainWindow):
         self._set_width(self._W_CHAMP_SELECT)
 
         if subphase == "ban":
-            # Ban-step focus: bans front, picks suppressed.
+            # Ban-step focus: bans front (picks live in LiveCompanion).
             self._ban_panel.setVisible(True)
-            self._picks_row.setVisible(False)
         elif subphase in ("pick", "finalization", "planning"):
-            # Pick/finalization: counters + suggestions take over,
-            # bans collapse (history, not actionable anymore).
+            # Pick/finalization: bans collapse (history, not actionable
+            # anymore). LiveCompanion's PicksColumn carries suggestions.
             self._ban_panel.setVisible(False)
-            self._picks_row.setVisible(True)
         elif subphase == "loading":
-            # Loading screen → lobby_stats floating widget is the
-            # primary surface. Hide both ban + pick panels in the
-            # main overlay so it doesn't compete.
+            # Loading screen — both ban + pick panels hide.
             self._ban_panel.setVisible(False)
-            self._picks_row.setVisible(False)
         else:
-            # Unknown phase — leave everything visible as a safe
-            # fallback rather than silently hiding.
+            # Unknown phase — leave bans visible as a safe fallback.
             self._ban_panel.setVisible(True)
-            self._picks_row.setVisible(True)
 
     def _set_width(self, target_w: int) -> None:
         """Resize the window to ``target_w`` while respecting the user's
