@@ -3158,6 +3158,32 @@ def reset_bounty_hysteresis() -> None:
     _BOUNTY_HYSTERESIS.reset()
 
 
+# ─── Enemy bounty hysteresis ──────────────────────────────────────────────────
+# Per-enemy version of the same pattern: each enemy carrier (Jinx, Yasuo,
+# whoever has the streak) gets their own "highest tier already announced".
+# Fired tier resets on their death (deaths counter increments).
+
+class _EnemyBountyHysteresis:
+    """Per-enemy "highest bounty tier announced this life" + death tracker."""
+    __slots__ = ("last_fired_tier", "last_seen_deaths")
+
+    def __init__(self) -> None:
+        self.last_fired_tier: dict[str, int] = {}
+        self.last_seen_deaths: dict[str, int] = {}
+
+    def reset(self) -> None:
+        self.last_fired_tier.clear()
+        self.last_seen_deaths.clear()
+
+
+_ENEMY_BOUNTY_HYSTERESIS = _EnemyBountyHysteresis()
+
+
+def reset_enemy_bounty_hysteresis() -> None:
+    """Test-only: drop all per-enemy fired-tier state."""
+    _ENEMY_BOUNTY_HYSTERESIS.reset()
+
+
 def rule_recall_check(snapshot: "LcdaSnapshot") -> Recommendation | None:
     """Recall-window coaching driven by HP %, mana %, and gold (Charter B5).
 
@@ -3453,6 +3479,111 @@ def rule_active_bounty(snapshot: "LcdaSnapshot") -> Recommendation | None:
             f"Killstreak: {streak} (kein Tod seit Streak-Start)",
             "Riot Bounty-System: ab 3 Kills extra Gold beim Töten",
             "Mehr Vision + weniger Solo = Streak halten = Spiel gewinnen",
+        ),
+    )
+
+
+def rule_enemy_bounty(snapshot: "LcdaSnapshot") -> Recommendation | None:
+    """Surface "ENEMY X has a bounty — focus them" once per escalation tier
+    per enemy life (Charter B5 — focus-call coaching).
+
+    Mirror image of ``rule_active_bounty`` from the offensive side. Pros call
+    out a fed enemy in TS/comms before every fight: "Jinx is shutdown,
+    we kill her first". Solo queue picks the closest target, not the
+    most valuable one. The +150g/+300g/+500g shutdown bounties make the
+    fed enemy worth 2-3 normal kills; missing this is the single
+    biggest mid-game throw.
+
+    Per-enemy hysteresis: each enemy's fired_tier resets on their death,
+    so a respawning carrier earns a fresh announcement when they get
+    back on their next streak.
+
+    Tier picking: scan all alive enemies, find the one with the highest
+    streak whose tier exceeds their last announced tier, and announce
+    for that one. If multiple enemies are tied, pick by champion-name
+    sort order (deterministic).
+    """
+    enemies = list(getattr(snapshot, "enemies", []) or [])
+    if not enemies:
+        return None
+    events = list(getattr(snapshot, "raw_events", []) or [])
+    h = _ENEMY_BOUNTY_HYSTERESIS
+
+    # Phase 1 — update per-enemy death state. Any death wipes their
+    # bounty so we re-arm every tier for them.
+    for e in enemies:
+        name = str(getattr(e, "champion_name", "") or "")
+        if not name:
+            continue
+        deaths = int(getattr(e, "deaths", 0) or 0)
+        prev = h.last_seen_deaths.get(name, 0)
+        if deaths > prev:
+            h.last_fired_tier[name] = 0
+            h.last_seen_deaths[name] = deaths
+        elif name not in h.last_seen_deaths:
+            h.last_seen_deaths[name] = deaths
+
+    # Phase 2 — pick the most-actionable enemy: highest streak among
+    # those whose current tier is unannounced.
+    best: tuple[int, int, str, object] | None = None  # (tier, streak, name, player)
+    for e in enemies:
+        if not getattr(e, "is_alive", True):
+            continue
+        name = str(getattr(e, "champion_name", "") or "")
+        if not name:
+            continue
+        streak = _kill_streak(e, events)
+        if streak < BOUNTY_TIER_INFO_S:
+            continue
+        if streak >= BOUNTY_TIER_GODLIKE_S:
+            tier = BOUNTY_TIER_GODLIKE_S
+        elif streak >= BOUNTY_TIER_WARN_S:
+            tier = BOUNTY_TIER_WARN_S
+        else:
+            tier = BOUNTY_TIER_INFO_S
+        if tier <= h.last_fired_tier.get(name, 0):
+            continue
+        # Tie-break by streak then alphabetical for determinism.
+        candidate = (tier, streak, name, e)
+        if best is None or candidate > best:
+            best = candidate
+
+    if best is None:
+        return None
+    tier, streak, name, _ = best
+    h.last_fired_tier[name] = tier
+
+    if tier == BOUNTY_TIER_GODLIKE_S:
+        text = (
+            f"{name} GODLIKE ({streak}-Streak, +500g Shutdown) — "
+            "Hunten oder Map abgeben. Pick mit Team setzen."
+        )
+        severity, ttl_s, confidence, risk = "warn", 35.0, 0.92, "MEDIUM"
+    elif tier == BOUNTY_TIER_WARN_S:
+        text = (
+            f"{name} UNSTOPPABLE ({streak}-Streak, +300g Shutdown) — "
+            "Pick auf {name} setzen, Jungler pingen, CC bereit."
+        ).replace("{name}", name)
+        severity, ttl_s, confidence, risk = "warn", 30.0, 0.86, "MEDIUM"
+    else:
+        text = (
+            f"{name} Killing Spree ({streak}-Streak, +150g Shutdown) — "
+            f"Fokus in Fights, Vision auf ihrer Seite."
+        )
+        severity, ttl_s, confidence, risk = "info", 25.0, 0.78, "LOW"
+
+    return Recommendation(
+        text=text,
+        severity=severity,
+        category="tempo",
+        confidence=confidence,
+        risk=risk,
+        ttl_s=ttl_s,
+        kind="enemy_bounty",
+        reasons=(
+            f"{name} hat {streak} Kills ohne Tod",
+            "Riot Bounty: ab 3 Kills extra Gold beim Töten",
+            "Shutdown = doppelter Kill-Wert + Tempo-Reset",
         ),
     )
 
@@ -3809,6 +3940,8 @@ ALL_RULES: tuple[Callable[["LcdaSnapshot"], Recommendation | None], ...] = (
     rule_unspent_skill_points,
     # B5 bounty awareness — proactive "you have a target on you" coaching.
     rule_active_bounty,
+    # B5 enemy bounty — proactive "kill the fed carrier" focus call.
+    rule_enemy_bounty,
     # B4 tilt detection — active player's death pattern coaching.
     rule_tilt_detection,
     # B5 recall window — HP/mana/gold-driven back timing.
@@ -3961,6 +4094,7 @@ def _suppress_dominated(recs: list[Recommendation]) -> list[Recommendation]:
             "objective_setup", # ace push moment dominates objective prep
             "skill_point_unspent",  # micro-nag — irrelevant during ace push
             "active_bounty",        # bounty doesn't matter when team is winning the play
+            "enemy_bounty",         # 5v0 push moment — focus call is implicit
         }
         recs = [r for r in recs if r.kind not in _ace_drop]
         kinds = {r.kind for r in recs}
@@ -3990,6 +4124,7 @@ def _suppress_dominated(recs: list[Recommendation]) -> list[Recommendation]:
             "objective_setup",   # don't push objectives short-handed — wait for ally
             "skill_point_unspent", # micro-nag drowns out the safety call
             "active_bounty",       # numbers_disadv is the more-urgent safety call
+            "enemy_bounty",        # short-handed teams don't pick fights — focus is moot
         }
         return [r for r in recs if r.kind not in _offensive]
 
@@ -4033,6 +4168,7 @@ def _suppress_dominated(recs: list[Recommendation]) -> list[Recommendation]:
             "objective_setup",   # ditto — defending base trumps objective prep
             "skill_point_unspent", # micro-nag drowns out the defense call
             "active_bounty",       # bounty coaching irrelevant when defending base
+            "enemy_bounty",        # focus call irrelevant — they're inside your base
             # NOTE: ally_inhib_respawning intentionally coexists with ally_inhib_down:
             # "defend now + inhib back in 30s" are complementary, not conflicting.
         }
@@ -4058,6 +4194,7 @@ def _suppress_dominated(recs: list[Recommendation]) -> list[Recommendation]:
             "baron_buff_expiring", "elder_buff_expiring",
             "dragon_soul", "jungler_down",
             "objective_setup",  # don't prep objectives — they'll execute you
+            "enemy_bounty",     # focus call moot when fighting equals death
         }
         recs = [r for r in recs if r.kind not in _fight_kinds]
 
@@ -4075,6 +4212,7 @@ def _suppress_dominated(recs: list[Recommendation]) -> list[Recommendation]:
             "lane_mia",          # don't tell a feeding player to side-push alone
             "objective_setup",   # objective prep irrelevant when player is feeding
             "skill_point_unspent",  # micro-nag drowns out "do nothing" message
+            "enemy_bounty",      # focus call irrelevant — feeding player should not fight
             "flash_down", "tp_down", "combat_spell_down",
             "jungler_down", "dragon_soul",
         }
