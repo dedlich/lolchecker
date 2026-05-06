@@ -305,6 +305,17 @@ class Recommendation:
 # Helpers
 # --------------------------------------------------------------------------
 
+def _active_player(snapshot: "LcdaSnapshot") -> object | None:
+    """Return the active player's LivePlayer record from the allies list."""
+    name = getattr(snapshot, "active_summoner", "") or ""
+    if not name:
+        return None
+    for p in (getattr(snapshot, "allies", []) or []):
+        if getattr(p, "summoner_name", "") == name:
+            return p
+    return None
+
+
 def _team_gold_diff(snapshot: "LcdaSnapshot") -> int:
     """Allies items_value minus enemies items_value. Positive when
     we're ahead. None aggregates collapse to 0 — be defensive."""
