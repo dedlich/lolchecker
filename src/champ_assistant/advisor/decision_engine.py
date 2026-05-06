@@ -3264,6 +3264,29 @@ def reset_plate_window_hysteresis() -> None:
     _PLATE_WINDOW_HYSTERESIS.reset()
 
 
+# ─── First-blood hysteresis ──────────────────────────────────────────────────
+# A game has exactly one First Blood. The rule fires once when it's detected,
+# then stays silent for the rest of the game.
+
+class _FirstBloodHysteresis:
+    """Tracks whether the FB announcement has fired this game."""
+    __slots__ = ("fired",)
+
+    def __init__(self) -> None:
+        self.fired = False
+
+    def reset(self) -> None:
+        self.fired = False
+
+
+_FIRST_BLOOD_HYSTERESIS = _FirstBloodHysteresis()
+
+
+def reset_first_blood_hysteresis() -> None:
+    """Test-only: re-arm the FB announcement."""
+    _FIRST_BLOOD_HYSTERESIS.reset()
+
+
 def rule_recall_check(snapshot: "LcdaSnapshot") -> Recommendation | None:
     """Recall-window coaching driven by HP %, mana %, and gold (Charter B5).
 
@@ -3959,6 +3982,106 @@ def rule_plate_window(snapshot: "LcdaSnapshot") -> Recommendation | None:
     )
 
 
+def _team_id_set(players: list) -> set[str]:
+    """Build the set of identifiers for a team (summoner_name + champion_name
+    of every member). Used by rule_first_blood to decide which side killed."""
+    ids: set[str] = set()
+    for p in players:
+        sn = str(getattr(p, "summoner_name", "") or "")
+        cn = str(getattr(p, "champion_name", "") or "")
+        if sn:
+            ids.add(sn)
+        if cn:
+            ids.add(cn)
+    return ids
+
+
+def rule_first_blood(snapshot: "LcdaSnapshot") -> Recommendation | None:
+    """First-Blood awareness — fires once when the first ChampionKill is
+    detected (Charter B5 — early-game momentum coaching).
+
+    First Blood gives 300g base + 100g shutdown = 400g to the killer.
+    More importantly, it sets the lane-priority dynamic for the next
+    60-90 s: the side that won FB has the wave-control / plate-pop
+    initiative; the side that lost FB needs to freeze + recover safely.
+
+    Three branches by killer identity:
+      * Active player got FB → "+400g First Blood — DU hast es!"
+        (info, gives a momentum nudge to press the lead)
+      * An ally got FB → "+400g Team — Wellen mitnehmen, Tempo nutzen"
+        (info, signals to follow up the team's advantage)
+      * An enemy got FB → "Gegner First Blood — defensiv 90s, Welle freezen"
+        (warn, switches the player into safe-play mode)
+
+    Single-fire hysteresis — there's exactly one First Blood per game.
+    """
+    h = _FIRST_BLOOD_HYSTERESIS
+    if h.fired:
+        return None
+
+    events = list(getattr(snapshot, "raw_events", []) or [])
+    # First ChampionKill chronologically — events typically arrive in
+    # order, but sort defensively in case LCDA returns them shuffled.
+    fb_event = None
+    for evt in sorted(events, key=lambda e: float(e.get("EventTime", 0) or 0)):
+        if evt.get("EventName") == "ChampionKill":
+            fb_event = evt
+            break
+    if fb_event is None:
+        return None
+    killer = str(fb_event.get("KillerName") or "")
+    if not killer:
+        return None
+
+    h.fired = True
+
+    # Identify killer's team via the snapshot's allies / enemies lists.
+    allies = list(getattr(snapshot, "allies", []) or [])
+    enemies = list(getattr(snapshot, "enemies", []) or [])
+    ally_ids = _team_id_set(allies)
+    enemy_ids = _team_id_set(enemies)
+    active_summoner = str(getattr(snapshot, "active_summoner", "") or "")
+
+    if killer in ally_ids:
+        if killer == active_summoner:
+            text = (
+                "+400g First Blood — DU hast es! Tempo nutzen: "
+                "Welle pushen, Plates ziehen, Snowball starten"
+            )
+        else:
+            text = (
+                f"+400g First Blood Team ({killer}) — "
+                "Wellen mitnehmen, Plates ziehen, Tempo-Spiel"
+            )
+        severity, ttl_s, confidence, risk = "info", 60.0, 0.85, "LOW"
+    elif killer in enemy_ids:
+        text = (
+            f"Gegner First Blood ({killer}) — defensiv 90s, "
+            "Welle freezen, Vision setzen, Jungler pingen"
+        )
+        severity, ttl_s, confidence, risk = "warn", 75.0, 0.85, "MEDIUM"
+    else:
+        # Unknown killer (couldn't match either team) — re-arm so a
+        # later, identifiable kill event can fire.
+        h.fired = False
+        return None
+
+    return Recommendation(
+        text=text,
+        severity=severity,
+        category="tempo",
+        confidence=confidence,
+        risk=risk,
+        ttl_s=ttl_s,
+        kind="first_blood",
+        reasons=(
+            "First Blood: 300g base + 100g shutdown = 400g pro Killer",
+            "Lane-Priority-Shift für ~90s nach FB",
+            "Won FB → Plates + Tower-Druck. Lost FB → Freeze + Hilfe.",
+        ),
+    )
+
+
 def rule_tilt_detection(snapshot: "LcdaSnapshot") -> Recommendation | None:
     """Surface the active player's death pattern as a coaching call.
 
@@ -4319,6 +4442,8 @@ ALL_RULES: tuple[Callable[["LcdaSnapshot"], Recommendation | None], ...] = (
     rule_matchup_mismatch,
     # B3 plate window — once-per-game reminder before plates despawn at 14:00.
     rule_plate_window,
+    # B5 first blood — single-fire momentum / safety call after first kill.
+    rule_first_blood,
     # B4 tilt detection — active player's death pattern coaching.
     rule_tilt_detection,
     # B5 recall window — HP/mana/gold-driven back timing.
@@ -4475,6 +4600,7 @@ def _suppress_dominated(recs: list[Recommendation]) -> list[Recommendation]:
             "ally_bounty",          # protect-the-carry irrelevant — push winning
             "matchup_mismatch",     # lane analysis irrelevant during ace push
             "plate_window",         # plates moot — push the win, not a tower trade
+            "first_blood",          # FB momentum coaching irrelevant during ace push
         }
         recs = [r for r in recs if r.kind not in _ace_drop]
         kinds = {r.kind for r in recs}
@@ -4508,6 +4634,7 @@ def _suppress_dominated(recs: list[Recommendation]) -> list[Recommendation]:
             "ally_bounty",         # the more-urgent "play safe" already covers "don't 4v5"
             "matchup_mismatch",    # lane analysis drowns out the urgent safety call
             "plate_window",        # don't tell short-handed players to push for plates
+            "first_blood",         # the more-urgent "play safe" already dominates
         }
         return [r for r in recs if r.kind not in _offensive]
 
