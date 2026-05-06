@@ -43,9 +43,11 @@ def test_set_recommendations_renders_top_3(qt_app) -> None:
     assert "r2" in visible_rows[2]._text.text()
 
 
-def test_severity_strip_color_changes_per_row(qt_app) -> None:
-    """Each row's stylesheet carries the severity color in its
-    border-left strip — alert=DANGER, warn=WARNING, info=ACCENT."""
+def test_severity_color_carried_by_glyph(qt_app) -> None:
+    """Chat-style design: the row itself is transparent, the severity
+    color rides on the glyph — alert=DANGER, warn=WARNING, info=ACCENT.
+    Renamed from the v1 ``..._strip_color_changes_per_row`` once the
+    left-strip was removed in the chat-redesign."""
     from champ_assistant.ui import styles
     panel = RecommendationPanel()
     panel.set_recommendations([
@@ -53,9 +55,9 @@ def test_severity_strip_color_changes_per_row(qt_app) -> None:
         _rec("careful", "warn"),
         _rec("tip", "info"),
     ])
-    assert styles.DANGER in panel._rows[0].styleSheet()
-    assert styles.WARNING in panel._rows[1].styleSheet()
-    assert styles.ACCENT in panel._rows[2].styleSheet()
+    assert styles.DANGER in panel._rows[0]._glyph.styleSheet()
+    assert styles.WARNING in panel._rows[1]._glyph.styleSheet()
+    assert styles.ACCENT in panel._rows[2]._glyph.styleSheet()
 
 
 def test_category_glyph_maps_correctly(qt_app) -> None:
@@ -85,19 +87,20 @@ def test_demo_populates_one_per_severity(qt_app) -> None:
     panel = RecommendationPanel()
     panel.populate_demo()
     visible_rows = [row for row in panel._rows if row.isVisible()]
-    # Top row's severity strip should be DANGER (alert).
-    assert styles.DANGER in visible_rows[0].styleSheet()
+    # Top row is alert severity — DANGER color rides on the glyph
+    # (chat-style; the row itself is transparent).
+    assert styles.DANGER in visible_rows[0]._glyph.styleSheet()
     # Body text on the alert row references one of the objective names.
     top_text = visible_rows[0]._text.text()
     assert any(s in top_text for s in ("Drache", "Baron", "Herald"))
 
 
 def test_panel_uses_design_tokens_only(qt_app) -> None:
-    """Charter constraint — no inline px/hex literals slipping in."""
+    """Charter constraint — no inline px/hex literals slipping in.
+    The alert severity color (DANGER) is on the glyph in the chat
+    redesign; that's where this assertion looks."""
+    from champ_assistant.ui import styles
     panel = RecommendationPanel()
     panel.set_recommendations([_rec("x", "alert")])
-    sheet = panel._rows[0].styleSheet()
-    # Any hex code present must be a styles.* token. The DANGER token's
-    # value should appear; bare hex literals from elsewhere shouldn't.
-    from champ_assistant.ui import styles
-    assert styles.DANGER in sheet
+    glyph_sheet = panel._rows[0]._glyph.styleSheet()
+    assert styles.DANGER in glyph_sheet

@@ -126,59 +126,11 @@ def test_layer_paints_with_active_camps(qt_app) -> None:  # type: ignore[no-unty
     qt_app.processEvents()
 
 
-def test_layer_accepts_clicks_for_register_clear(qt_app) -> None:  # type: ignore[no-untyped-def]
-    """Click-to-arm: clicking near a camp anchor must register an
-    observed clear with the engine. Validates the input path that
-    replaced the rejected predictive timers."""
-    from PyQt6.QtCore import QPointF, Qt
-    from PyQt6.QtGui import QMouseEvent
-
-    from champ_assistant.ui.map_overlay_layer import CAMP_POSITIONS
-
-    engine = JungleTimelineEngine()
-    engine.tick(120.0)
-    layer = MapOverlayLayer(engine)
-    layer.resize(200, 200)
-
-    # Click on the order_red_buff anchor → pixel from normalized position.
-    nx, ny = CAMP_POSITIONS["order_red_buff"]
-    point = QPointF(nx * 200, ny * 200)
-    event = QMouseEvent(
-        QMouseEvent.Type.MouseButtonPress, point,
-        Qt.MouseButton.LeftButton, Qt.MouseButton.LeftButton,
-        Qt.KeyboardModifier.NoModifier,
-    )
-    layer.mousePressEvent(event)
-
-    # Engine should now have a real respawn countdown for order_red_buff.
-    state = engine.states()["order_red_buff"]
-    assert state.state == "respawning"
-    assert state.next_spawn_at > 0
-
-
-def test_layer_ignores_clicks_far_from_any_camp(qt_app) -> None:  # type: ignore[no-untyped-def]
-    """A click in dead space (no camp within hit radius) is a no-op —
-    don't accidentally arm a random camp."""
-    from PyQt6.QtCore import QPointF, Qt
-    from PyQt6.QtGui import QMouseEvent
-
-    engine = JungleTimelineEngine()
-    engine.tick(120.0)
-    layer = MapOverlayLayer(engine)
-    layer.resize(200, 200)
-
-    # Click at (0,0) — far from every camp (closest is red_buff
-    # at 0.18, 0.82, distance ≈ 0.84).
-    event = QMouseEvent(
-        QMouseEvent.Type.MouseButtonPress, QPointF(0, 0),
-        Qt.MouseButton.LeftButton, Qt.MouseButton.LeftButton,
-        Qt.KeyboardModifier.NoModifier,
-    )
-    layer.mousePressEvent(event)
-
-    # Every camp still in alive sentinel state.
-    for state in engine.states().values():
-        assert state.state == "alive"
+# Click-to-arm tests removed in v1.10.77 — feature retired in d3e022b
+# ("live overlay polish — vision-driven timers, tab scoreboard, auto-apply").
+# The map overlay now sets WA_TransparentForMouseEvents so minimap clicks
+# pass through to the game; observed clears come from the vision detector
+# instead. Tests that called layer.mousePressEvent are no longer meaningful.
 
 
 # ----------------------------------------------------------------------

@@ -59,6 +59,496 @@
       "stylesheet": "color: #B0B7C2; font-size: 11px;",
       "text": "",
       "visible": true
+    },
+    {
+      "children": [],
+      "class": "QLabel",
+      "fixed_size": null,
+      "layout": null,
+      "objectName": "",
+      "stylesheet": "color: #717A86; font-family: SF Mono, Menlo, Consolas, monospace; font-size: 11px; font-weight: 700;",
+      "text": "TOP",
+      "visible": true
+    },
+    {
+      "children": [],
+      "class": "QLabel",
+      "fixed_size": [
+        36,
+        36
+      ],
+      "layout": null,
+      "objectName": "",
+      "stylesheet": "border: 1px solid #6BBBFF; border-radius: 3px;",
+      "text": "\u2014",
+      "visible": true
+    },
+    {
+      "children": [],
+      "class": "SpellSlot",
+      "fixed_size": [
+        24,
+        24
+      ],
+      "layout": null,
+      "objectName": "",
+      "stylesheet": "border: 1px solid #717A86; border-radius: 3px; font-family: SF Mono, Menlo, Consolas, monospace; font-size: 11px; font-weight: 800; color: #F2F4F7;",
+      "text": "",
+      "visible": true
+    },
+    {
+      "children": [],
+      "class": "SpellSlot",
+      "fixed_size": [
+        24,
+        24
+      ],
+      "layout": null,
+      "objectName": "",
+      "stylesheet": "border: 1px solid #717A86; border-radius: 3px; font-family: SF Mono, Menlo, Consolas, monospace; font-size: 11px; font-weight: 800; color: #F2F4F7;",
+      "text": "",
+      "visible": true
+    },
+    {
+      "children": [],
+      "class": "QLabel",
+      "fixed_size": null,
+      "layout": null,
+      "objectName": "",
+      "stylesheet": "color: #717A86; font-family: SF Mono, Menlo, Consolas, monospace; font-size: 11px; font-weight: 700;",
+      "text": "\u00b7",
+      "visible": true
+    },
+    {
+      "children": [],
+      "class": "SpellSlot",
+      "fixed_size": [
+        24,
+        24
+      ],
+      "layout": null,
+      "objectName": "",
+      "stylesheet": "border: 1px solid #717A86; border-radius: 3px; font-family: SF Mono, Menlo, Consolas, monospace; font-size: 11px; font-weight: 800; color: #F2F4F7;",
+      "text": "",
+      "visible": true
+    },
+    {
+      "children": [],
+      "class": "SpellSlot",
+      "fixed_size": [
+        24,
+        24
+      ],
+      "layout": null,
+      "objectName": "",
+      "stylesheet": "border: 1px solid #717A86; border-radius: 3px; font-family: SF Mono, Menlo, Consolas, monospace; font-size: 11px; font-weight: 800; color: #F2F4F7;",
+      "text": "",
+      "visible": true
+    },
+    {
+      "children": [],
+      "class": "QLabel",
+      "fixed_size": [
+        36,
+        36
+      ],
+      "layout": null,
+      "objectName": "",
+      "stylesheet": "border: 1px solid #FF6B6B; border-radius: 3px;",
+      "text": "\u2014",
+      "visible": true
+    },
+    {
+      "children": [],
+      "class": "QLabel",
+      "fixed_size": null,
+      "layout": null,
+      "objectName": "",
+      "stylesheet": "color: #717A86; font-family: SF Mono, Menlo, Consolas, monospace; font-size: 11px; font-weight: 700;",
+      "text": "JNG",
+      "visible": true
+    },
+    {
+      "children": [],
+      "class": "QLabel",
+      "fixed_size": [
+        36,
+        36
+      ],
+      "layout": null,
+      "objectName": "",
+      "stylesheet": "border: 1px solid #6BBBFF; border-radius: 3px;",
+      "text": "\u2014",
+      "visible": true
+    },
+    {
+      "children": [],
+      "class": "SpellSlot",
+      "fixed_size": [
+        24,
+        24
+      ],
+      "layout": null,
+      "objectName": "",
+      "stylesheet": "border: 1px solid #717A86; border-radius: 3px; font-family: SF Mono, Menlo, Consolas, monospace; font-size: 11px; font-weight: 800; color: #F2F4F7;",
+      "text": "",
+      "visible": true
+    },
+    {
+      "children": [],
+      "class": "SpellSlot",
+      "fixed_size": [
+        24,
+        24
+      ],
+      "layout": null,
+      "objectName": "",
+      "stylesheet": "border: 1px solid #717A86; border-radius: 3px; font-family: SF Mono, Menlo, Consolas, monospace; font-size: 11px; font-weight: 800; color: #F2F4F7;",
+      "text": "",
+      "visible": true
+    },
+    {
+      "children": [],
+      "class": "QLabel",
+      "fixed_size": null,
+      "layout": null,
+      "objectName": "",
+      "stylesheet": "color: #717A86; font-family: SF Mono, Menlo, Consolas, monospace; font-size: 11px; font-weight: 700;",
+      "text": "\u00b7",
+      "visible": true
+    },
+    {
+      "children": [],
+      "class": "SpellSlot",
+      "fixed_size": [
+        24,
+        24
+      ],
+      "layout": null,
+      "objectName": "",
+      "stylesheet": "border: 1px solid #717A86; border-radius: 3px; font-family: SF Mono, Menlo, Consolas, monospace; font-size: 11px; font-weight: 800; color: #F2F4F7;",
+      "text": "",
+      "visible": true
+    },
+    {
+      "children": [],
+      "class": "SpellSlot",
+      "fixed_size": [
+        24,
+        24
+      ],
+      "layout": null,
+      "objectName": "",
+      "stylesheet": "border: 1px solid #717A86; border-radius: 3px; font-family: SF Mono, Menlo, Consolas, monospace; font-size: 11px; font-weight: 800; color: #F2F4F7;",
+      "text": "",
+      "visible": true
+    },
+    {
+      "children": [],
+      "class": "QLabel",
+      "fixed_size": [
+        36,
+        36
+      ],
+      "layout": null,
+      "objectName": "",
+      "stylesheet": "border: 1px solid #FF6B6B; border-radius: 3px;",
+      "text": "\u2014",
+      "visible": true
+    },
+    {
+      "children": [],
+      "class": "QLabel",
+      "fixed_size": null,
+      "layout": null,
+      "objectName": "",
+      "stylesheet": "color: #717A86; font-family: SF Mono, Menlo, Consolas, monospace; font-size: 11px; font-weight: 700;",
+      "text": "MID",
+      "visible": true
+    },
+    {
+      "children": [],
+      "class": "QLabel",
+      "fixed_size": [
+        36,
+        36
+      ],
+      "layout": null,
+      "objectName": "",
+      "stylesheet": "border: 1px solid #6BBBFF; border-radius: 3px;",
+      "text": "\u2014",
+      "visible": true
+    },
+    {
+      "children": [],
+      "class": "SpellSlot",
+      "fixed_size": [
+        24,
+        24
+      ],
+      "layout": null,
+      "objectName": "",
+      "stylesheet": "border: 1px solid #717A86; border-radius: 3px; font-family: SF Mono, Menlo, Consolas, monospace; font-size: 11px; font-weight: 800; color: #F2F4F7;",
+      "text": "",
+      "visible": true
+    },
+    {
+      "children": [],
+      "class": "SpellSlot",
+      "fixed_size": [
+        24,
+        24
+      ],
+      "layout": null,
+      "objectName": "",
+      "stylesheet": "border: 1px solid #717A86; border-radius: 3px; font-family: SF Mono, Menlo, Consolas, monospace; font-size: 11px; font-weight: 800; color: #F2F4F7;",
+      "text": "",
+      "visible": true
+    },
+    {
+      "children": [],
+      "class": "QLabel",
+      "fixed_size": null,
+      "layout": null,
+      "objectName": "",
+      "stylesheet": "color: #717A86; font-family: SF Mono, Menlo, Consolas, monospace; font-size: 11px; font-weight: 700;",
+      "text": "\u00b7",
+      "visible": true
+    },
+    {
+      "children": [],
+      "class": "SpellSlot",
+      "fixed_size": [
+        24,
+        24
+      ],
+      "layout": null,
+      "objectName": "",
+      "stylesheet": "border: 1px solid #717A86; border-radius: 3px; font-family: SF Mono, Menlo, Consolas, monospace; font-size: 11px; font-weight: 800; color: #F2F4F7;",
+      "text": "",
+      "visible": true
+    },
+    {
+      "children": [],
+      "class": "SpellSlot",
+      "fixed_size": [
+        24,
+        24
+      ],
+      "layout": null,
+      "objectName": "",
+      "stylesheet": "border: 1px solid #717A86; border-radius: 3px; font-family: SF Mono, Menlo, Consolas, monospace; font-size: 11px; font-weight: 800; color: #F2F4F7;",
+      "text": "",
+      "visible": true
+    },
+    {
+      "children": [],
+      "class": "QLabel",
+      "fixed_size": [
+        36,
+        36
+      ],
+      "layout": null,
+      "objectName": "",
+      "stylesheet": "border: 1px solid #FF6B6B; border-radius: 3px;",
+      "text": "\u2014",
+      "visible": true
+    },
+    {
+      "children": [],
+      "class": "QLabel",
+      "fixed_size": null,
+      "layout": null,
+      "objectName": "",
+      "stylesheet": "color: #717A86; font-family: SF Mono, Menlo, Consolas, monospace; font-size: 11px; font-weight: 700;",
+      "text": "BOT",
+      "visible": true
+    },
+    {
+      "children": [],
+      "class": "QLabel",
+      "fixed_size": [
+        36,
+        36
+      ],
+      "layout": null,
+      "objectName": "",
+      "stylesheet": "border: 1px solid #6BBBFF; border-radius: 3px;",
+      "text": "\u2014",
+      "visible": true
+    },
+    {
+      "children": [],
+      "class": "SpellSlot",
+      "fixed_size": [
+        24,
+        24
+      ],
+      "layout": null,
+      "objectName": "",
+      "stylesheet": "border: 1px solid #717A86; border-radius: 3px; font-family: SF Mono, Menlo, Consolas, monospace; font-size: 11px; font-weight: 800; color: #F2F4F7;",
+      "text": "",
+      "visible": true
+    },
+    {
+      "children": [],
+      "class": "SpellSlot",
+      "fixed_size": [
+        24,
+        24
+      ],
+      "layout": null,
+      "objectName": "",
+      "stylesheet": "border: 1px solid #717A86; border-radius: 3px; font-family: SF Mono, Menlo, Consolas, monospace; font-size: 11px; font-weight: 800; color: #F2F4F7;",
+      "text": "",
+      "visible": true
+    },
+    {
+      "children": [],
+      "class": "QLabel",
+      "fixed_size": null,
+      "layout": null,
+      "objectName": "",
+      "stylesheet": "color: #717A86; font-family: SF Mono, Menlo, Consolas, monospace; font-size: 11px; font-weight: 700;",
+      "text": "\u00b7",
+      "visible": true
+    },
+    {
+      "children": [],
+      "class": "SpellSlot",
+      "fixed_size": [
+        24,
+        24
+      ],
+      "layout": null,
+      "objectName": "",
+      "stylesheet": "border: 1px solid #717A86; border-radius: 3px; font-family: SF Mono, Menlo, Consolas, monospace; font-size: 11px; font-weight: 800; color: #F2F4F7;",
+      "text": "",
+      "visible": true
+    },
+    {
+      "children": [],
+      "class": "SpellSlot",
+      "fixed_size": [
+        24,
+        24
+      ],
+      "layout": null,
+      "objectName": "",
+      "stylesheet": "border: 1px solid #717A86; border-radius: 3px; font-family: SF Mono, Menlo, Consolas, monospace; font-size: 11px; font-weight: 800; color: #F2F4F7;",
+      "text": "",
+      "visible": true
+    },
+    {
+      "children": [],
+      "class": "QLabel",
+      "fixed_size": [
+        36,
+        36
+      ],
+      "layout": null,
+      "objectName": "",
+      "stylesheet": "border: 1px solid #FF6B6B; border-radius: 3px;",
+      "text": "\u2014",
+      "visible": true
+    },
+    {
+      "children": [],
+      "class": "QLabel",
+      "fixed_size": null,
+      "layout": null,
+      "objectName": "",
+      "stylesheet": "color: #717A86; font-family: SF Mono, Menlo, Consolas, monospace; font-size: 11px; font-weight: 700;",
+      "text": "SUP",
+      "visible": true
+    },
+    {
+      "children": [],
+      "class": "QLabel",
+      "fixed_size": [
+        36,
+        36
+      ],
+      "layout": null,
+      "objectName": "",
+      "stylesheet": "border: 1px solid #6BBBFF; border-radius: 3px;",
+      "text": "\u2014",
+      "visible": true
+    },
+    {
+      "children": [],
+      "class": "SpellSlot",
+      "fixed_size": [
+        24,
+        24
+      ],
+      "layout": null,
+      "objectName": "",
+      "stylesheet": "border: 1px solid #717A86; border-radius: 3px; font-family: SF Mono, Menlo, Consolas, monospace; font-size: 11px; font-weight: 800; color: #F2F4F7;",
+      "text": "",
+      "visible": true
+    },
+    {
+      "children": [],
+      "class": "SpellSlot",
+      "fixed_size": [
+        24,
+        24
+      ],
+      "layout": null,
+      "objectName": "",
+      "stylesheet": "border: 1px solid #717A86; border-radius: 3px; font-family: SF Mono, Menlo, Consolas, monospace; font-size: 11px; font-weight: 800; color: #F2F4F7;",
+      "text": "",
+      "visible": true
+    },
+    {
+      "children": [],
+      "class": "QLabel",
+      "fixed_size": null,
+      "layout": null,
+      "objectName": "",
+      "stylesheet": "color: #717A86; font-family: SF Mono, Menlo, Consolas, monospace; font-size: 11px; font-weight: 700;",
+      "text": "\u00b7",
+      "visible": true
+    },
+    {
+      "children": [],
+      "class": "SpellSlot",
+      "fixed_size": [
+        24,
+        24
+      ],
+      "layout": null,
+      "objectName": "",
+      "stylesheet": "border: 1px solid #717A86; border-radius: 3px; font-family: SF Mono, Menlo, Consolas, monospace; font-size: 11px; font-weight: 800; color: #F2F4F7;",
+      "text": "",
+      "visible": true
+    },
+    {
+      "children": [],
+      "class": "SpellSlot",
+      "fixed_size": [
+        24,
+        24
+      ],
+      "layout": null,
+      "objectName": "",
+      "stylesheet": "border: 1px solid #717A86; border-radius: 3px; font-family: SF Mono, Menlo, Consolas, monospace; font-size: 11px; font-weight: 800; color: #F2F4F7;",
+      "text": "",
+      "visible": true
+    },
+    {
+      "children": [],
+      "class": "QLabel",
+      "fixed_size": [
+        36,
+        36
+      ],
+      "layout": null,
+      "objectName": "",
+      "stylesheet": "border: 1px solid #FF6B6B; border-radius: 3px;",
+      "text": "\u2014",
+      "visible": true
     }
   ],
   "class": "ScoreboardWidget",
@@ -70,7 +560,7 @@
       10,
       6
     ],
-    "spacing": 2,
+    "spacing": 4,
     "type": "QVBoxLayout"
   },
   "objectName": "",
