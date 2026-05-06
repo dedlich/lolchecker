@@ -1,7 +1,8 @@
 """Live Companion — unified champ-select view (Mobalytics-style layout).
 
-Single-window champ-select panel that replaces the previous mix of
-enemy rows + floating LobbyStatsWidget. Layout (matching the v1.10.78
+Single-window champ-select panel. The floating ally/enemy summary
+widget that used to live separately was retired in v1.10.80; this
+view is the only champ-select surface. Layout (matching the v1.10.78
 design screenshot):
 
     ┌────────────────────────────────────────────────────────────┐

@@ -25,7 +25,6 @@ from champ_assistant.jungle_timeline import (
     JungleTimelineEngine,
 )
 from champ_assistant.lcda.source import LcdaSource
-from champ_assistant.ui.lobby_stats_widget import LobbyStatsWidget
 from champ_assistant.ui.minimap_timers_widget import MinimapTimersWidget
 from champ_assistant.ui.scoreboard_widget import ScoreboardWidget
 
@@ -193,15 +192,9 @@ def test_scoreboard_midgame_snapshot(qt_app) -> None:  # type: ignore[no-untyped
     )
 
 
-# ----------------------------------------------------------------------
-# Canonical state #4: lobby-stats idle (covers the "minimal idle
-# overlay" case from the spec — empty state must stay stable)
-# ----------------------------------------------------------------------
-def test_lobby_stats_idle(qt_app) -> None:  # type: ignore[no-untyped-def]
-    widget = LobbyStatsWidget()
-    _settle(qt_app, widget)
-    assert_snapshot_matches("lobby_stats_idle", snapshot_widget(widget))
-
+# Canonical state #4 (lobby-stats idle) was retired in v1.10.80 with
+# LobbyStatsWidget itself; LiveCompanionView's team summary covers the
+# same surface now and has its own coverage in the integration tests.
 
 # ----------------------------------------------------------------------
 # Canonical state #5: minimap timers idle (no LCDA snapshot pushed,

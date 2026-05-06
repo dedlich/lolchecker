@@ -35,7 +35,6 @@ class OverlayState:
     show_spikes: bool = True
     show_scoreboard: bool = True
     show_minimap_timers: bool = True
-    show_lobby_stats: bool = True
     floating_positions: dict | None = None  # widget-key -> [x, y]
     # First-launch onboarding banner — flips to True the first time the
     # user dismisses it (or skips). Default False = show on next start.
@@ -99,11 +98,13 @@ def load() -> OverlayState:
     if not isinstance(data, dict):
         return OverlayState()
     state = OverlayState()
+    # ``show_lobby_stats`` was removed in v1.10.80 (LobbyStatsWidget retired);
+    # if a persisted config still has the field it's silently dropped here.
     for field in ("x", "y", "width", "height", "anchor",
                   "always_on_top", "frameless", "collapsed",
                   "opacity", "show_objectives", "show_summoners",
                   "show_spikes", "show_scoreboard", "show_minimap_timers",
-                  "show_lobby_stats", "floating_positions",
+                  "floating_positions",
                   "onboarding_seen", "diagnostics_enabled",
                   "enable_auto_camp_detection",
                   "enable_scoreboard_detection",

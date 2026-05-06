@@ -62,11 +62,12 @@ TOGGLABLE_FIELDS_TO_CHECKBOXES = {
     # show_objectives intentionally omitted — ObjectivePanel was retired
     # in favor of the minimap-overlay timers; the field stays in
     # OverlayState as a no-op for back-compat with persisted configs.
+    # show_lobby_stats removed in v1.10.80 — LobbyStatsWidget retired in
+    # favour of LiveCompanionView's built-in team summary row.
     "show_summoners":               "_cb_summoners",
     "show_spikes":                  "_cb_spikes",
     "show_scoreboard":              "_cb_scoreboard",
     "show_minimap_timers":          "_cb_minimap",
-    "show_lobby_stats":             "_cb_lobby",
     "diagnostics_enabled":          "_cb_diagnostics",
     "enable_auto_camp_detection":   "_cb_auto_camp",
     "enable_scoreboard_detection":  "_cb_scoreboard_detect",
@@ -119,7 +120,6 @@ def test_save_persists_all_toggles(qt_app, isolated_overlay_config) -> None:  # 
     dlg._cb_spikes.setChecked(False)
     dlg._cb_scoreboard.setChecked(False)
     dlg._cb_minimap.setChecked(False)
-    dlg._cb_lobby.setChecked(False)
     dlg._cb_diagnostics.setChecked(False)
     dlg._cb_auto_camp.setChecked(True)
     dlg._cb_scoreboard_detect.setChecked(True)
@@ -134,7 +134,6 @@ def test_save_persists_all_toggles(qt_app, isolated_overlay_config) -> None:  # 
     assert reloaded.show_spikes is False
     assert reloaded.show_scoreboard is False
     assert reloaded.show_minimap_timers is False
-    assert reloaded.show_lobby_stats is False
     assert reloaded.diagnostics_enabled is False
     assert reloaded.enable_auto_camp_detection is True
     assert reloaded.enable_scoreboard_detection is True

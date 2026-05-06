@@ -581,7 +581,6 @@ def _run_with_ui(args: argparse.Namespace) -> int:
     # position. Toggled via overlay_config flags in Settings.
     # ``persisted`` was loaded near the top of this function — same
     # state object drives every visibility / feature flag below.
-    from champ_assistant.ui.lobby_stats_widget import LobbyStatsWidget
     from champ_assistant.ui.minimap_timers_widget import MinimapTimersWidget
     from champ_assistant.ui.recommendation_panel import RecommendationPanel
     from champ_assistant.ui.scoreboard_widget import ScoreboardWidget
@@ -622,11 +621,6 @@ def _run_with_ui(args: argparse.Namespace) -> int:
     if getattr(args, "demo_recommendations", False):
         recommendation_panel.populate_demo()
         recommendation_panel.show()
-    lobby_stats: LobbyStatsWidget | None = None
-    if persisted.show_lobby_stats:
-        lobby_stats = LobbyStatsWidget()
-        # Hooked into the SessionView pipeline below (not LCDA).
-        overlay._lobby_stats = lobby_stats  # type: ignore[attr-defined]
 
     # Bridge LCDA snapshots into the jungle timeline. The engine is
     # purely deterministic — it just needs game_time + the cumulative
@@ -1427,14 +1421,10 @@ async def _hydrate_champions_and_icons(
         )
     overlay.set_rune_icons(rune_pixmaps)
 
-    # Forward champion icons to the floating lobby widget if it's enabled.
-    lobby = getattr(overlay, "_lobby_stats", None)
-    if lobby is not None:
-        lobby.set_champion_icons(pixmaps)
-        # Re-render with the freshly arrived icons if a session was already
-        # in flight when the prefetch finished.
-        if getattr(overlay, "_last_view", None) is not None:
-            lobby.update_view(overlay._last_view)
+    # Re-render Live Companion with the freshly arrived icons if a
+    # session was already in flight when the prefetch finished.
+    if getattr(overlay, "_last_view", None) is not None:
+        overlay.update_view(overlay._last_view)
 
     log.info(
         "icon_prefetch_done champs=%d spells=%d items=%d runes=%d",

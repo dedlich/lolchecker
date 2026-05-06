@@ -172,9 +172,9 @@ class MainOverlay(QMainWindow):
         self._enemy_rows: list[EnemyRow] = []
 
         # Live Companion — single-window champ-select view (v1.10.78).
-        # Sits above the legacy ban/pick panels and replaces the floating
-        # LobbyStatsWidget. See OPTIMIZATION.md follow-up for full body
-        # (build / runes / items / game plan) wiring.
+        # Sits above the legacy ban/pick panels and is the only
+        # champ-select surface (the floating LobbyStatsWidget was
+        # retired in v1.10.80).
         self._live_companion = LiveCompanionView()
         body_layout.addWidget(self._live_companion)
 
@@ -373,25 +373,16 @@ class MainOverlay(QMainWindow):
             view.ban_suggestions_allround,
             self._icon_for_key,
         )
-        # Live Companion picks up the team rosters + damage / phase splits
-        # and renders the unified top header (v1.10.78). Lives above the
-        # legacy ban/pick panels in the body layout.
+        # Live Companion is the only champ-select surface now — picks up
+        # the team rosters + damage / phase splits + locked-champion
+        # build, renders the unified header + summary + 3-column body.
+        # The old floating LobbyStatsWidget was retired in v1.10.80
+        # because LiveCompanion fully supersedes it.
         self._live_companion.update_view(
             view, self._icon_for_key,
             rune_icons=self._rune_icons,
             item_icons=self._item_icons,
         )
-        # LobbyStatsWidget (the old floating ally/enemy summary) is
-        # superseded by Live Companion — keep it hidden while in
-        # champ-select. We still call its update_view in case the user
-        # has it set to visible for in-game / loading-screen surfaces.
-        lobby = getattr(self, "_lobby_stats", None)
-        if lobby is not None:
-            lobby.update_view(view)
-            session = view.session
-            subphase = session.display_subphase() if session is not None else "idle"
-            if subphase in ("ban", "pick", "finalization", "planning"):
-                lobby.hide()
         # Champ-select state machine: pivot which panels are visible based
         # on the current sub-phase (bans → picks → loading-screen profiles).
         self._apply_champ_select_subphase(view)

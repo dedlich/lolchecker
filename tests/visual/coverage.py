@@ -40,7 +40,7 @@ class StateVector:
     Keeping all fields present rather than Optional[str] makes the
     registry diff one-line-per-vector and grep-friendly.
     """
-    widget: str           # "minimap_timers" | "scoreboard" | "lobby_stats"
+    widget: str           # "minimap_timers" | "scoreboard"
     game_time_phase: str  # "no_engine" | "pre_spawn" | "early" | "mid" | "late" | "with_lcda" | "empty"
     objective_state: str  # "n/a" | "pre_spawn" | "alive" | "respawning"
     confidence_band: str  # "n/a" | "high" | "mid" | "low"
@@ -70,11 +70,9 @@ CANONICAL_VECTORS: Final[tuple[StateVector, ...]] = (
     # all). One baseline is enough.
     StateVector("scoreboard",     "with_lcda", "n/a",        "n/a"),
 
-    # LobbyStatsWidget — empty state covers the steady-state appearance.
-    # A populated state would require building a SessionView fixture
-    # which is meaningful test work but produces a baseline that drifts
-    # heavily with session-view schema changes; cost > benefit for now.
-    StateVector("lobby_stats",    "empty",     "n/a",        "n/a"),
+    # LobbyStatsWidget retired in v1.10.80 — LiveCompanionView's team
+    # summary row covers the same surface; its coverage lives in
+    # tests/integration alongside the SessionView smoke tests.
 )
 
 
@@ -99,6 +97,4 @@ BASELINE_BINDINGS: Final[dict[str, StateVector]] = {
         StateVector("minimap_timers", "late",       "respawning", "low"),
     "scoreboard_midgame":
         StateVector("scoreboard",     "with_lcda",  "n/a",        "n/a"),
-    "lobby_stats_idle":
-        StateVector("lobby_stats",    "empty",      "n/a",        "n/a"),
 }

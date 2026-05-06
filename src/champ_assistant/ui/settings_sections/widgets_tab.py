@@ -21,10 +21,10 @@ if TYPE_CHECKING:
 
 def build_widgets_tab(dlg: "SettingsDialog") -> QWidget:
     """Visibility toggles for both main-overlay sections AND the
-    three floating widgets, plus a layout-reset action.
+    floating widgets, plus a layout-reset action.
 
     Mutates ``dlg`` to set ``_cb_summoners``, ``_cb_spikes``,
-    ``_cb_scoreboard``, ``_cb_minimap``, ``_cb_lobby``."""
+    ``_cb_scoreboard``, ``_cb_minimap``."""
     page = scrolling_page()
     body = vertical(page)
 
@@ -49,11 +49,7 @@ def build_widgets_tab(dlg: "SettingsDialog") -> QWidget:
         "Minimap-Timers widget (Dragon / Baron / camp predictions)",
         dlg._display_state.show_minimap_timers,
     )
-    dlg._cb_lobby = checkbox(
-        "Lobby-Stats widget (champ-select stats summary)",
-        dlg._display_state.show_lobby_stats,
-    )
-    for cb in (dlg._cb_scoreboard, dlg._cb_minimap, dlg._cb_lobby):
+    for cb in (dlg._cb_scoreboard, dlg._cb_minimap):
         body.addWidget(cb)
 
     body.addWidget(section_header("Layout"))

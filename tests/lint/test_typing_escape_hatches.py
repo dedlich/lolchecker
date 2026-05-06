@@ -22,10 +22,12 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-# Baselines captured at v1.10.69. Lowering these is the ratchet — any
-# clean-up PR that removes ignores must update this file in the same commit
-# so the new (lower) ceiling becomes the floor for future PRs.
-_TYPE_IGNORE_TOTAL = 99
+# Baselines: 99/87 captured at v1.10.69; lowered to 95 in v1.10.80 when
+# LobbyStatsWidget retired (its 4 ignores went with it). Lowering these
+# is the ratchet — any clean-up PR that removes ignores must update
+# this file in the same commit so the new (lower) ceiling becomes the
+# floor for future PRs.
+_TYPE_IGNORE_TOTAL = 95
 _NOQA_TOTAL = 87
 
 _TYPE_IGNORE_RE = re.compile(r"#\s*type:\s*ignore", re.IGNORECASE)

@@ -147,7 +147,6 @@ class SettingsDialog(QDialog):
         s.show_spikes                 = self._cb_spikes.isChecked()
         s.show_scoreboard             = self._cb_scoreboard.isChecked()
         s.show_minimap_timers         = self._cb_minimap.isChecked()
-        s.show_lobby_stats            = self._cb_lobby.isChecked()
         s.diagnostics_enabled         = self._cb_diagnostics.isChecked()
         s.enable_auto_camp_detection  = self._cb_auto_camp.isChecked()
         s.enable_scoreboard_detection = self._cb_scoreboard_detect.isChecked()
