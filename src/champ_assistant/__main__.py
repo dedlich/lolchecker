@@ -338,6 +338,12 @@ def _run_with_ui(args: argparse.Namespace) -> int:
     from champ_assistant import performance_monitor as _perf
     _perf.record_phase("core_services_initialized")
     lifecycle.register("performance_log", lambda: _perf.monitor().flush())
+    # Per-rule eval-time digest — surfaces which decision-engine rules
+    # spent the most CPU during the session. Useful for spotting a slow
+    # rule under live game load (Strategy A2).
+    lifecycle.register(
+        "rule_timing_log", lambda: _perf.rule_timing_recorder().flush(),
+    )
 
     # State invariant validator (charter step C4 — Most Reliable).
     # Pure observer over the state store; logs timer / game-state

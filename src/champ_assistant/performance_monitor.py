@@ -31,7 +31,7 @@ import os
 import sys
 import tempfile
 import time
-from collections import deque
+from collections import defaultdict, deque
 from dataclasses import dataclass
 from pathlib import Path
 from threading import Lock
@@ -159,5 +159,122 @@ def record_phase(name: str) -> PhaseRecord:
 def reset_for_tests() -> None:
     """Test-only: drop the singleton so each test starts clean."""
     global _INSTANCE
+    global _RULE_TIMING_INSTANCE
     with _INSTANCE_LOCK:
         _INSTANCE = None
+    with _RULE_TIMING_LOCK:
+        _RULE_TIMING_INSTANCE = None
+
+
+# --------------------------------------------------------------------------
+# Per-rule timing — Strategy A2 instrumentation
+# --------------------------------------------------------------------------
+# The decision engine runs 53+ rules every LCDA tick (~0.5 Hz). Without
+# per-rule timing the engine is a black box: when a tick spikes past the
+# poll interval we can't tell which rule is to blame. This recorder keeps
+# a ring buffer of the most recent per-rule durations + emits a digest
+# (p50 / p95 / max / count) on flush.
+#
+# Overhead: ``time.perf_counter()`` is ~30-50 ns. For 53 rules per tick at
+# 0.5 Hz that's ~1.6 µs / tick of measurement overhead — well below the
+# noise floor of the rules themselves.
+
+# Per-rule samples are kept up to this many before older ones are evicted.
+# 500 × 53 rules ≈ 26K floats ≈ 200 kB peak — bounded, comfortable.
+RULE_TIMING_RING_SIZE = 500
+
+
+class RuleTimingRecorder:
+    """Per-rule duration recorder + digest formatter.
+
+    Single mutable state: ``_samples[rule_name] = deque[ms]``. Append-only
+    on the hot path; readers (``digest`` / ``flush``) snapshot under the
+    lock so concurrent rule eval doesn't tear the buffer.
+    """
+
+    def __init__(self) -> None:
+        self._samples: dict[str, deque[float]] = defaultdict(
+            lambda: deque(maxlen=RULE_TIMING_RING_SIZE),
+        )
+        self._lock = Lock()
+
+    def record(self, rule_name: str, duration_ms: float) -> None:
+        """Append one duration sample for ``rule_name``. O(1)."""
+        with self._lock:
+            self._samples[rule_name].append(duration_ms)
+
+    def snapshot(self) -> dict[str, list[float]]:
+        """Defensive copy of the current samples — readers iterate safely."""
+        with self._lock:
+            return {name: list(samples) for name, samples in self._samples.items()}
+
+    def digest(self) -> list[tuple[str, int, float, float, float, float]]:
+        """Per-rule (name, count, p50_ms, p95_ms, max_ms, mean_ms) sorted by
+        descending p95. Empty rules are omitted."""
+        snap = self.snapshot()
+        rows: list[tuple[str, int, float, float, float, float]] = []
+        for name, samples in snap.items():
+            if not samples:
+                continue
+            ordered = sorted(samples)
+            count = len(ordered)
+            # Index conversions clamped so single-sample buffers don't go
+            # off the end (math.floor on float index is the standard
+            # nearest-rank percentile).
+            p50_idx = max(0, min(count - 1, int(0.5 * count)))
+            p95_idx = max(0, min(count - 1, int(0.95 * count)))
+            rows.append((
+                name,
+                count,
+                ordered[p50_idx],
+                ordered[p95_idx],
+                ordered[-1],
+                sum(ordered) / count,
+            ))
+        rows.sort(key=lambda r: r[3], reverse=True)
+        return rows
+
+    def flush(self, path: Path | None = None) -> Path | None:
+        """Write the digest to ``rule_timing.log`` next to performance.log.
+        Atomic via tempfile + os.replace so a kill mid-flush doesn't leave a
+        half-written log. Returns the path on success, None on I/O failure."""
+        if path is None:
+            path = _log_dir() / "rule_timing.log"
+        rows = self.digest()
+        if not rows:
+            return None
+        try:
+            path.parent.mkdir(parents=True, exist_ok=True)
+        except OSError as exc:
+            logger.info("rule_timing_log_mkdir_failed: %s", exc)
+            return None
+        try:
+            with tempfile.NamedTemporaryFile(
+                mode="w", encoding="utf-8", delete=False,
+                dir=str(path.parent), prefix=".rule_timing_", suffix=".log.tmp",
+            ) as tmp:
+                tmp_path = Path(tmp.name)
+                tmp.write("rule\tcount\tp50_ms\tp95_ms\tmax_ms\tmean_ms\n")
+                for name, count, p50, p95, mx, mean in rows:
+                    tmp.write(
+                        f"{name}\t{count}\t{p50:.4f}\t{p95:.4f}\t"
+                        f"{mx:.4f}\t{mean:.4f}\n"
+                    )
+            os.replace(tmp_path, path)
+            return path
+        except OSError as exc:
+            logger.info("rule_timing_log_write_failed: %s", exc)
+            return None
+
+
+_RULE_TIMING_INSTANCE: RuleTimingRecorder | None = None
+_RULE_TIMING_LOCK = Lock()
+
+
+def rule_timing_recorder() -> RuleTimingRecorder:
+    """Return the process-wide rule-timing singleton."""
+    global _RULE_TIMING_INSTANCE
+    with _RULE_TIMING_LOCK:
+        if _RULE_TIMING_INSTANCE is None:
+            _RULE_TIMING_INSTANCE = RuleTimingRecorder()
+        return _RULE_TIMING_INSTANCE
