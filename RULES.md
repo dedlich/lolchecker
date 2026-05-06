@@ -258,9 +258,13 @@ matching `reset_*_hysteresis` test fixtures.
 - **Notes:** Suppresses `objective_bounty_behind` — at deep deficits scaling
   beats forcing comeback objectives.
 
-### `rule_kill_lead_snowball` / `rule_kill_deficit_defensive`
-- **Kinds:** `kill_lead` / `kill_deficit`
-- **Fires when:** Kill-diff exceeds ±5 / ±7 thresholds.
+### `rule_kill_lead_snowball`
+- **Kind:** `kill_lead` · **Severity:** info
+- **Fires when:** Team kill-diff ≥ +5; press the snowball with tempo.
+
+### `rule_kill_deficit_defensive`
+- **Kind:** `kill_deficit` · **Severity:** warn
+- **Fires when:** Team kill-diff ≤ -7; bunker at the inhib, no extending.
 
 ### `rule_level_deficit`
 - **Kind:** `level_deficit` · **Severity:** warn
@@ -286,9 +290,15 @@ matching `reset_*_hysteresis` test fixtures.
 
 ## 8. Structural — turrets / inhibs / base
 
-### `rule_enemy_herald_danger` / `rule_ally_herald_window`
-- **Kinds:** `enemy_herald` / `ally_herald` · info
-- **Fires when:** Herald has been picked up by either team (3-min usage window).
+### `rule_enemy_herald_danger`
+- **Kind:** `enemy_herald` · **Severity:** info
+- **Fires when:** Enemy team picked up Herald (3-min usage window) — defensive
+  reminder for the side they'll likely send it down.
+
+### `rule_ally_herald_window`
+- **Kind:** `ally_herald` · **Severity:** info
+- **Fires when:** Ally team picked up Herald — surfaces the placement window so
+  the buff doesn't expire unused.
 
 ### `rule_enemy_inhibitor_down`
 - **Kind:** `inhib_down` · **Severity:** alert
@@ -298,13 +308,17 @@ matching `reset_*_hysteresis` test fixtures.
 - **Kind:** `inhib_expiring` · **Severity:** warn
 - **Fires when:** Enemy inhibitor will respawn within 60s.
 
-### `rule_ally_inhib_down` / `rule_ally_inhib_respawning`
-- **Kinds:** `ally_inhib_down` (alert) / `ally_inhib_respawning` (info)
-- **Fires when:** Enemy team destroyed our inhibitor / our inhibitor will
-  respawn within 60s.
-- **Notes:** `ally_inhib_down` is **another umbrella signal** — Rule 8 of
-  `_suppress_dominated` drops 26 offensive/coaching kinds when present.
-  `ally_inhib_respawning` deliberately coexists ("defend now + back in 30s").
+### `rule_ally_inhib_down`
+- **Kind:** `ally_inhib_down` · **Severity:** alert
+- **Fires when:** Enemy team destroyed our inhibitor.
+- **Notes:** **Umbrella signal** — Rule 8 of `_suppress_dominated` drops
+  26 offensive/coaching kinds when present.
+
+### `rule_ally_inhib_respawning`
+- **Kind:** `ally_inhib_respawning` · **Severity:** info
+- **Fires when:** Our inhibitor will respawn within 60s.
+- **Notes:** Deliberately coexists with `ally_inhib_down` — "defend now +
+  back in 30s" are complementary, not conflicting.
 
 ### `rule_ally_turret_lost`
 - **Kind:** `ally_turret_lost` · **Severity:** info
@@ -337,10 +351,16 @@ matching `reset_*_hysteresis` test fixtures.
 - **Notes:** Survives `numbers_disadv` (the warning is more critical when
   short-handed).
 
-### `rule_elder_buff_expiring` / `rule_enemy_elder_buff`
-- **Kinds:** `elder_buff_expiring` / `enemy_elder_buff`
-- **Fires when:** Elder buff timing on either side. `enemy_elder_buff` is
-  Rule 10 of `_suppress_dominated` — drops 11 fight kinds (execute is fatal).
+### `rule_elder_buff_expiring`
+- **Kind:** `elder_buff_expiring` · **Severity:** warn
+- **Fires when:** Ally team's Elder buff has < 60 s remaining; force the
+  closing-window play before execute drops.
+
+### `rule_enemy_elder_buff`
+- **Kind:** `enemy_elder_buff` · **Severity:** alert
+- **Fires when:** Enemy team has Elder Dragon buff active.
+- **Notes:** **Umbrella signal** — Rule 10 of `_suppress_dominated` drops
+  11 fight kinds. Fighting through the execute is nearly always fatal.
 
 ---
 
