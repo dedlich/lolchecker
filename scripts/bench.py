@@ -33,6 +33,7 @@ sys.path.insert(0, str(ROOT / "src"))
 from champ_assistant.advisor.decision_engine import ALL_RULES, evaluate  # noqa: E402
 from champ_assistant.lcda.client import LcdaClient  # noqa: E402
 from champ_assistant.lcda.source import LcdaSource  # noqa: E402
+from champ_assistant.performance_monitor import rule_timing_recorder  # noqa: E402
 
 DEFAULT_FIXTURE_DIR = ROOT / "tests" / "fixtures" / "lcda"
 
@@ -93,6 +94,29 @@ def _bench_one(label: str, payload: dict, iterations: int) -> list[dict]:
     return records
 
 
+def _per_rule_summary(top_n: int) -> str:
+    """Read the engine's process-wide ``rule_timing_recorder`` digest and
+    format the top-N hottest rules. The recorder is populated by
+    ``decision_engine.evaluate`` automatically — every call to
+    ``_bench_one`` feeds it. Per OPTIMIZATION.md §2.1, this is the
+    measurement step that should precede any rule-grouping refactor."""
+    rows = rule_timing_recorder().digest()
+    if not rows:
+        return "[bench] no per-rule data — engine recorded nothing"
+    top = rows[:top_n]
+    lines = [
+        "",
+        f"[bench] top {len(top)} rules by p95 (ms):",
+        "  rule                                      inv  fires  fire%   p50   p95   mean",
+    ]
+    for name, inv, fc, rate, p50, p95, _mx, mean in top:
+        lines.append(
+            f"  {name:<40s} {inv:>5d} {fc:>6d} {rate*100:>5.1f}% "
+            f"{p50:>5.3f} {p95:>5.3f} {mean:>6.3f}"
+        )
+    return "\n".join(lines)
+
+
 def _summary(records: list[dict]) -> str:
     if not records:
         return "[bench] no records — empty run"
@@ -115,6 +139,11 @@ def main(argv: list[str] | None = None) -> int:
                         help="Iterations per fixture (default: 1000)")
     parser.add_argument("--summary-only", action="store_true",
                         help="Print only the summary line; suppress JSONL.")
+    parser.add_argument("--per-rule", action="store_true",
+                        help="Print the top-N hottest rules from the engine's "
+                             "rule_timing_recorder digest (OPTIMIZATION.md §2.1).")
+    parser.add_argument("--per-rule-top", type=int, default=15,
+                        help="Number of rules to show with --per-rule (default: 15).")
     args = parser.parse_args(argv)
 
     payloads = _load_payloads(args.fixture)
@@ -131,6 +160,8 @@ def main(argv: list[str] | None = None) -> int:
                 print(json.dumps(r))
 
     print(_summary(all_records), file=sys.stderr)
+    if args.per_rule:
+        print(_per_rule_summary(args.per_rule_top), file=sys.stderr)
     return 0
 
 
