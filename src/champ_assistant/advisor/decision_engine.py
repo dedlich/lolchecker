@@ -3240,6 +3240,30 @@ def reset_matchup_mismatch_hysteresis() -> None:
     _MATCHUP_MISMATCH_HYSTERESIS.reset()
 
 
+# ─── Plate window hysteresis ─────────────────────────────────────────────────
+# Single-fire reminder for the 13:00-14:00 window. After 14:00 the outer
+# turret plates despawn — any plate not yet popped is gold left on the table
+# for the rest of the game.
+
+class _PlateWindowHysteresis:
+    """Tracks whether the plate-despawn reminder has fired this game."""
+    __slots__ = ("fired",)
+
+    def __init__(self) -> None:
+        self.fired = False
+
+    def reset(self) -> None:
+        self.fired = False
+
+
+_PLATE_WINDOW_HYSTERESIS = _PlateWindowHysteresis()
+
+
+def reset_plate_window_hysteresis() -> None:
+    """Test-only: re-arm the plate-despawn reminder."""
+    _PLATE_WINDOW_HYSTERESIS.reset()
+
+
 def rule_recall_check(snapshot: "LcdaSnapshot") -> Recommendation | None:
     """Recall-window coaching driven by HP %, mana %, and gold (Charter B5).
 
@@ -3886,6 +3910,55 @@ def rule_matchup_mismatch(snapshot: "LcdaSnapshot") -> Recommendation | None:
     )
 
 
+# ─── Plate-window thresholds ────────────────────────────────────────────────
+# Outer turret plates exist 0:00 – 14:00. Each pops for 160g + a chunk of the
+# turret's HP. After 14:00 plates despawn — uncashed plates are pure waste.
+# Pros aggressively trade waves to take plates because:
+#   * 5 plates × 6 outer turrets = 30 plates total, ~4800g of free gold
+#   * Plates damage the turret too, accelerating tower kills mid-game
+#   * Once plates fall off the turret has no resistance bonus → faster siege
+PLATE_WINDOW_OPEN_S: float = 780.0    # 13:00 — final-call reminder kicks in
+PLATE_WINDOW_CLOSE_S: float = 840.0   # 14:00 — plates despawn (Riot fixed)
+
+
+def rule_plate_window(snapshot: "LcdaSnapshot") -> Recommendation | None:
+    """Fire once at ~13:00 game time to remind about despawning plates.
+
+    The most expensive lesson early-mid game players learn: plates fall
+    off at 14:00 and any plate you didn't pop is gone forever. At 13:00
+    you have ~60 s to crash a wave + take whatever plates you can reach.
+
+    Single-fire (hysteresis) so the reminder doesn't spam. Doesn't fire
+    before 13:00 (less urgent — you have time) or after 14:00 (too late).
+    """
+    game_time = float(getattr(snapshot, "game_time", 0.0) or 0.0)
+    if game_time < PLATE_WINDOW_OPEN_S or game_time >= PLATE_WINDOW_CLOSE_S:
+        return None
+    h = _PLATE_WINDOW_HYSTERESIS
+    if h.fired:
+        return None
+    h.fired = True
+
+    remaining = int(PLATE_WINDOW_CLOSE_S - game_time)
+    return Recommendation(
+        text=(
+            f"Turret-Plates fallen in {remaining}s — letzte Chance, "
+            "Welle pushen, freie Plates ziehen (160g pro Plate)"
+        ),
+        severity="info",
+        category="objective",
+        confidence=0.85,
+        risk="LOW",
+        ttl_s=30.0,
+        kind="plate_window",
+        reasons=(
+            f"Plates despawn bei 14:00 ({remaining}s)",
+            "160g pro Plate × bis zu 30 Plates = ~4800g Tempo-Gold",
+            "Nach 14:00: keine Plate-Boni mehr, naked Turrets — Siege-Phase",
+        ),
+    )
+
+
 def rule_tilt_detection(snapshot: "LcdaSnapshot") -> Recommendation | None:
     """Surface the active player's death pattern as a coaching call.
 
@@ -4244,6 +4317,8 @@ ALL_RULES: tuple[Callable[["LcdaSnapshot"], Recommendation | None], ...] = (
     rule_ally_bounty,
     # B5 matchup mismatch — per-enemy deficit coaching ("lane lost").
     rule_matchup_mismatch,
+    # B3 plate window — once-per-game reminder before plates despawn at 14:00.
+    rule_plate_window,
     # B4 tilt detection — active player's death pattern coaching.
     rule_tilt_detection,
     # B5 recall window — HP/mana/gold-driven back timing.
@@ -4399,6 +4474,7 @@ def _suppress_dominated(recs: list[Recommendation]) -> list[Recommendation]:
             "enemy_bounty",         # 5v0 push moment — focus call is implicit
             "ally_bounty",          # protect-the-carry irrelevant — push winning
             "matchup_mismatch",     # lane analysis irrelevant during ace push
+            "plate_window",         # plates moot — push the win, not a tower trade
         }
         recs = [r for r in recs if r.kind not in _ace_drop]
         kinds = {r.kind for r in recs}
@@ -4431,6 +4507,7 @@ def _suppress_dominated(recs: list[Recommendation]) -> list[Recommendation]:
             "enemy_bounty",        # short-handed teams don't pick fights — focus is moot
             "ally_bounty",         # the more-urgent "play safe" already covers "don't 4v5"
             "matchup_mismatch",    # lane analysis drowns out the urgent safety call
+            "plate_window",        # don't tell short-handed players to push for plates
         }
         return [r for r in recs if r.kind not in _offensive]
 
@@ -4477,6 +4554,7 @@ def _suppress_dominated(recs: list[Recommendation]) -> list[Recommendation]:
             "enemy_bounty",        # focus call irrelevant — they're inside your base
             "ally_bounty",         # protect-the-carry irrelevant — defend, don't enable
             "matchup_mismatch",    # lane analysis irrelevant — base is open
+            "plate_window",        # plates moot when defending your own base
             # NOTE: ally_inhib_respawning intentionally coexists with ally_inhib_down:
             # "defend now + inhib back in 30s" are complementary, not conflicting.
         }
@@ -4524,6 +4602,7 @@ def _suppress_dominated(recs: list[Recommendation]) -> list[Recommendation]:
             "enemy_bounty",      # focus call irrelevant — feeding player should not fight
             "ally_bounty",       # protect-the-carry irrelevant — feeding player can't help
             "matchup_mismatch",  # lane analysis is what tilt already implies — single message wins
+            "plate_window",      # don't tell a feeding player to push for plates
             "flash_down", "tp_down", "combat_spell_down",
             "jungler_down", "dragon_soul",
         }
