@@ -3342,6 +3342,31 @@ def reset_shutdown_taken_hysteresis() -> None:
     _SHUTDOWN_TAKEN_HYSTERESIS.reset()
 
 
+# ─── Objective-taken hysteresis ──────────────────────────────────────────────
+# Keyed on the EventTime of each objective kill so we fire once per instance
+# (not every tick the kill is in the cumulative event log).
+
+class _ObjectiveTakenHysteresis:
+    """Tracks the kill EventTimes we've already announced conversion for."""
+    __slots__ = ("fired_event_times",)
+
+    def __init__(self) -> None:
+        # Use a set of (event_name, event_time) tuples — DragonKill/BaronKill/
+        # HeraldKill all have unique EventTimes, but key on both for safety.
+        self.fired_event_times: set[tuple[str, float]] = set()
+
+    def reset(self) -> None:
+        self.fired_event_times.clear()
+
+
+_OBJECTIVE_TAKEN_HYSTERESIS = _ObjectiveTakenHysteresis()
+
+
+def reset_objective_taken_hysteresis() -> None:
+    """Test-only: drop the objective-taken-fired set."""
+    _OBJECTIVE_TAKEN_HYSTERESIS.reset()
+
+
 def rule_recall_check(snapshot: "LcdaSnapshot") -> Recommendation | None:
     """Recall-window coaching driven by HP %, mana %, and gold (Charter B5).
 
@@ -4405,6 +4430,142 @@ def rule_shutdown_taken(snapshot: "LcdaSnapshot") -> Recommendation | None:
     )
 
 
+# ─── Objective-taken thresholds ──────────────────────────────────────────────
+# After taking a major objective, the buff window is finite. Pros immediately
+# convert into map state — most importantly into Inhib pressure for Baron and
+# tower/drake stacks for the others. Solo queue often drops the buff.
+OBJECTIVE_TAKEN_RECENT_S: float = 20.0   # how recently the kill must have happened
+
+
+_OBJECTIVE_LABEL: dict[str, str] = {
+    "BaronKill":   "Baron",
+    "DragonKill":  "Drache",
+    "HeraldKill":  "Herald",
+}
+
+
+def _objective_taken_advice(
+    event_name: str, drake_detail: str, ally_drake_count: int, game_time: float,
+) -> tuple[str, str, str, float, float, str]:
+    """Return ``(text_suffix, severity, risk, ttl_s, confidence, kind)`` for
+    the just-taken objective, factoring in the dragon-soul / elder edge cases.
+
+    Tier scaling:
+      * Baron      → alert, push all 3 lanes, force inhib
+      * Elder      → alert, 3-min execute, force inhib JETZT
+      * Soul drake → alert, permanent buff, force baron / inhib
+      * Regular dr → info,  next drake setup, vision
+      * Herald     → info,  eye-of-herald → tower
+    """
+    if event_name == "BaronKill":
+        return (
+            "BARON taken — alle 3 Lanes pushen, Inhib forcen, Vision-Sweep",
+            "alert", "LOW", 30.0, 0.92, "objective_taken_baron",
+        )
+    if event_name == "DragonKill":
+        # Elder Dragon: only spawns after a soul has been claimed.
+        if (drake_detail or "").lower() == "elder":
+            return (
+                "ELDER taken — 3-min Execute aktiv, INHIB JETZT, kein Wait",
+                "alert", "LOW", 30.0, 0.92, "objective_taken_elder",
+            )
+        # Soul drake: 4th drake claim seals the soul buff (permanent for this game).
+        if ally_drake_count >= 4:
+            return (
+                "SOUL taken — permanenter Buff. Baron oder Inhib forcen.",
+                "alert", "LOW", 30.0, 0.90, "objective_taken_soul",
+            )
+        # Regular drake.
+        return (
+            "Drache taken — nächste Drake setup, Vision pflanzen",
+            "info", "LOW", 25.0, 0.80, "objective_taken_drake",
+        )
+    # Herald.
+    if game_time < 840.0:
+        advice = "Eye-of-Herald nutzen, Top oder Mid Tower aufknacken"
+    else:
+        advice = "Herald-Charge nutzen, Plates oder Tower"
+    return (advice, "info", "LOW", 25.0, 0.80, "objective_taken_herald")
+
+
+def rule_objective_taken_by_ally(snapshot: "LcdaSnapshot") -> Recommendation | None:
+    """Fire when the ally team just killed Baron / Dragon / Herald. The
+    *post-kill* conversion call (Charter B5).
+
+    Distinct from existing rules:
+      * rule_dragon_window / rule_baron_window — fire while objective is UP
+      * rule_baron_buff_expiring — fires near the END of the buff
+      * rule_dragon_soul_pressure — fires PRE-soul (3 stacks)
+
+    This rule is the missing AT-THE-MOMENT-OF-KILL signal: "you just took
+    it, here's the immediate next play". Solo queue routinely takes Baron
+    and then rotates BACK to drake, dropping the inhib pressure window.
+
+    Picks the most recent ally-team objective kill within
+    OBJECTIVE_TAKEN_RECENT_S seconds of game_time, fires once per
+    EventTime so the cumulative event log can't re-fire the same kill.
+    """
+    events = list(getattr(snapshot, "raw_events", []) or [])
+    if not events:
+        return None
+    game_time = float(getattr(snapshot, "game_time", 0.0) or 0.0)
+    allies = list(getattr(snapshot, "allies", []) or [])
+    ally_ids = _team_id_set(allies)
+    if not ally_ids:
+        return None
+    h = _OBJECTIVE_TAKEN_HYSTERESIS
+
+    # Find the most recent ally-team objective kill in the recent window.
+    candidate: dict | None = None
+    candidate_t = -1.0
+    for evt in events:
+        name = evt.get("EventName") or ""
+        if name not in _OBJECTIVE_LABEL:
+            continue
+        killer = str(evt.get("KillerName") or "")
+        if killer not in ally_ids:
+            continue
+        t = float(evt.get("EventTime", 0) or 0)
+        if game_time - t > OBJECTIVE_TAKEN_RECENT_S:
+            continue
+        if t > candidate_t:
+            candidate = evt
+            candidate_t = t
+
+    if candidate is None:
+        return None
+    name = candidate.get("EventName", "") or ""
+    key = (name, float(candidate.get("EventTime", 0) or 0))
+    if key in h.fired_event_times:
+        return None
+    h.fired_event_times.add(key)
+
+    # Pull the dragon stack count for soul / elder detection.
+    ally_aggregate = getattr(snapshot, "ally_aggregate", None)
+    ally_drakes = int(getattr(ally_aggregate, "dragons", 0) or 0)
+    drake_detail = str(candidate.get("DragonType") or "")
+
+    advice_text, severity, risk, ttl_s, confidence, kind = _objective_taken_advice(
+        name, drake_detail, ally_drakes, game_time,
+    )
+    label = _OBJECTIVE_LABEL.get(name, name)
+
+    return Recommendation(
+        text=f"{label} GETÖTET — {advice_text}",
+        severity=severity,
+        category="objective",
+        confidence=confidence,
+        risk=risk,
+        ttl_s=ttl_s,
+        kind=kind,
+        reasons=(
+            f"{label}-Kill von Team registriert (T={int(candidate_t)}s)",
+            "Pro-Maxime: Buffs SOFORT in Map-State konvertieren",
+            "Solo-Queue-Throw: Baron töten + zurück zur Drake = Buff verschwendet",
+        ),
+    )
+
+
 def rule_tilt_detection(snapshot: "LcdaSnapshot") -> Recommendation | None:
     """Surface the active player's death pattern as a coaching call.
 
@@ -4771,6 +4932,8 @@ ALL_RULES: tuple[Callable[["LcdaSnapshot"], Recommendation | None], ...] = (
     rule_teamfight_outcome,
     # B5 shutdown taken — convert bountied-enemy death into map state.
     rule_shutdown_taken,
+    # B5 objective taken — at-moment-of-kill conversion call.
+    rule_objective_taken_by_ally,
     # B4 tilt detection — active player's death pattern coaching.
     rule_tilt_detection,
     # B5 recall window — HP/mana/gold-driven back timing.
@@ -4931,6 +5094,12 @@ def _suppress_dominated(recs: list[Recommendation]) -> list[Recommendation]:
             "teamfight_won",        # ace IS the conversion call — redundant
             "teamfight_won_big",
             "shutdown_taken",       # ace already includes the gold + map-state windfall
+            # objective_taken_* — ace IS the conversion call; the buff windfall is implicit
+            "objective_taken_baron",
+            "objective_taken_elder",
+            "objective_taken_soul",
+            "objective_taken_drake",
+            "objective_taken_herald",
         }
         recs = [r for r in recs if r.kind not in _ace_drop]
         kinds = {r.kind for r in recs}
@@ -5022,6 +5191,12 @@ def _suppress_dominated(recs: list[Recommendation]) -> list[Recommendation]:
             "teamfight_lost",      # ditto — the urgent "defend base" call wins
             "teamfight_lost_big",
             "shutdown_taken",      # objective conversion irrelevant — defend base
+            # All objective_taken_* — base defense trumps post-objective conversion
+            "objective_taken_baron",
+            "objective_taken_elder",
+            "objective_taken_soul",
+            "objective_taken_drake",
+            "objective_taken_herald",
             # NOTE: ally_inhib_respawning intentionally coexists with ally_inhib_down:
             # "defend now + inhib back in 30s" are complementary, not conflicting.
         }
@@ -5073,6 +5248,12 @@ def _suppress_dominated(recs: list[Recommendation]) -> list[Recommendation]:
             "teamfight_won",     # feeding player isn't pushing the win — let team handle
             "teamfight_won_big",
             "shutdown_taken",    # feeding player shouldn't be the one pushing
+            # objective_taken_* — feeding player shouldn't carry the baron-push lead
+            "objective_taken_baron",
+            "objective_taken_elder",
+            "objective_taken_soul",
+            "objective_taken_drake",
+            "objective_taken_herald",
             "flash_down", "tp_down", "combat_spell_down",
             "jungler_down", "dragon_soul",
         }
