@@ -3209,6 +3209,37 @@ def reset_ally_bounty_hysteresis() -> None:
     _ALLY_BOUNTY_HYSTERESIS.reset()
 
 
+# ─── Matchup-mismatch hysteresis ─────────────────────────────────────────────
+# Per-enemy fired-tier tracker for "you're losing the lane to this specific
+# opponent" detection. The deficit is measured as (deaths_to_them) minus
+# (kills_on_them) so a 3-3 trade isn't flagged — only a real one-sided
+# pattern triggers.
+
+class _MatchupMismatchHysteresis:
+    """Per-enemy "highest deficit tier announced this game" tracker.
+
+    Unlike bounty hysteresis there's no "death resets" semantic — once you
+    are 3-deep on a matchup it doesn't un-mismatch by you respawning. Only
+    a kill on that enemy can reduce the deficit, which the rule recomputes
+    fresh every tick from raw_events anyway.
+    """
+    __slots__ = ("last_fired_tier",)
+
+    def __init__(self) -> None:
+        self.last_fired_tier: dict[str, int] = {}
+
+    def reset(self) -> None:
+        self.last_fired_tier.clear()
+
+
+_MATCHUP_MISMATCH_HYSTERESIS = _MatchupMismatchHysteresis()
+
+
+def reset_matchup_mismatch_hysteresis() -> None:
+    """Test-only: drop per-enemy mismatch-tier state."""
+    _MATCHUP_MISMATCH_HYSTERESIS.reset()
+
+
 def rule_recall_check(snapshot: "LcdaSnapshot") -> Recommendation | None:
     """Recall-window coaching driven by HP %, mana %, and gold (Charter B5).
 
@@ -3736,6 +3767,125 @@ def rule_ally_bounty(snapshot: "LcdaSnapshot") -> Recommendation | None:
     )
 
 
+# ─── Matchup-mismatch thresholds ─────────────────────────────────────────────
+# Pros distinguish "I'm tilting" from "I'm losing this lane specifically".
+# A 0-3 score with all 3 deaths to the same enemy is a hardstomp — the
+# coaching is different from a 0-3 spread across team fights.
+
+MISMATCH_DEFICIT_INFO: int = 2   # net 2 = you're behind in the matchup
+MISMATCH_DEFICIT_WARN: int = 3   # net 3+ = lane is lost, defensive only
+
+
+def _matchup_deficit(active_ids: set[str], events: list[dict]) -> dict[str, int]:
+    """For each enemy who has interacted with the active player in
+    ``ChampionKill`` events, return ``deaths_from_them − kills_on_them``.
+
+    Positive deficits = you are losing the matchup against that enemy.
+    Negative or zero = you're even or winning. Only enemies appearing in
+    at least one event are returned.
+    """
+    deficits: dict[str, int] = {}
+    for evt in events:
+        if evt.get("EventName") != "ChampionKill":
+            continue
+        killer = evt.get("KillerName") or ""
+        victim = evt.get("VictimName") or ""
+        if victim in active_ids and killer:
+            deficits[killer] = deficits.get(killer, 0) + 1
+        elif killer in active_ids and victim:
+            deficits[victim] = deficits.get(victim, 0) - 1
+    return deficits
+
+
+def rule_matchup_mismatch(snapshot: "LcdaSnapshot") -> Recommendation | None:
+    """Surface "you're losing the lane to a specific enemy" once per
+    deficit-tier per matchup (Charter B5 — matchup awareness).
+
+    Difference vs ``rule_tilt_detection``:
+      * Tilt:    aggregate death cadence — "you keep dying"
+      * Matchup: per-killer deficit — "you keep dying *to this enemy*"
+
+    A 0-3 score with all three deaths to one enemy = hardstomp matchup.
+    A 0-3 spread across team fights = just tilt, this rule stays silent.
+    Both can fire together when the player both is on a death streak AND
+    the streak comes mostly from one opponent — the messages are
+    complementary (tilt = "stop fighting"; mismatch = "you specifically
+    can't 1v1 *this* enemy, freeze the wave and wait for help").
+
+    Tier ladder (deficit = deaths_from_X − kills_on_X):
+      * deficit 2  → info — "X tötet dich oft, defensiv farmen"
+      * deficit 3+ → warn — "X dominiert dich, Lane verloren, Hilfe nötig"
+
+    Per-enemy hysteresis fires once per tier per game; subsequent
+    deaths to the same enemy at the same tier don't re-spam. The
+    deficit can shrink (you kill them) which doesn't auto-rearm —
+    once flagged, the matchup info stays useful.
+    """
+    active = _active_player(snapshot)
+    if active is None:
+        return None
+    sn = str(getattr(active, "summoner_name", "") or "")
+    cn = str(getattr(active, "champion_name", "") or "")
+    active_ids: set[str] = {x for x in (sn, cn) if x}
+    if not active_ids:
+        return None
+
+    events = list(getattr(snapshot, "raw_events", []) or [])
+    deficits = _matchup_deficit(active_ids, events)
+    if not deficits:
+        return None
+
+    # Pick the worst (highest) deficit. If multiple are tied, alphabetical
+    # for determinism.
+    h = _MATCHUP_MISMATCH_HYSTERESIS
+    best: tuple[int, int, str] | None = None  # (tier, deficit, name)
+    for name, deficit in deficits.items():
+        if deficit < MISMATCH_DEFICIT_INFO:
+            continue
+        if deficit >= MISMATCH_DEFICIT_WARN:
+            tier = MISMATCH_DEFICIT_WARN
+        else:
+            tier = MISMATCH_DEFICIT_INFO
+        if tier <= h.last_fired_tier.get(name, 0):
+            continue
+        candidate = (tier, deficit, name)
+        if best is None or candidate > best:
+            best = candidate
+
+    if best is None:
+        return None
+    tier, deficit, name = best
+    h.last_fired_tier[name] = tier
+
+    if tier >= MISMATCH_DEFICIT_WARN:
+        text = (
+            f"{name} dominiert dich ({deficit} Diff) — "
+            f"Lane verloren. Welle freezen, Hilfe pingen, kein Trade."
+        )
+        severity, ttl_s, confidence, risk = "warn", 35.0, 0.90, "HIGH"
+    else:
+        text = (
+            f"{name} tötet dich oft ({deficit} Diff) — "
+            f"Matchup-Vorsicht: defensiv farmen, Jungler-Hilfe einplanen."
+        )
+        severity, ttl_s, confidence, risk = "info", 30.0, 0.80, "MEDIUM"
+
+    return Recommendation(
+        text=text,
+        severity=severity,
+        category="lane",
+        confidence=confidence,
+        risk=risk,
+        ttl_s=ttl_s,
+        kind="matchup_mismatch",
+        reasons=(
+            f"Tode gegen {name}: {deficit} mehr als Kills auf {name}",
+            "Matchup-Mismatch isolieren von Tilt: das ist diese Lane, nicht das Spiel",
+            "Welle freezen + Jungle-Hilfe = einziger gesunder Komeback-Pfad",
+        ),
+    )
+
+
 def rule_tilt_detection(snapshot: "LcdaSnapshot") -> Recommendation | None:
     """Surface the active player's death pattern as a coaching call.
 
@@ -4092,6 +4242,8 @@ ALL_RULES: tuple[Callable[["LcdaSnapshot"], Recommendation | None], ...] = (
     rule_enemy_bounty,
     # B5 ally bounty — proactive "protect the fed ally" coaching.
     rule_ally_bounty,
+    # B5 matchup mismatch — per-enemy deficit coaching ("lane lost").
+    rule_matchup_mismatch,
     # B4 tilt detection — active player's death pattern coaching.
     rule_tilt_detection,
     # B5 recall window — HP/mana/gold-driven back timing.
@@ -4246,6 +4398,7 @@ def _suppress_dominated(recs: list[Recommendation]) -> list[Recommendation]:
             "active_bounty",        # bounty doesn't matter when team is winning the play
             "enemy_bounty",         # 5v0 push moment — focus call is implicit
             "ally_bounty",          # protect-the-carry irrelevant — push winning
+            "matchup_mismatch",     # lane analysis irrelevant during ace push
         }
         recs = [r for r in recs if r.kind not in _ace_drop]
         kinds = {r.kind for r in recs}
@@ -4277,6 +4430,7 @@ def _suppress_dominated(recs: list[Recommendation]) -> list[Recommendation]:
             "active_bounty",       # numbers_disadv is the more-urgent safety call
             "enemy_bounty",        # short-handed teams don't pick fights — focus is moot
             "ally_bounty",         # the more-urgent "play safe" already covers "don't 4v5"
+            "matchup_mismatch",    # lane analysis drowns out the urgent safety call
         }
         return [r for r in recs if r.kind not in _offensive]
 
@@ -4322,6 +4476,7 @@ def _suppress_dominated(recs: list[Recommendation]) -> list[Recommendation]:
             "active_bounty",       # bounty coaching irrelevant when defending base
             "enemy_bounty",        # focus call irrelevant — they're inside your base
             "ally_bounty",         # protect-the-carry irrelevant — defend, don't enable
+            "matchup_mismatch",    # lane analysis irrelevant — base is open
             # NOTE: ally_inhib_respawning intentionally coexists with ally_inhib_down:
             # "defend now + inhib back in 30s" are complementary, not conflicting.
         }
@@ -4368,6 +4523,7 @@ def _suppress_dominated(recs: list[Recommendation]) -> list[Recommendation]:
             "skill_point_unspent",  # micro-nag drowns out "do nothing" message
             "enemy_bounty",      # focus call irrelevant — feeding player should not fight
             "ally_bounty",       # protect-the-carry irrelevant — feeding player can't help
+            "matchup_mismatch",  # lane analysis is what tilt already implies — single message wins
             "flash_down", "tp_down", "combat_spell_down",
             "jungler_down", "dragon_soul",
         }
