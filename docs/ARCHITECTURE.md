@@ -239,4 +239,30 @@ tests/lint/       # design lockdown (no inline px/hex), input-hook safety
   / profile aggregators are all pure; UI widgets, async sources, and the orchestrator
   are the only stateful layers.
 
+## Import policy (OPTIMIZATION.md §2.3)
+
+Cold-start budget is **<1000 ms** (charter A target) for ``import champ_assistant.app``;
+the regression test at ``tests/perf/test_cold_start.py`` enforces a 1500 ms ceiling
+with CI headroom. Local baseline at v1.10.72: 230–380 ms.
+
+To keep the budget without a per-tick policy review, two rules:
+
+1. **Top-level imports** for anything used at module-import time, ``if TYPE_CHECKING``,
+   or on the hot path of every session. Examples: ``Recommendation``, ``LcdaSnapshot``,
+   ``ChampAssistant``, ``MainOverlay``, ``logging_setup``, ``app_paths``.
+
+2. **Lazy imports** (``from X import Y`` inside the function that uses it) for:
+   * subsystems gated by user settings — telemetry, vision, diagnostics
+   * API clients with optional credentials — ``RiotApiClient`` (keyring-gated),
+     ``RuntimeCounterStore`` LLM provider (env-gated)
+   * one-off paths the typical session doesn't hit — bootstrap installer,
+     update-check, build-engine refresh
+   * heavy modules used only after a user action — Settings dialog sections,
+     overlay fly-out widgets
+
+Rule of thumb: if an import sits at the top of a file the cold-start test exercises,
+it must be **needed** by that file — not just imported "while we're here". The 66
+inline imports in ``boot.py`` are deliberate; do not lift them eagerly without
+re-running ``scripts/bench.py`` and the cold-start test.
+
 For long-form rationale see `masterplan-lol-champ-assistant-v3.md` at the repo root.

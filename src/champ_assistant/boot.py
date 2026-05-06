@@ -19,6 +19,13 @@ owns:
 ``__main__.py`` re-imports the public-API helpers it still calls
 (``_setup_file_logger``, ``_load_dotenv_files``, ``_run_headless``,
 ``_run_with_ui``, ``_bootstrap_install``, ``build_parser``).
+
+Inline imports inside the functions below are deliberate (per
+OPTIMIZATION.md §2.3 import policy — see ``docs/ARCHITECTURE.md``).
+Each one defers a heavy or user-gated subsystem until the path that
+needs it actually runs. Do not lift them eagerly without first
+re-running the cold-start regression test
+(``tests/perf/test_cold_start.py``) and ``scripts/bench.py``.
 """
 from __future__ import annotations
 
