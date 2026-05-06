@@ -34,54 +34,14 @@ from .data.models import (
     TierList,
 )
 from .data.runtime_counters import RuntimeCounterStore
-
-# Standard draft pick order — Riot fixes the role assignment to cell order in
-# ranked, but the LCU only echoes assignedPosition for *my* team. We infer the
-# enemy team's roles from their index within their_team as a last resort.
-_DRAFT_ROLE_ORDER: list[Role] = ["TOP", "JUNGLE", "MID", "BOT", "SUPPORT"]
-
-
-def _role_at_index(i: int) -> Role | None:
-    return _DRAFT_ROLE_ORDER[i] if 0 <= i < len(_DRAFT_ROLE_ORDER) else None
-
-
-def infer_role_from_tags(tags: list[str]) -> Role | None:
-    """Heuristic role guess from Data Dragon's champion tags.
-
-    Riot's tags ({Assassin, Fighter, Mage, Marksman, Support, Tank}) are
-    playstyle labels, not lanes — so the mapping is approximate. Hand-curated
-    priority order based on common pick distribution; user can override.
-    """
-    s = set(tags)
-    if "Marksman" in s:
-        return "BOT"
-    if "Support" in s:
-        return "SUPPORT"
-    # Pure tank without fighter chops → typically SUPPORT (Leona, Naut, Alistar)
-    if "Tank" in s and "Fighter" not in s:
-        return "SUPPORT"
-    # Tank + Fighter → top-lane bruisers (Garen, Maokai, Sett)
-    if "Tank" in s and "Fighter" in s:
-        return "TOP"
-    # Pure mage → mid (Annie, Lux without support, Veigar)
-    if "Mage" in s and "Assassin" not in s and "Fighter" not in s:
-        return "MID"
-    # Assassin + Fighter → jungle (Kha'Zix, Viego, Nidalee)
-    if "Assassin" in s and "Fighter" in s:
-        return "JUNGLE"
-    # Pure assassin → mid (Zed, Talon, Akali)
-    if "Assassin" in s:
-        return "MID"
-    # Pure fighter → top (Darius, Aatrox, Camille)
-    if "Fighter" in s:
-        return "TOP"
-    # Mage + Assassin (LeBlanc, Diana) → mid
-    if "Mage" in s:
-        return "MID"
-    return None
 from .lcu.sources import LcuSource
 from .ui.overlay import MainOverlay
 from .ui.view_model import ConnectionState, SessionView
+# Re-export for callers that historically imported infer_role_from_tags
+# from this module (e.g. tests). New code should import from
+# ``advisor.role_inference`` directly.
+from .advisor.role_inference import infer_role_from_tags  # noqa: F401
+from .view_builder import ViewBuilderDeps, build_session_view
 
 logger = logging.getLogger(__name__)
 
@@ -236,121 +196,35 @@ class ChampAssistant:
 
     # -- View construction -----------------------------------------------
 
-    def _build_view(self, session: ChampSelectSession | None) -> SessionView:
-        if session is None:
-            return SessionView(connection_state=self._connection_state)
-
-        enemy_counters = self._compute_enemy_counters(session)
-        enemy_names = self._compute_enemy_names(session)
-        enemy_keys = self._compute_enemy_keys(session)
-        enemy_roles = self._compute_enemy_roles(session)
-        enemy_damage_profile = self._compute_enemy_damage_profile(session)
-        suggestions, gaps = self._compute_picks(session)
-
-        # Look up the recommended build for each suggestion in the local
-        # player's role. Falls back to {} silently when builds aren't seeded.
-        my_role: Role | None = None
-        if session.me is not None:
-            my_role = session.me.assigned_position
-        # Builds are matchup-adapted: take the base role build and
-        # apply heuristic swaps based on enemy team comp (boots vs
-        # AP/AD-heavy, anti-heal vs sustain, tenacity vs heavy CC).
-        suggestion_builds: dict[str, ChampionBuild] = {}
-        suggestion_build_reasons: dict[str, list[str]] = {}
-        if my_role is not None:
-            from .advisor.build_adapter import adapt_build
-            enemy_keys_list = list(self._team_keys(session.their_team))
-            for s in suggestions:
-                base = self.builds.build_for(s.champion_key, my_role)
-                adapted = adapt_build(
-                    base, role=my_role,
-                    enemy_team_keys=enemy_keys_list,
-                    tags=self.tags,
-                )
-                if adapted is None:
-                    continue
-                suggestion_builds[s.champion_key] = adapted.build
-                if adapted.reasons:
-                    suggestion_build_reasons[s.champion_key] = adapted.reasons
-
-        # Kick off async profile fetches for enemies whose puuid/summoner_id
-        # is now visible. Results land in self._enemy_profiles_by_cell and
-        # the next view rebuild will surface them.
-        self._maybe_fetch_profiles(session)
-
-        from .advisor.ban_suggestions import suggest_bans
-        ally_candidate_keys = [s.champion_key for s in suggestions[:5]] if suggestions else []
-        _ban_kwargs = dict(
-            session=session,
-            champions=self.champions,
-            tiers=self.tiers,
-            enemy_profiles=self._enemy_profiles_by_cell,
-            counters=self.counters,
-            ally_candidate_keys=ally_candidate_keys,
-        )
-        ban_suggestions_lane = suggest_bans(**_ban_kwargs, my_role=my_role, limit=5)  # type: ignore[arg-type]
-        _lane_keys = {b.champion_key for b in ban_suggestions_lane}
-        # Allround: global tier + mains, no role filter; exclude lane-ban dupes.
-        _allround_raw = suggest_bans(**_ban_kwargs, my_role=None, limit=10)  # type: ignore[arg-type]
-        ban_suggestions_allround = [b for b in _allround_raw if b.champion_key not in _lane_keys][:5]
-        # Keep legacy field populated (union, capped at 3) so old tests still pass.
-        bans = (ban_suggestions_lane + [b for b in ban_suggestions_allround if b not in ban_suggestions_lane])[:3]
-
-        picks_counter, picks_synergy = self._compute_picks_categorized(session)
-
-        # My champion build — shown after the local player locks their pick.
-        my_champion_key = ""
-        my_champion_build = None
-        me = session.me
-        if me is not None and me.champion_id and me.champion_id in self.champions:
-            locked_champ = self.champions[me.champion_id]
-            my_champion_key = locked_champ.key
-            if my_role is not None:
-                from .advisor.build_adapter import adapt_build
-                enemy_keys_list = list(self._team_keys(session.their_team))
-                base = self.builds.build_for(locked_champ.key, my_role)
-                adapted = adapt_build(
-                    base, role=my_role,
-                    enemy_team_keys=enemy_keys_list,
-                    tags=self.tags,
-                )
-                if adapted is not None:
-                    my_champion_build = adapted.build
-                elif base is not None:
-                    my_champion_build = base
-
-        return SessionView(
+    def _make_view_deps(self) -> ViewBuilderDeps:
+        """Pack the orchestrator's mutable state into the deps struct
+        the pure view builder consumes."""
+        return ViewBuilderDeps(
             connection_state=self._connection_state,
-            session=session,
-            enemy_counters=enemy_counters,
-            suggestions=suggestions,
-            gaps=gaps,
-            enemy_names=enemy_names,
-            enemy_keys=enemy_keys,
-            # Global champion maps for EnemyRow's mains-icon row —
-            # need to look up arbitrary champions outside the lobby.
-            all_champion_keys={
-                c.id: c.key for c in self.champions.values()
-            },
-            all_champion_names={
-                c.id: c.name for c in self.champions.values()
-            },
-            enemy_roles=enemy_roles,
-            enemy_role_overridden=set(self._enemy_role_overrides.keys()),
-            enemy_damage_profile=enemy_damage_profile,
-            suggestion_builds=suggestion_builds,
-            suggestion_build_reasons=suggestion_build_reasons,
-            enemy_profiles=dict(self._enemy_profiles_by_cell),  # type: ignore[arg-type]
-            ally_profiles=dict(self._ally_profiles_by_cell),  # type: ignore[arg-type]
-            ban_suggestions=bans,
-            ban_suggestions_lane=ban_suggestions_lane,
-            ban_suggestions_allround=ban_suggestions_allround,
-            picks_counter=picks_counter,
-            picks_synergy=picks_synergy,
-            my_champion_key=my_champion_key,
-            my_champion_role=my_role,
-            my_champion_build=my_champion_build,
+            counters=self.counters,
+            tiers=self.tiers,
+            tags=self.tags,
+            champions=self.champions,
+            builds=self.builds,
+            runtime_counters=self._runtime_counters,
+            enemy_role_overrides=self._enemy_role_overrides,
+            enemy_profiles_by_cell=self._enemy_profiles_by_cell,  # type: ignore[arg-type]
+            ally_profiles_by_cell=self._ally_profiles_by_cell,  # type: ignore[arg-type]
+            schedule_runtime_fetch=self._schedule_runtime_fetch,
         )
+
+    def _build_view(self, session: ChampSelectSession | None) -> SessionView:
+        """Thin orchestration shim around ``view_builder.build_session_view``.
+
+        The view computation itself is a pure function in ``view_builder``;
+        this method also fires the side effect (kick off async profile
+        fetches) that has to live with the orchestrator since it touches
+        the event loop + Coalescer.
+        """
+        view = build_session_view(session, self._make_view_deps())
+        if session is not None:
+            self._maybe_fetch_profiles(session)
+        return view
 
     def _maybe_fetch_profiles(self, session: ChampSelectSession) -> None:
         """If a Riot API key is configured, fire off async profile lookups
@@ -438,44 +312,6 @@ class ChampAssistant:
             )
         # Inflight discard handled by the Coalescer wrapper.
 
-    def _resolve_enemy_role(
-        self, enemy: TeamMember, index: int, champion: Champion | None
-    ) -> Role | None:
-        """Resolve an enemy slot's role with this priority:
-        1. Manual override (user clicked the role label in the UI)
-        2. assigned_position from the LCU (rare — usually empty for the enemy)
-        3. Tag-based heuristic from the picked champion's Data Dragon tags
-        4. Cell-order fallback (TOP/JUNGLE/MID/BOT/SUPPORT by index)
-        """
-        override = self._enemy_role_overrides.get(enemy.cell_id)
-        if override is not None:
-            return override
-        if enemy.assigned_position is not None:
-            return enemy.assigned_position
-        if champion is not None:
-            inferred = infer_role_from_tags(champion.tags)
-            if inferred is not None:
-                return inferred
-        return _role_at_index(index)
-
-    def _lookup_counters(
-        self, enemy_key: str, role: Role
-    ) -> list[CounterEntry]:
-        """Three-tier counter resolution:
-          1. Seed JSON (deterministic, instant)
-          2. Runtime cache (Groq response we already fetched)
-          3. Fire-and-forget Groq fetch — view will re-render when it lands
-        """
-        seed = find_counters(enemy_key, role, self.counters, limit=5)
-        if seed:
-            return seed
-        if self._runtime_counters is not None:
-            cached = self._runtime_counters.get_cached(enemy_key, role)
-            if cached:
-                return cached
-            self._schedule_runtime_fetch(enemy_key, role)
-        return []
-
     def _schedule_runtime_fetch(self, enemy_key: str, role: Role) -> None:
         """Kick off a Groq fetch in the background; re-renders on success.
 
@@ -502,269 +338,6 @@ class ChampAssistant:
         # inflight or no loop is running — in either case nothing to do.
         self._runtime_coalescer.schedule(key, _fetch_and_rerender)
 
-    def _compute_enemy_counters(
-        self, session: ChampSelectSession
-    ) -> dict[int, list]:
-        result: dict[int, list] = {}
-        for i, enemy in enumerate(session.their_team):
-            if enemy.champion_id == 0:
-                continue
-            champ = self.champions.get(enemy.champion_id)
-            role = self._resolve_enemy_role(enemy, i, champ)
-            if role is None or champ is None:
-                continue
-            counters = self._lookup_counters(champ.key, role)
-            result[enemy.cell_id] = counters[:3]
-        return result
-
-    def _compute_enemy_roles(
-        self, session: ChampSelectSession
-    ) -> dict[int, Role]:
-        """Resolved role per enemy cell — surfaces to the UI for the role label."""
-        result: dict[int, Role] = {}
-        for i, enemy in enumerate(session.their_team):
-            champ = (
-                self.champions.get(enemy.champion_id)
-                if enemy.champion_id else None
-            )
-            role = self._resolve_enemy_role(enemy, i, champ)
-            if role is not None:
-                result[enemy.cell_id] = role
-        return result
-
-    def _compute_enemy_names(self, session: ChampSelectSession) -> dict[int, str]:
-        names: dict[int, str] = {}
-        for enemy in session.their_team:
-            if enemy.champion_id == 0:
-                continue
-            champ = self.champions.get(enemy.champion_id)
-            if champ is not None:
-                names[enemy.champion_id] = champ.name
-        return names
-
-    def _compute_enemy_keys(self, session: ChampSelectSession) -> dict[int, str]:
-        keys: dict[int, str] = {}
-        for enemy in session.their_team:
-            if enemy.champion_id == 0:
-                continue
-            champ = self.champions.get(enemy.champion_id)
-            if champ is not None:
-                keys[enemy.champion_id] = champ.key
-        return keys
-
-    def _compute_enemy_damage_profile(
-        self, session: ChampSelectSession,
-    ) -> dict[int, str]:
-        """Per-enemy damage classification (AP / AD / AP/AD / "")
-        keyed by cell_id. Drives the EnemyRow damage badge."""
-        from .advisor.build_adapter import damage_profile_for_tags
-        out: dict[int, str] = {}
-        for enemy in session.their_team:
-            if enemy.champion_id == 0:
-                continue
-            champ = self.champions.get(enemy.champion_id)
-            if champ is None:
-                continue
-            tags = self.tags.tags_for(champ.key) or champ.tags
-            out[enemy.cell_id] = damage_profile_for_tags(tags)
-        return out
-
-    def _compute_picks(
-        self, session: ChampSelectSession
-    ) -> tuple[list[PickSuggestion], list[CompositionGap]]:
-        me = session.me
-        if me is None or me.assigned_position is None:
-            return [], []
-
-        my_role = me.assigned_position
-        my_keys = self._team_keys(session.my_team)
-        enemy_keys = self._team_keys(session.their_team)
-        gaps = analyze_composition(my_keys, self.tags)
-
-        # If the lane opponent is locked in, prioritize counters specifically
-        # against them — but still keep team-comp synergy in the score so
-        # we don't recommend a counter pick that breaks the team's needs.
-        lane_opponent = self._enemy_in_role(session, my_role)
-        if lane_opponent is not None:
-            counters = self._lookup_counters(lane_opponent.key, my_role)
-            if counters:
-                drafted = {k for k in (my_keys + enemy_keys) if k}
-                lane_suggestions = self._suggestions_from_counters(
-                    counters,
-                    lane_opponent_key=lane_opponent.key,
-                    drafted=drafted,
-                    my_role=my_role,
-                    gaps=gaps,
-                )
-                if lane_suggestions:
-                    return lane_suggestions[:5], gaps
-
-        # Fallback: tier-based suggestions when no lane opponent yet OR
-        # we have no counter data for them. Enrich the counter matrix with
-        # any cached Lolalytics data for revealed enemies before scoring.
-        enriched = self._enriched_counters(enemy_keys, my_role)
-        suggestions = suggest_picks(
-            my_role,
-            my_keys,
-            enemy_keys,
-            gaps,
-            self.tiers,
-            enriched,
-            self.tags,
-            limit=5,
-        )
-        return suggestions, gaps
-
-    def _compute_picks_categorized(
-        self, session: ChampSelectSession
-    ) -> tuple[list[PickSuggestion], list[PickSuggestion]]:
-        """Return (counter_picks, synergy_picks) for the two-column pick panel.
-
-        counter_picks: champions that beat the enemy lane opponent.
-        synergy_picks: champions that fill team comp gaps (tier + gap-fill only,
-            no counter component so it complements rather than duplicates counter col).
-        """
-        me = session.me
-        if me is None or me.assigned_position is None:
-            return [], []
-
-        my_role = me.assigned_position
-        my_keys = self._team_keys(session.my_team)
-        enemy_keys = self._team_keys(session.their_team)
-        gaps = analyze_composition(my_keys, self.tags)
-
-        # Counter picks — only when the lane opponent is locked in.
-        counter_picks: list[PickSuggestion] = []
-        lane_opponent = self._enemy_in_role(session, my_role)
-        if lane_opponent is not None:
-            counters = self._lookup_counters(lane_opponent.key, my_role)
-            if counters:
-                drafted = {k for k in (my_keys + enemy_keys) if k}
-                raw = self._suggestions_from_counters(
-                    counters,
-                    lane_opponent_key=lane_opponent.key,
-                    drafted=drafted,
-                    my_role=my_role,
-                    gaps=gaps,
-                )
-                counter_picks = raw[:5]
-
-        # Synergy picks — tier + gap-fill, no counter weight (pass empty enemy list).
-        synergy_picks = suggest_picks(
-            my_role,
-            my_keys,
-            [],   # no enemy keys → no counter score → pure tier + gap-fill
-            gaps,
-            self.tiers,
-            self.counters,
-            self.tags,
-            limit=5,
-        )
-
-        return counter_picks, synergy_picks
-
-    def _enemy_in_role(
-        self, session: ChampSelectSession, target_role: Role
-    ) -> Champion | None:
-        for i, enemy in enumerate(session.their_team):
-            if enemy.champion_id == 0:
-                continue
-            champ = self.champions.get(enemy.champion_id)
-            if champ is None:
-                continue
-            role = self._resolve_enemy_role(enemy, i, champ)
-            if role == target_role:
-                return champ
-        return None
-
-    def _suggestions_from_counters(
-        self,
-        counters: list[CounterEntry],
-        *,
-        lane_opponent_key: str,
-        drafted: set[str],
-        my_role: Role,
-        gaps: list[CompositionGap],
-    ) -> list[PickSuggestion]:
-        """Convert raw counter list into scored PickSuggestions.
-
-        Score combines:
-          - counter strength (CounterEntry.score × 8, range ~0-80) — primary
-          - tier bonus from tiers.json if present (S+: 10, S: 7, A: 4, ...) — secondary
-          - composition gap-fill (matches advisor.picks._GAP_FILL_BONUS) — tertiary
-        Drafted champions excluded; result clamped to [0, 100].
-        """
-        from .advisor.picks import _GAP_FILL_BONUS, _GAP_TAGS, _TIER_SCORE
-
-        out: list[PickSuggestion] = []
-        for c in counters:
-            if c.champion in drafted:
-                continue
-            counter_score = min(c.score * 8.0, 80.0)
-            tier_score = _TIER_SCORE.get(c.tier or "", 0.0) * 0.5  # halved
-            champ_tags = set(self.tags.tags_for(c.champion))
-            gap_score = 0.0
-            gap_reasons: list[str] = []
-            for gap in gaps:
-                tags_for_gap = _GAP_TAGS.get(gap.category, set())
-                if champ_tags & tags_for_gap:
-                    bonus = _GAP_FILL_BONUS.get(gap.severity, 0.0)
-                    gap_score += bonus
-                    gap_reasons.append(f"fills {gap.category}")
-
-            total = max(0.0, min(100.0, counter_score + tier_score + gap_score))
-            reasons = [f"Counters {lane_opponent_key} ({c.score:.1f})"]
-            if c.tier:
-                reasons.append(f"{c.tier} tier")
-            reasons.extend(gap_reasons[:2])
-
-            out.append(
-                PickSuggestion(
-                    champion_key=c.champion,
-                    score=total,
-                    tier=c.tier,
-                    reasons=reasons,
-                )
-            )
-        # Already sorted by counter strength in seed/Groq, but stabilize anyway.
-        out.sort(key=lambda s: -s.score)
-        return out
-
-    def _enriched_counters(
-        self, enemy_keys: list[str], role: "Role"
-    ) -> "CounterMatrix":
-        """Return self.counters merged with any cached Lolalytics data.
-
-        For each revealed enemy, if the runtime store has a cached counter
-        list for that matchup it overwrites the seed-JSON entry. The result
-        is a one-shot CounterMatrix passed to suggest_picks so the fallback
-        path benefits from Lolalytics data fetched in previous sessions —
-        without firing any new network requests.
-        """
-        if self._runtime_counters is None:
-            return self.counters
-        merged: dict[str, dict] = {
-            k: dict(v) for k, v in self.counters.matrix.items()
-        }
-        changed = False
-        for enemy_key in enemy_keys:
-            cached = self._runtime_counters.get_cached(enemy_key, role)
-            if cached:
-                merged.setdefault(enemy_key, {})[role] = cached
-                changed = True
-        if not changed:
-            return self.counters
-        return CounterMatrix(matrix=merged)
-
-    def _team_keys(self, team: list[TeamMember]) -> list[str]:
-        keys: list[str] = []
-        for member in team:
-            if member.champion_id == 0:
-                continue
-            champ = self.champions.get(member.champion_id)
-            if champ is not None:
-                keys.append(champ.key)
-        return keys
 
     # -- Live data updates ------------------------------------------------
 
