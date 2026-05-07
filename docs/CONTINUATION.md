@@ -1,17 +1,66 @@
-# Session continuation — v1.10.80
+# Session continuation — v1.10.88
 
 Hand-off note for the next session. Read this first if you've been
-dropped into this repo cold.
+dropped into this repo cold. Earlier handoff at v1.10.80 still describes
+how the engine / __main__ / settings refactors landed; this section
+covers the v1.10.81 → v1.10.88 polish round.
 
 ---
 
-## Where we are
+## Where we are (latest)
 
-* **Tag**: `v1.10.80` (cut on macOS dev box, pushed to `origin/main`).
-* **Suite**: 1652 / 1652 green via
+* **Tag**: `v1.10.88` (cut on macOS dev box, pushed to `origin/main`).
+* **Suite**: 1655 / 1655 green via
   `.venv/bin/pytest tests/ -q --ignore=tests/soak`.
-* **User platform switch**: dev work done on macOS; user is moving to
-  Windows now to actually run the app against a live League client.
+* **User platform switch**: macOS sessions wrote the code; user is
+  switching to Windows to run against a live League client. **The
+  v1.10.83 → v1.10.88 fixes are based on a Windows ranked-session
+  bug report — they need a real-game smoke test before we know they
+  hold up.**
+
+## v1.10.81 → v1.10.88: live-test polish round
+
+(Filling in since the prior handoff at v1.10.80.)
+
+| Tag | Subject |
+|---|---|
+| 1.10.81 | Absorbed legacy `_my_build_panel` + `_picks_row` into LiveCompanion (CONTINUATION options #1 + #2) |
+| 1.10.82 | Absorbed BanPanel into LiveCompanion + LLM game-plan prose (options #3 + #4) |
+| 1.10.83 | Live-test fixes from a Windows session — Meraki pushed at champ-select lock-in, scoreboard hotkey-only, recommendation rows in pill |
+| 1.10.84 | Build push timing race fixed (Meraki now in same LCU connection); rec-panel pill restored; ally/pick wire tests added |
+| 1.10.85 | Ally damage-type bar 0% / 0% bug — `_tags_for` was a stub returning `[]`; now plumbed via `view_builder._compute_ally_damage_profile` + `SessionView.ally_damage_profile` |
+| 1.10.86 | LiveCompanion empty-state stubs cleaned: game-plan body has 4 states (cached / in-flight / disabled-needs-config / pre-lock); Champion Power Spikes shows real text; Recommended Builds line surfaces real `view.my_champion_build` info |
+| 1.10.87 | `_on_settings_changed` rebuilt profile service but NOT game-plan service — adding an LLM key in Settings left it disabled until restart. Rebuilt service on settings change. |
+| 1.10.88 | Same bug for `RuntimeCounterStore` + cross-patch cache pollution because `_game_plan_llm.set_patch` was never called. Cleaner fix: in-place `set_credentials(api_key, provider)` on both services (preserves post-init state); wired the missing `set_patch` call. |
+
+## Live testing checklist (pull on Windows + open a champ-select)
+
+These are the things to verify the v1.10.83+ fixes actually held up:
+
+1. **Build pushed at lock-in shows a 3-block Meraki blueprint** (Starting / Build Order / Situational, ~13 items total) NOT a 4-item static set. Status bar should read `Apply Build {Champion}: Items aktiviert` (Meraki path) — if it says `Items (Fallback)` then Meraki failed and the static set ran instead. (v1.10.84 fix)
+2. **Recommendation rows fully visible**, with translucent dark pill behind text on top of the in-game scene. No bottom clipping. (v1.10.84 fix — `--demo-recommendations` is the easiest way to populate 3 rows.)
+3. **Ally damage-type bar shows real percentages**, not 0% / 0%. Should match whatever your team comp is. (v1.10.85 fix)
+4. **LiveCompanion right column** "Champion Power Spikes" line shows the L6 / L11 / L16 deterministic line (not the old "coming with LLM iteration" text). "Game Plan" body shows either real prose (LLM key configured) or a "Configure in Settings → API Keys" hint (no key). NOT an indefinite "Generating…" message. (v1.10.86 fix)
+5. **LLM key change in Settings takes effect immediately** — no app restart needed. Configure an OpenRouter / Groq / Gemini key, save Settings, lock in a champion, see game-plan prose appear on the next snapshot. (v1.10.87 + v1.10.88 fix)
+6. **Ban / pick row click commits the action via LCU** — clicking a ban row at ban time should send the LCU `commit_action`. Clicking a pick row at pick time the same. Status bar surfaces the result. (Wires verified by `tests/ui/test_live_companion_wires.py` v1.10.84.)
+
+## Common-cause-to-watch-for: "wire silently dropped on a refactor"
+
+The v1.10.85 / .87 / .88 bugs were all the same shape: **a service or
+view component holds state set once at startup, but the user-visible
+update path doesn't propagate later changes.** Examples found:
+
+* `_tags_for` was a stub returning `[]` → ally damage profile always
+  empty (v1.10.85)
+* `_on_settings_changed` rebuilt only one of three services that
+  read LLM credentials (v1.10.87 / v1.10.88)
+* `set_patch` was wired for runtime_counters but never for the new
+  game-plan service (v1.10.88)
+
+If you find another instance, the cleanest fix is an in-place
+`set_credentials` / `set_patch` mutator on the service rather than a
+rebuild — preserves post-init state (lolalytics fetcher, patch,
+in-flight task map).
 
 ## What this session shipped (v1.10.55 → v1.10.80, 26 versions)
 
