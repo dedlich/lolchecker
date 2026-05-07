@@ -598,16 +598,25 @@ def _run_with_ui(args: argparse.Namespace) -> int:
         lambda key: _on_hover_request(key, "ban")
     )
 
-    # When the user saves new credentials in Settings, rebuild the
-    # services that depend on them so changes take effect without a
-    # restart. v1.10.87: extended to also rebuild the LLM-backed
-    # game-plan service — without this, adding an LLM key in Settings
-    # left ``_game_plan_llm.enabled`` stuck at False until app restart.
+    # When the user saves new credentials in Settings, propagate them
+    # without a restart. v1.10.88: switched from "rebuild service" to
+    # "set_credentials in place" so post-init state (lolalytics
+    # fetcher attached to RuntimeCounterStore, patch on
+    # GamePlanLLMService) survives the credential update.
     def _on_settings_changed() -> None:
-        from champ_assistant.runtime_factory import _build_game_plan_llm
+        from champ_assistant import secrets
         assistant._profile_service = _build_profile_service()
         assistant._enemy_profiles_by_cell.clear()
-        assistant._game_plan_llm = _build_game_plan_llm(args.data_dir)
+        new_key = secrets.llm_api_key()
+        new_provider = secrets.llm_provider()
+        if assistant._game_plan_llm is not None:
+            assistant._game_plan_llm.set_credentials(
+                api_key=new_key, provider=new_provider,
+            )
+        if assistant._runtime_counters is not None:
+            assistant._runtime_counters.set_credentials(
+                api_key=new_key, provider=new_provider,
+            )
         # Reset the prefetched-signature so the next snapshot kicks off
         # a fresh prefetch with the new credentials.
         assistant._game_plan_prefetched_for = ""
@@ -1388,6 +1397,12 @@ async def _hydrate_champions_and_icons(
             # indefinitely otherwise — matchups don't change between patches).
             if assistant._runtime_counters is not None:
                 assistant._runtime_counters.set_patch(patch)
+            # Same for the game-plan service — its cache key includes
+            # patch, so without this every game plan was filed under
+            # the default ``"current"`` slot and got returned across
+            # patches (cross-patch cache pollution, fixed v1.10.88).
+            if assistant._game_plan_llm is not None:
+                assistant._game_plan_llm.set_patch(patch)
 
             try:
                 champions = await dd.fetch_champions(patch)

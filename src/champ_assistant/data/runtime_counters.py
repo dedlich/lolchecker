@@ -162,6 +162,18 @@ class RuntimeCounterStore:
         """
         self._lolalytics = fetcher
 
+    def set_credentials(
+        self, *, api_key: str | None, provider: str | None,
+    ) -> None:
+        """Update LLM credentials in place — used when the user saves a
+        new API key / provider in Settings → API Keys. Preserves
+        post-init state (``_lolalytics``, ``patch``, in-flight task
+        map) that a rebuild would drop."""
+        self.api_key = api_key or ""
+        if provider:
+            self.provider = PROVIDERS.get(provider, PROVIDERS[DEFAULT_PROVIDER])
+            self.model = self.provider.default_model
+
     def set_patch(self, patch: str) -> None:
         """Switch the cache namespace when Data Dragon reports a new patch.
 

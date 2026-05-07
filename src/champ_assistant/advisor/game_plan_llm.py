@@ -98,6 +98,18 @@ class GamePlanLLMService:
         if patch and patch != self.patch:
             self.patch = patch
 
+    def set_credentials(
+        self, *, api_key: str | None, provider: str | None,
+    ) -> None:
+        """Update LLM credentials in place — used when the user saves a
+        new API key / provider in Settings → API Keys. Avoids the
+        rebuild-and-replay-state pattern that would drop ``patch`` and
+        the in-flight task map."""
+        self.api_key = api_key or ""
+        if provider:
+            self.provider = PROVIDERS.get(provider, PROVIDERS[DEFAULT_PROVIDER])
+            self.model = self.provider.default_model
+
     # -- Sync surface ----------------------------------------------------
 
     def get_cached(

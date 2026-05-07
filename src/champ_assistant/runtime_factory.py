@@ -101,6 +101,22 @@ def _build_profile_service():  # type: ignore[no-untyped-def]
     return ProfileService(client)
 
 
+def _build_runtime_counters(data_dir: Path) -> RuntimeCounterStore:
+    """Construct a RuntimeCounterStore from persisted keyring credentials.
+
+    Called both at startup AND on ``settings_changed`` so an LLM-key
+    change in Settings → API Keys takes effect without app restart
+    (parallel to ``_build_game_plan_llm`` for the game-plan service)."""
+    from champ_assistant import secrets
+
+    cache_dir = data_dir.parent / "ddragon_cache" / "runtime_counters"
+    return RuntimeCounterStore(
+        cache_dir,
+        api_key=secrets.llm_api_key(),
+        provider=secrets.llm_provider(),
+    )
+
+
 def _build_game_plan_llm(data_dir: Path) -> "GamePlanLLMService":
     """Construct a GamePlanLLMService from persisted keyring credentials.
 
@@ -131,13 +147,8 @@ def _build_assistant(args: argparse.Namespace, overlay: MainOverlay) -> ChampAss
     # Runtime counter fetching is opt-in via GROQ_API_KEY (free tier at
     # https://console.groq.com). Without a key the store is constructed
     # disabled and never makes a network call — falls back to seed data.
-    cache_dir = args.data_dir.parent / "ddragon_cache" / "runtime_counters"
-    from champ_assistant import secrets as _sec
-    runtime_counters = RuntimeCounterStore(
-        cache_dir,
-        api_key=_sec.llm_api_key(),
-        provider=_sec.llm_provider(),
-    )
+    # Constructed via the shared helper so settings_changed can rebuild.
+    runtime_counters = _build_runtime_counters(args.data_dir)
 
     # Game-plan prose — same provider, separate cache namespace. Disabled
     # without an API key (returns None, the right-column shows the
