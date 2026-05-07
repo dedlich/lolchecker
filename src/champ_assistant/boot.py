@@ -135,20 +135,30 @@ def _safe_start(name: str, fn: Callable[[], None]) -> bool:
 async def _compute_and_push_meraki_build(
     *,
     champion_key: str,
+    champion_id: int,
     cache_dir: Path,
-    key_to_id,  # type: ignore[no-untyped-def]
-) -> None:
+    lcu: "object | None",  # LcuClient | None — opens own connection when None
+) -> bool:
     """Champ-select-time Meraki build push.
+
+    Returns True if the rich Meraki item-set was pushed successfully (so
+    the caller can skip the static fallback). Returns False on any
+    failure path (network, lockfile gone, push error) so the caller's
+    static apply_item_set fallback runs.
 
     Fires from ``_on_apply_build`` on lock-in BEFORE the in-game shop
     loads. Uses an empty GameContext (no live snapshot yet); the LCDA
-    path's later run will overwrite this with real team-comp adjustments.
-    Same item-set title means the second push replaces (not duplicates)
-    this one.
+    path's later run overwrites with real team-comp situational picks
+    (same set title → replaces, not duplicates).
+
+    When ``lcu`` is provided, Meraki uses that connection — saves the
+    second connection round-trip that was making this race the in-game
+    shop on slow lock-ins. When ``lcu`` is None this opens its own (the
+    LCDA path still works that way).
     """
     log = logging.getLogger("champ_assistant.build_engine")
     if not champion_key:
-        return
+        return False
     try:
         from champ_assistant.advisor.build_engine import (
             GameContext,
@@ -159,7 +169,7 @@ async def _compute_and_push_meraki_build(
         from champ_assistant.data.meraki import MerakiClient, MerakiError
     except Exception:  # noqa: BLE001 — degrade silently
         log.exception("champ_select_meraki_import_failed")
-        return
+        return False
     try:
         meraki_cache = cache_dir / "meraki"
         meraki_cache.mkdir(parents=True, exist_ok=True)
@@ -178,14 +188,43 @@ async def _compute_and_push_meraki_build(
         )
     except MerakiError as exc:
         log.warning("champ_select_meraki_error champion=%s: %s", champion_key, exc)
-        return
+        return False
     except Exception:  # noqa: BLE001
         log.exception("champ_select_meraki_failed champion=%s", champion_key)
-        return
+        return False
 
-    # Push via the LCU. Skip silently when the client isn't reachable.
     from champ_assistant.lcu.client import LcuClient, LcuClientError
     from champ_assistant.lcu.item_sets import apply_item_set_from_result
+
+    async def _push(lcu_client: "object") -> bool:
+        try:
+            pushed = await apply_item_set_from_result(
+                lcu_client,
+                champion_key=champion_key,
+                champion_id=champion_id,
+                build_result=result,
+            )
+        except LcuClientError as exc:
+            log.warning("champ_select_meraki_push_failed champion=%s: %s",
+                        champion_key, exc)
+            return False
+        except Exception:  # noqa: BLE001
+            log.exception("champ_select_meraki_push_error champion=%s", champion_key)
+            return False
+        if pushed is None:
+            return False
+        blocks = pushed.get("blocks") or []
+        total = sum(len(b.get("items") or []) for b in blocks)
+        log.info(
+            "blueprint_pushed_champ_select champion=%s blocks=%d items=%d",
+            champion_key, len(blocks), total,
+        )
+        return True
+
+    if lcu is not None:
+        return await _push(lcu)
+
+    # No client passed — open our own (used by the LCDA refresh path).
     from champ_assistant.lcu.lockfile import (
         LockfileNotFound,
         find_lockfile,
@@ -195,26 +234,16 @@ async def _compute_and_push_meraki_build(
         lockfile = parse_lockfile(find_lockfile())
     except LockfileNotFound:
         log.debug("champ_select_meraki_skipped: lockfile not found")
-        return
+        return False
     try:
-        async with LcuClient(lockfile) as lcu:
-            pushed = await apply_item_set_from_result(
-                lcu,
-                champion_key=champion_key,
-                champion_id=int(key_to_id(champion_key) or 0),
-                build_result=result,
-            )
-            if pushed is not None:
-                blocks = pushed.get("blocks") or []
-                total = sum(len(b.get("items") or []) for b in blocks)
-                log.info(
-                    "blueprint_pushed_champ_select champion=%s blocks=%d items=%d",
-                    champion_key, len(blocks), total,
-                )
+        async with LcuClient(lockfile) as own_lcu:
+            return await _push(own_lcu)
     except LcuClientError as exc:
         log.warning("champ_select_meraki_push_failed champion=%s: %s", champion_key, exc)
+        return False
     except Exception:  # noqa: BLE001
         log.exception("champ_select_meraki_push_error champion=%s", champion_key)
+        return False
 
 
 def _run_with_ui(args: argparse.Namespace) -> int:
@@ -408,7 +437,31 @@ def _run_with_ui(args: argparse.Namespace) -> int:
                                 "apply_runes_failed: %s", exc,
                             )
                             had_error = True
-                    if item_names:
+                    # Meraki blueprint push — runs INSIDE this LCU
+                    # connection so the in-game shop sees the rich
+                    # 3-block set BEFORE it caches its item-set list.
+                    # The previous design opened a second connection
+                    # afterwards which lost the race on quick lock-ins
+                    # (user reported only 4 items in shop in v1.10.83).
+                    meraki_pushed = False
+                    try:
+                        meraki_pushed = await _compute_and_push_meraki_build(
+                            champion_key=champion_key,
+                            champion_id=champ_id,
+                            cache_dir=args.data_dir.parent / "ddragon_cache",
+                            lcu=lcu,
+                        )
+                        if meraki_pushed:
+                            applied.append("Items")
+                    except Exception:  # noqa: BLE001
+                        logging.getLogger(__name__).exception(
+                            "champ_select_meraki_failed champion=%s", champion_key,
+                        )
+                    # Static apply_item_set fallback — only runs when
+                    # Meraki failed (no network / no Meraki cache yet).
+                    # Same item-set title means the static set replaces
+                    # any prior Meraki push automatically.
+                    if not meraki_pushed and item_names:
                         try:
                             iset = await apply_item_set(
                                 lcu,
@@ -417,7 +470,7 @@ def _run_with_ui(args: argparse.Namespace) -> int:
                                 item_names=item_names,
                             )
                             if iset is not None:
-                                applied.append("Items")
+                                applied.append("Items (Fallback)")
                         except LcuClientError as exc:
                             logging.getLogger(__name__).warning(
                                 "apply_items_failed: %s", exc,
@@ -444,23 +497,6 @@ def _run_with_ui(args: argparse.Namespace) -> int:
                 overlay.status_bar.set_info(
                     f"Apply Build {champion_key}: {' + '.join(applied)} aktiviert",
                     color="#7FCC7F",
-                )
-            # Fire the Meraki 3-block build NOW so the in-game shop sees
-            # it on first load. Without this the static apply_item_set
-            # above is the only set that lands before the shop caches its
-            # set list, and the Meraki push from the LCDA path arrives
-            # too late to be visible in-shop.
-            try:
-                await _compute_and_push_meraki_build(
-                    champion_key=champion_key,
-                    cache_dir=args.data_dir.parent / "ddragon_cache",
-                    key_to_id=lambda k: next(
-                        (c.id for c in assistant.champions.values() if c.key == k), 0,
-                    ),
-                )
-            except Exception:  # noqa: BLE001 — never block status from a Meraki crash
-                logging.getLogger(__name__).exception(
-                    "champ_select_meraki_failed champion=%s", champion_key,
                 )
         import asyncio
         try:

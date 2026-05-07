@@ -98,17 +98,24 @@ class _RecRow(QFrame):
 
         self._text = QLabel("")
         self._text.setWordWrap(True)
-        # Per-row translucent dark "pill" behind the text so the message
-        # stays readable on top of the in-game scene without painting the
-        # whole panel as a card. Padding keeps the pill snug around the
-        # text rather than extending to the row edges.
-        self._text.setStyleSheet(
-            f"QLabel {{ color: {styles.TEXT_PRIMARY};"
-            f" font-size: {styles.FS_BODY}px; font-weight: 700;"
-            f" background-color: rgba(0, 0, 0, 180);"
-            f" border-radius: {styles.RADIUS_SMALL}px;"
-            f" padding: 4px 8px; }}"
+        # QLabel + word-wrap inside QHBoxLayout returns single-line
+        # sizeHint() which makes the parent QVBoxLayout undersize each
+        # row → multi-line messages get clipped at the bottom. Setting
+        # MinimumExpanding lets the label tell its parent it wants more
+        # vertical space when wrap kicks in. Combined with the row's own
+        # vertical Expanding policy it solves the "only top message
+        # fully present" symptom from v1.10.83.
+        from PyQt6.QtWidgets import QSizePolicy
+        self._text.setSizePolicy(
+            QSizePolicy.Policy.Expanding,
+            QSizePolicy.Policy.MinimumExpanding,
         )
+        # Initial pill stylesheet — render() applies the per-severity
+        # color overlay later but PRESERVES the pill background so the
+        # message stays readable on top of the in-game scene. Padding
+        # keeps the pill snug around the text rather than extending to
+        # the row edges.
+        self._text.setStyleSheet(self._pill_stylesheet(styles.TEXT_PRIMARY))
         layout.addWidget(self._text, 1)
         # Meta label still allocated so existing render() paths don't crash,
         # but it's hidden in chat-mode — no TTL/confidence chrome.
@@ -117,14 +124,13 @@ class _RecRow(QFrame):
 
     def render(self, rec: Recommendation) -> None:
         # Tint the body text by severity so the message reads "alert" /
-        # "warn" / "info" without any panel chrome.
+        # "warn" / "info" without any panel chrome. KEEP the dark pill
+        # background — without it text is unreadable over bright in-game
+        # scenes. (v1.10.83 introduced the pill but the prior chat-mode
+        # render() was overwriting it; v1.10.84 restores via _pill_stylesheet.)
         color = self._color_for(rec.severity)
         self._text.setText(rec.text)
-        self._text.setStyleSheet(
-            f"color: {color};"
-            f" font-size: {styles.FS_BODY}px; font-weight: 700;"
-            " background: transparent;"
-        )
+        self._text.setStyleSheet(self._pill_stylesheet(color))
         self._glyph.setText(_CATEGORY_GLYPHS.get(rec.category, "•"))
         self._glyph.setStyleSheet(self._glyph_stylesheet(rec.severity))
         # Background is always transparent in chat-mode — no glow variant.
@@ -210,6 +216,20 @@ class _RecRow(QFrame):
         # The body label carries the severity color directly so the
         # message is read as plain text floating over the game.
         return "QFrame[rec-row='true'] { background: transparent; border: none; }"
+
+    @staticmethod
+    def _pill_stylesheet(text_color: str) -> str:
+        """Translucent dark pill behind the message text. The text color
+        rotates per severity (DANGER / WARNING / ACCENT); the pill
+        background stays the same so the message reads against any
+        in-game scene."""
+        return (
+            f"QLabel {{ color: {text_color};"
+            f" font-size: {styles.FS_BODY}px; font-weight: 700;"
+            f" background-color: rgba(0, 0, 0, 180);"
+            f" border-radius: {styles.RADIUS_SMALL}px;"
+            f" padding: 4px 8px; }}"
+        )
 
     @classmethod
     def _glyph_stylesheet(cls, severity: str) -> str:
