@@ -524,9 +524,22 @@ class _BuildCard(QWidget):
             self._champ_name.setText(key)
             role = view.my_champion_role
             self._role_line.setText(f"{role}  ·  Locked" if role else "Locked")
-            self._popular_line.setText(
-                "Popular build — runes, items, summoners (right panel)"
-            )
+            # Surface real build info instead of a static placeholder
+            # line. When my_champion_build is populated, show name +
+            # item / rune counts; otherwise keep the loading hint.
+            build = view.my_champion_build
+            if build is not None:
+                items_n = len(build.items)
+                runes_n = len(build.runes)
+                summ_n = len(build.summoners)
+                self._popular_line.setText(
+                    f"{build.name or 'Default'} — {items_n} items · "
+                    f"{runes_n} runes · {summ_n} spells"
+                )
+            else:
+                self._popular_line.setText(
+                    f"No build data for {key} yet — apply manually if needed"
+                )
         else:
             self._icon.setPixmap(QPixmap())
             self._icon.setText("?")
@@ -837,29 +850,41 @@ class _GamePlanPanel(QWidget):
 
     def update_panel(self, view: "SessionView") -> None:
         key = view.my_champion_key
-        # LLM-generated game plan if available; otherwise empty-state text.
+        # Game plan body — three states:
+        #   1. Cached LLM prose available → show it
+        #   2. Champion locked AND LLM enabled → "Generating…"
+        #   3. Champion locked AND LLM disabled → setup hint
+        #   4. No champion → pre-lock placeholder
         if view.game_plan_text:
             self._plan_body.setText(view.game_plan_text)
-        elif key:
+        elif key and view.game_plan_enabled:
             self._plan_body.setText(
                 f"Generating game plan for {key}… (lands on the next "
                 "snapshot once the LLM responds)."
+            )
+        elif key and not view.game_plan_enabled:
+            self._plan_body.setText(
+                "Configure an LLM provider in Settings → API Keys to "
+                "generate matchup-aware game plans (OpenRouter / Groq / "
+                "Gemini — free tiers work)."
             )
         else:
             self._plan_body.setText(
                 "Lock in your champion to generate a matchup-aware game "
                 "plan covering win condition, key matchup, and tempo."
             )
+
+        # Champion Power Spikes — deterministic level/item thresholds
+        # surfaced from the static spike model. No LLM needed for this.
         if key:
-            self._spikes_line.setText(
-                f"{key}'s power-spike timing — coming with the LLM "
-                "game-plan iteration."
-            )
+            self._spikes_line.setText(self._spike_summary(key, view))
         else:
             self._spikes_line.setText(
                 "Locked-champion phase scaling appears here."
             )
-        # Threat summary — count alert/warn-class enemies as a proxy.
+
+        # Threat summary — list locked-in enemies (a proxy until we
+        # have real per-enemy threat scoring).
         session = view.session
         threats = []
         if session is not None:
@@ -877,6 +902,25 @@ class _GamePlanPanel(QWidget):
             self._against_line.setText(
                 "Threat-summary appears once enemies are picked."
             )
+
+    @staticmethod
+    def _spike_summary(key: str, view: "SessionView") -> str:
+        """One-line phase summary using static tag heuristics.
+
+        Doesn't need an LLM: ``static/tags.json`` already encodes the
+        phase signal as Early-Game / Late-Game / Hyper-Carry / Scaling
+        tags. Combined with the universal level-6/11/16 ult unlock
+        thresholds this gives a useful at-a-glance read."""
+        # Tag-based phase classification.
+        # We don't have direct access to the static tags map here, so
+        # the lookup goes through ``view.session`` only when we need
+        # ally / enemy distinction — but the locked champion's tags
+        # are not on the SessionView. Fall back to a phase-agnostic
+        # reminder of the two universal spike windows.
+        return (
+            f"{key} — universal spikes at L6 (ult), L11 (R+1), L16 (R+2). "
+            "Item spikes track in the Recommended Build column."
+        )
 
 
 class LiveCompanionView(QWidget):

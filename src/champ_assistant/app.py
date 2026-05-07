@@ -215,6 +215,9 @@ class ChampAssistant:
             enemy_profiles_by_cell=self._enemy_profiles_by_cell,  # type: ignore[arg-type]
             ally_profiles_by_cell=self._ally_profiles_by_cell,  # type: ignore[arg-type]
             schedule_runtime_fetch=self._schedule_runtime_fetch,
+            game_plan_enabled=bool(
+                self._game_plan_llm and self._game_plan_llm.enabled
+            ),
         )
 
     def _build_view(self, session: ChampSelectSession | None) -> SessionView:

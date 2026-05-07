@@ -57,6 +57,11 @@ class SessionView(BaseModel):
     LiveCompanion ally-side "Damage Type" bar. Added in v1.10.85 to
     fix the 0% / 0% rendering caused by the prior empty-tag stub."""
 
+    game_plan_enabled: bool = False
+    """True iff a LLM API key is configured. The game-plan panel reads
+    this to differentiate "in-flight, will arrive next snapshot" from
+    "no LLM key, configure in Settings to enable game plans"."""
+
     enemy_role_overridden: set[int] = Field(default_factory=set)
     """cell_ids whose role comes from a manual user override (not auto)."""
 

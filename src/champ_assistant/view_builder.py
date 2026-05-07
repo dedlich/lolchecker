@@ -70,6 +70,12 @@ class ViewBuilderDeps:
     enemy_profiles_by_cell: dict[int, EnemyProfile]
     ally_profiles_by_cell: dict[int, EnemyProfile]
     schedule_runtime_fetch: Callable[[str, Role], None]
+    # True iff the LLM service has an API key configured. The
+    # game-plan panel reads this to choose between a "Generating…"
+    # in-flight message and a "Configure LLM provider in Settings"
+    # disabled-state hint. Defaults to False so headless / test
+    # builds get the safer empty state.
+    game_plan_enabled: bool = False
 
 
 # --------------------------------------------------------------------------
@@ -538,6 +544,7 @@ def build_session_view(
         enemy_role_overridden=set(deps.enemy_role_overrides.keys()),
         enemy_damage_profile=enemy_damage_profile,
         ally_damage_profile=ally_damage_profile,
+        game_plan_enabled=deps.game_plan_enabled,
         suggestion_builds=suggestion_builds,
         suggestion_build_reasons=suggestion_build_reasons,
         enemy_profiles=dict(deps.enemy_profiles_by_cell),  # type: ignore[arg-type]
