@@ -416,11 +416,19 @@ def _compute_picks_categorized(
             )
             counter_picks = raw[:5]
 
-    # Synergy picks — tier + gap-fill only. Empty enemy_keys → no counter score.
+    # Synergy picks — tier + gap-fill + LIGHT enemy-counter weight. The
+    # original design dropped enemy_keys here to avoid duplicating the
+    # counter column, but that produced "Galio into 5xAD" style suggestions
+    # because gap-fill alone says "your team needs a frontline AP", with
+    # zero context that AP-frontline is matchup-bad here. Passing real
+    # enemy_keys lets ``suggest_picks`` apply its capped counter signal
+    # (``_COUNTER_CAP_PER_PICK``) so synergy shifts per matchup without
+    # collapsing into the counter column — the cap keeps tier + gap as
+    # the dominant terms.
     synergy_picks = suggest_picks(
         my_role,
         my_keys,
-        [],
+        enemy_keys,
         gaps,
         deps.tiers,
         deps.counters,

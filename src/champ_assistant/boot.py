@@ -605,6 +605,7 @@ def _run_with_ui(args: argparse.Namespace) -> int:
     # GamePlanLLMService) survives the credential update.
     def _on_settings_changed() -> None:
         from champ_assistant import secrets
+        from champ_assistant.runtime_factory import _build_profile_service
         assistant._profile_service = _build_profile_service()
         assistant._enemy_profiles_by_cell.clear()
         new_key = secrets.llm_api_key()
@@ -743,16 +744,30 @@ def _run_with_ui(args: argparse.Namespace) -> int:
     if persisted.show_scoreboard:
         scoreboard = ScoreboardWidget()
         floating.append(scoreboard)
-        # Subscribe to state.scoreboard_visible so the panel peeks when
-        # vision detects the in-game TAB scoreboard (or when the user
-        # presses Ctrl+Alt+B). NO keyboard polling — see
-        # tests/lint/test_no_input_hooks.py for the Vanguard rationale.
+        # Always-on while in-game. Tab-driven peek doesn't survive
+        # Vanguard: low-level key polling is forbidden, vision detection
+        # produces false positives, and even RegisterHotKey's WM_HOTKEY
+        # message gets consumed somewhere in the focus chain when LoL
+        # is foreground (logs show 0 toggle_scoreboard fires across a
+        # full session of Ctrl+Alt+B presses). Persistent panel during
+        # in-game phases is the only thing that reliably works.
+        # The hotkey + scoreboard_visible flip path stays available so
+        # the user can manually toggle out-of-game / on demand.
         def _drive_scoreboard_peek(old, new) -> None:  # type: ignore[no-untyped-def]
-            if old.scoreboard_visible != new.scoreboard_visible:
-                # Honor the flip directly. Vision-detection used to false-
-                # positive on loading screens, but with that subsystem off
-                # this signal only flips from the Ctrl+Alt+B hotkey, where
-                # the user always means "show now".
+            old_snap = old.lcda_snapshot
+            new_snap = new.lcda_snapshot
+            old_in_game = old_snap is not None and getattr(old_snap, "game_time", 0.0) > 0
+            new_in_game = new_snap is not None and getattr(new_snap, "game_time", 0.0) > 0
+            # Auto-show on game-start transition.
+            if not old_in_game and new_in_game:
+                scoreboard.set_peek_visible(True)
+                return
+            # Auto-hide on game-end transition.
+            if old_in_game and not new_in_game:
+                scoreboard.set_peek_visible(False)
+                return
+            # Out of game: respect manual hotkey flip.
+            if not new_in_game and old.scoreboard_visible != new.scoreboard_visible:
                 scoreboard.set_peek_visible(new.scoreboard_visible)
         store.subscribe(_drive_scoreboard_peek)
     minimap = None

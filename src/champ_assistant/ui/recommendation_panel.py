@@ -268,7 +268,10 @@ class RecommendationPanel(FloatingWidget):
             styles.SPACING_GRID, styles.SPACING_GRID,
             styles.SPACING_GRID, styles.SPACING_GRID,
         )
-        outer.setSpacing(styles.SPACING_TIGHT)
+        # Wider spacing between rows so the per-row dark pills don't
+        # visually run into each other. SPACING_TIGHT was correct for
+        # the old card-with-strip rows; the new pill is bigger.
+        outer.setSpacing(styles.SPACING_GRID + 2)
 
         # Pre-allocated row cards. Layout never shifts on rec churn.
         self._rows: list[_RecRow] = []

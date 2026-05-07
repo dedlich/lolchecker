@@ -17,6 +17,7 @@ import asyncio
 import hashlib
 import logging
 import os
+import time as _time
 from pathlib import Path
 
 import diskcache
@@ -83,6 +84,11 @@ class GamePlanLLMService:
         self._owns_client = client is None
         self._client = client or httpx.AsyncClient(timeout=timeout)
         self._inflight: dict[str, asyncio.Task[str]] = {}
+        # Global cooldown after a rate-limit / payment / auth failure.
+        # The per-key disk cache won't save us here because the cache key
+        # includes ally + enemy hashes that change on every champ-select
+        # tick — we'd hit the API again the moment someone else picks.
+        self._global_cooldown_until: float = 0.0
 
     @property
     def cache(self) -> "diskcache.Cache":
@@ -139,6 +145,11 @@ class GamePlanLLMService:
     ) -> str | None:
         """Fetch + cache the game plan. No-op when no API key."""
         if not self.enabled or not champion:
+            return None
+        # Honor the global cooldown — once the provider 429/402'd we hold
+        # off ALL signatures, not just the one that failed, because the
+        # cache key changes on every team-comp tick during champ select.
+        if _time.monotonic() < self._global_cooldown_until:
             return None
         cached = self.get_cached(
             champion=champion, role=role, allies=allies, enemies=enemies,
@@ -201,7 +212,13 @@ class GamePlanLLMService:
                 "game_plan_http_error provider=%s err=%s",
                 self.provider.name, exc,
             )
-            if isinstance(exc, httpx.HTTPStatusError) and exc.response.status_code == 429:
+            # Arm the global cooldown for any auth / quota / rate-limit
+            # failure. 5 min is long enough to outlast a typical champ-
+            # select churn so we don't keep paying for a doomed retry.
+            if isinstance(exc, httpx.HTTPStatusError) and exc.response.status_code in (
+                401, 402, 403, 429,
+            ):
+                self._global_cooldown_until = _time.monotonic() + 300.0
                 self.cache.set(cache_key, "", expire=300)
             return ""
         except Exception:  # noqa: BLE001
