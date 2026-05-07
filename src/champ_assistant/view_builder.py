@@ -309,6 +309,27 @@ def _compute_enemy_damage_profile(
     return out
 
 
+def _compute_ally_damage_profile(
+    session: ChampSelectSession, deps: ViewBuilderDeps,
+) -> dict[int, str]:
+    """Per-ally damage classification — same shape as the enemy version.
+
+    Added in v1.10.85 so LiveCompanion's ally-side "Damage Type" bar
+    can render without falling back to the empty ``_tags_for`` stub
+    (which produced 0% / 0% in v1.10.78–v1.10.84)."""
+    from .advisor.build_adapter import damage_profile_for_tags
+    out: dict[int, str] = {}
+    for ally in session.my_team:
+        if ally.champion_id == 0:
+            continue
+        champ = deps.champions.get(ally.champion_id)
+        if champ is None:
+            continue
+        tags = deps.tags.tags_for(champ.key) or champ.tags
+        out[ally.cell_id] = damage_profile_for_tags(tags)
+    return out
+
+
 def _compute_picks(
     session: ChampSelectSession, deps: ViewBuilderDeps,
 ) -> tuple[list[PickSuggestion], list[CompositionGap]]:
@@ -425,6 +446,7 @@ def build_session_view(
     enemy_keys = _compute_enemy_keys(session, deps)
     enemy_roles = _compute_enemy_roles(session, deps)
     enemy_damage_profile = _compute_enemy_damage_profile(session, deps)
+    ally_damage_profile = _compute_ally_damage_profile(session, deps)
     suggestions, gaps = _compute_picks(session, deps)
 
     # Look up the recommended build for each suggestion in the local
@@ -515,6 +537,7 @@ def build_session_view(
         enemy_roles=enemy_roles,
         enemy_role_overridden=set(deps.enemy_role_overrides.keys()),
         enemy_damage_profile=enemy_damage_profile,
+        ally_damage_profile=ally_damage_profile,
         suggestion_builds=suggestion_builds,
         suggestion_build_reasons=suggestion_build_reasons,
         enemy_profiles=dict(deps.enemy_profiles_by_cell),  # type: ignore[arg-type]

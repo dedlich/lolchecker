@@ -355,23 +355,16 @@ class _SummaryRow(QWidget):
         ally_side: bool,
     ) -> tuple[int, int]:
         """Return ``(ap_pct, ad_pct)`` summed across the team's known
-        damage profiles. SessionView only stores enemy_damage_profile
-        today; we infer ally damage profiles from tag heuristics here
-        as a stop-gap (Marksman/Fighter → AD, Mage/Burst → AP).
-        Hybrids contribute 0.5 to each side."""
+        damage profiles. View-builder computes both ``enemy_damage_profile``
+        and ``ally_damage_profile`` (added v1.10.85) so the same shape
+        works for either side. Hybrids contribute 0.5 to each."""
+        profile_map = (
+            view.ally_damage_profile if ally_side else view.enemy_damage_profile
+        )
         ap = 0.0
         ad = 0.0
         for m in members[:5]:
-            profile = ""
-            if not ally_side:
-                profile = view.enemy_damage_profile.get(m.cell_id, "")
-            if not profile:
-                # Tag-based fallback (and always for ally side).
-                tags = []
-                key = view.all_champion_keys.get(m.champion_id, "") if m.champion_id else ""
-                if key:
-                    tags = _SummaryRow._tags_for(view, key)
-                profile = _SummaryRow._profile_from_tags(tags)
+            profile = profile_map.get(m.cell_id, "")
             if profile == "AP":
                 ap += 1.0
             elif profile == "AD":
@@ -403,28 +396,6 @@ class _SummaryRow(QWidget):
         if early + mid + late == 0:
             return (1, 1, 1)
         return (early, mid, late)
-
-    @staticmethod
-    def _tags_for(view: "SessionView", key: str) -> list[str]:
-        # SessionView doesn't carry the static tags map; the view-builder
-        # could pass it in but for now we accept an empty result rather
-        # than reach for a global. The damage-profile fallback below
-        # handles the missing data gracefully.
-        return []
-
-    @staticmethod
-    def _profile_from_tags(tags: list[str]) -> str:
-        if not tags:
-            return ""
-        ap = any(t in ("Mage", "Burst") for t in tags)
-        ad = any(t in ("Marksman", "Fighter", "Assassin") for t in tags)
-        if ap and ad:
-            return "AP/AD"
-        if ap:
-            return "AP"
-        if ad:
-            return "AD"
-        return ""
 
 
 # ─── Body columns ───────────────────────────────────────────────────────────

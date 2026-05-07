@@ -52,6 +52,11 @@ class SessionView(BaseModel):
     Surfaced by EnemyRow as a small badge so the player sees the team's
     damage mix at a glance and can prioritize MR vs Armor accordingly."""
 
+    ally_damage_profile: dict[int, str] = Field(default_factory=dict)
+    """Per-ally counterpart of ``enemy_damage_profile`` — drives the
+    LiveCompanion ally-side "Damage Type" bar. Added in v1.10.85 to
+    fix the 0% / 0% rendering caused by the prior empty-tag stub."""
+
     enemy_role_overridden: set[int] = Field(default_factory=set)
     """cell_ids whose role comes from a manual user override (not auto)."""
 
