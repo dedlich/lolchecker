@@ -8,8 +8,13 @@ of how the LCU source / counter / profile services are constructed.
 from __future__ import annotations
 
 import argparse
+from pathlib import Path
+from typing import TYPE_CHECKING
 
 from champ_assistant.app import ChampAssistant
+
+if TYPE_CHECKING:
+    from champ_assistant.advisor.game_plan_llm import GamePlanLLMService
 from champ_assistant.cli import DEFAULT_FIXTURE_DIR
 from champ_assistant.data.loader import (
     DataLoadError,
@@ -96,6 +101,24 @@ def _build_profile_service():  # type: ignore[no-untyped-def]
     return ProfileService(client)
 
 
+def _build_game_plan_llm(data_dir: Path) -> "GamePlanLLMService":
+    """Construct a GamePlanLLMService from persisted keyring credentials.
+
+    Called both at startup (from ``_build_assistant``) and on
+    ``settings_changed`` (from boot.py's ``_on_settings_changed``) so a
+    user that adds an LLM API key in Settings → API Keys gets the
+    service enabled without an app restart."""
+    from champ_assistant import secrets
+    from champ_assistant.advisor.game_plan_llm import GamePlanLLMService
+
+    cache_dir = data_dir.parent / "ddragon_cache" / "game_plans"
+    return GamePlanLLMService(
+        cache_dir,
+        api_key=secrets.llm_api_key(),
+        provider=secrets.llm_provider(),
+    )
+
+
 def _build_assistant(args: argparse.Namespace, overlay: MainOverlay) -> ChampAssistant:
     # Builds are optional — older bundles may not ship builds.json. Default
     # to an empty BuildLibrary so PickCards render without runes/items.
@@ -117,14 +140,10 @@ def _build_assistant(args: argparse.Namespace, overlay: MainOverlay) -> ChampAss
     )
 
     # Game-plan prose — same provider, separate cache namespace. Disabled
-    # without an API key (returns None, the right-column shows placeholder).
-    from champ_assistant.advisor.game_plan_llm import GamePlanLLMService
-    game_plan_cache_dir = args.data_dir.parent / "ddragon_cache" / "game_plans"
-    game_plan_llm = GamePlanLLMService(
-        game_plan_cache_dir,
-        api_key=_sec.llm_api_key(),
-        provider=_sec.llm_provider(),
-    )
+    # without an API key (returns None, the right-column shows the
+    # "configure in Settings" hint). Constructed via the shared helper
+    # so settings_changed can rebuild it on key updates.
+    game_plan_llm = _build_game_plan_llm(args.data_dir)
 
     # Enemy profiling — opt-in via Settings dialog (Riot API key persisted
     # in keyring). Disabled service falls through silently.

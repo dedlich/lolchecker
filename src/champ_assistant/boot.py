@@ -598,11 +598,19 @@ def _run_with_ui(args: argparse.Namespace) -> int:
         lambda key: _on_hover_request(key, "ban")
     )
 
-    # When the user saves a new Riot API key in Settings, rebuild the
-    # profile service so subsequent enemy profile lookups use it.
+    # When the user saves new credentials in Settings, rebuild the
+    # services that depend on them so changes take effect without a
+    # restart. v1.10.87: extended to also rebuild the LLM-backed
+    # game-plan service — without this, adding an LLM key in Settings
+    # left ``_game_plan_llm.enabled`` stuck at False until app restart.
     def _on_settings_changed() -> None:
+        from champ_assistant.runtime_factory import _build_game_plan_llm
         assistant._profile_service = _build_profile_service()
         assistant._enemy_profiles_by_cell.clear()
+        assistant._game_plan_llm = _build_game_plan_llm(args.data_dir)
+        # Reset the prefetched-signature so the next snapshot kicks off
+        # a fresh prefetch with the new credentials.
+        assistant._game_plan_prefetched_for = ""
         if assistant._latest_session is not None:
             assistant._push_view(assistant._build_view(assistant._latest_session))
     overlay.settings_changed.connect(_on_settings_changed)
