@@ -296,31 +296,32 @@ class ChampAssistant:
 
     def _maybe_fetch_profiles(self, session: ChampSelectSession) -> None:
         """If a Riot API key is configured, fire off async profile lookups
-        for BOTH teams. Empty/no-key/no-puuid → noop. Local player is
-        skipped (wasted API call). Cached results show up on the next
-        view rebuild without blocking session rendering.
+        for the ENEMY team. Empty/no-key/no-puuid → noop. Cached results
+        show up on the next view rebuild without blocking session
+        rendering.
 
-        Rate-limit reality: 10 players × ~4 API endpoints = ~40 calls
+        Rate-limit reality: 5 enemies × ~4 API endpoints = ~20 calls
         per champ-select. Personal Riot dev keys allow 100 / 2 min, so
         a single champ-select fits with margin. Repeated lobbies in
         rapid succession may hit the limit — failures degrade
         silently to empty profiles via the existing ProfileService
         error path.
+
+        Ally fetching is currently paused (v1.10.91): the original
+        consumer was the floating LobbyStatsWidget, which was retired
+        in v1.10.80. LiveCompanion does not yet have an ally-roster
+        panel that surfaces mains/win-rate/last-10 (the data the user
+        originally asked for in commit b53fa9e). The fetch + storage
+        + view-builder wiring is left intact behind ``_ally_profiles_by_cell``
+        so re-enabling is a one-line toggle when the UI consumer ships.
+        Until then we save ~16 API calls per champ-select.
         """
         if self._profile_service is None or not getattr(
             self._profile_service, "enabled", False
         ):
             return
-        local_cell = session.local_player_cell_id
-        # Schedule fetches for both teams in one pass so the dispatch
-        # logic stays in one spot — same try-except, same inflight
-        # tracking, same re-render trigger after each completion.
         for member in session.their_team:
             self._schedule_profile_fetch(member, is_ally=False)
-        for member in session.my_team:
-            if member.cell_id == local_cell:
-                continue  # don't fetch our own profile — wasted call
-            self._schedule_profile_fetch(member, is_ally=True)
 
     def _schedule_profile_fetch(
         self,

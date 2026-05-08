@@ -1,8 +1,10 @@
-"""Tests for the ally-team profile fetch path.
+"""Tests for the team-profile fetch path.
 
-Loading-screen lobby panel needs profile data for BOTH teams — this
-file verifies the orchestrator scheduling logic without spinning up
-the actual Riot HTTP layer.
+LobbyStatsWidget was retired in v1.10.80 and ally fetching was paused
+in v1.10.91 (no UI consumer in LiveCompanion yet). The orchestrator
+now schedules ENEMY fetches only — these tests pin that contract so a
+future re-enable of ally fetching is a deliberate flip, not a silent
+regression.
 """
 from __future__ import annotations
 
@@ -45,11 +47,12 @@ def _members(side: str, *, with_local: bool = True) -> list[TeamMember]:
 
 
 # ----------------------------------------------------------------------
-# _maybe_fetch_profiles dispatches for BOTH teams
+# _maybe_fetch_profiles schedules ENEMY fetches only (v1.10.91)
 # ----------------------------------------------------------------------
-def test_maybe_fetch_profiles_skips_local_player() -> None:
-    """The local player's own profile must never be fetched —
-    wasted API budget against the rate limit."""
+def test_maybe_fetch_profiles_schedules_enemies_only() -> None:
+    """Enemy team gets 5 fetches; ally team gets 0 (paused pending an
+    ally-roster panel in LiveCompanion). Original feature ask is
+    archived in commit b53fa9e."""
     from champ_assistant.app import ChampAssistant
 
     # Construct a minimal ChampAssistant just to exercise
@@ -74,18 +77,18 @@ def test_maybe_fetch_profiles_skips_local_player() -> None:
     sess = _session(
         my_team=_members("my"),
         their_team=_members("their"),
-        local_cell=0,  # cell 0 is "us"
+        local_cell=0,
     )
     app._maybe_fetch_profiles(sess)
 
-    # Enemy team: all 5 cells scheduled.
     enemy_cells = {c for c, ally in scheduled if not ally}
     assert enemy_cells == {5, 6, 7, 8, 9}
 
-    # Ally team: 4 of 5 (local cell 0 skipped).
     ally_cells = {c for c, ally in scheduled if ally}
-    assert ally_cells == {1, 2, 3, 4}
-    assert 0 not in ally_cells, "local player must not be fetched"
+    assert ally_cells == set(), (
+        "ally fetching is paused as of v1.10.91 — re-enable when an "
+        "ally-roster panel exists in LiveCompanion"
+    )
 
 
 def test_schedule_profile_fetch_uses_separate_inflight_keys() -> None:
