@@ -97,6 +97,50 @@ def test_team_strip_tooltip_renders_per_slot(qt_app) -> None:
     assert strip._slots[4].toolTip() == ""
 
 
+def test_team_strip_role_label_shows_resolved_role(qt_app) -> None:
+    """v1.10.106: clicking an enemy portrait silently cycled the
+    override before — no visual feedback. Role label below the
+    portrait now shows the auto-detected lane and flips to accent
+    color when the user manually overrides."""
+    from champ_assistant.ui import styles
+
+    strip = _TeamStrip("Enemy Team")
+    strip.set_team(
+        keys=["Garen", "Lee Sin", "Ahri", "Caitlyn", "Thresh"],
+        icon_lookup=lambda key: None,
+        cell_ids=[5, 6, 7, 8, 9],
+        roles=["TOP", "JUNGLE", "MID", "BOT", "SUPPORT"],
+        overridden_indices={2},  # MID was manually overridden
+    )
+
+    # All five labels render their lane.
+    assert [lbl.text() for lbl in strip._role_labels] == [
+        "TOP", "JUNGLE", "MID", "BOT", "SUPPORT",
+    ]
+    # Slot 2 (overridden) renders in accent; others muted.
+    assert styles.ACCENT in strip._role_labels[2].styleSheet()
+    assert styles.TEXT_MUTED in strip._role_labels[0].styleSheet()
+
+
+def test_team_strip_empty_role_clears_label(qt_app) -> None:
+    """When no role is assigned (e.g. PLANNING phase before role
+    inference) the label stays blank rather than showing a stale
+    value from a prior tick."""
+    strip = _TeamStrip("Enemy Team")
+    # First populate with roles.
+    strip.set_team(
+        keys=["Garen"], icon_lookup=lambda k: None,
+        cell_ids=[5], roles=["TOP"],
+    )
+    assert strip._role_labels[0].text() == "TOP"
+    # Then clear.
+    strip.set_team(
+        keys=["Garen"], icon_lookup=lambda k: None,
+        cell_ids=[5], roles=[""],
+    )
+    assert strip._role_labels[0].text() == ""
+
+
 def test_enable_clicks_sets_pointing_hand_cursor(qt_app) -> None:
     """Visual hint: enemy strip portraits show the "this is clickable"
     cursor; ally strip stays default. Same UX convention as PicksColumn /

@@ -31,19 +31,19 @@
         "tier": "S"
       },
       {
-        "champion": "Diana",
-        "tier": "A"
-      },
-      {
-        "champion": "Veigar",
-        "tier": "A"
-      },
-      {
         "champion": "Lissandra",
         "tier": "A"
       },
       {
+        "champion": "Diana",
+        "tier": "A"
+      },
+      {
         "champion": "Ahri",
+        "tier": "A"
+      },
+      {
+        "champion": "Veigar",
         "tier": "A"
       },
       {
@@ -55,15 +55,11 @@
         "tier": "A"
       },
       {
-        "champion": "Viktor",
-        "tier": "A"
-      },
-      {
         "champion": "Katarina",
         "tier": "A"
       },
       {
-        "champion": "AurelionSol",
+        "champion": "Viktor",
         "tier": "A"
       },
       {
@@ -71,11 +67,15 @@
         "tier": "A"
       },
       {
-        "champion": "Taliyah",
-        "tier": "B"
+        "champion": "AurelionSol",
+        "tier": "A"
       },
       {
         "champion": "Akshan",
+        "tier": "B"
+      },
+      {
+        "champion": "Taliyah",
         "tier": "B"
       },
       {
@@ -87,19 +87,19 @@
         "tier": "B"
       },
       {
-        "champion": "Leblanc",
-        "tier": "B"
-      },
-      {
         "champion": "Akali",
         "tier": "B"
       },
       {
-        "champion": "Zoe",
+        "champion": "Syndra",
         "tier": "B"
       },
       {
-        "champion": "Syndra",
+        "champion": "Leblanc",
+        "tier": "B"
+      },
+      {
+        "champion": "Zoe",
         "tier": "B"
       },
       {
@@ -108,7 +108,7 @@
       },
       {
         "champion": "Aurora",
-        "tier": "B"
+        "tier": "C"
       },
       {
         "champion": "Kassadin",
@@ -128,7 +128,7 @@
       },
       {
         "champion": "Ryze",
-        "tier": "D"
+        "tier": "C"
       },
       {
         "champion": "Azir",
@@ -141,7 +141,7 @@
     ],
     "TOP": [
       {
-        "champion": "Singed",
+        "champion": "Kayle",
         "tier": "S"
       },
       {
@@ -149,11 +149,7 @@
         "tier": "S"
       },
       {
-        "champion": "Kayle",
-        "tier": "S"
-      },
-      {
-        "champion": "Kled",
+        "champion": "Singed",
         "tier": "S"
       },
       {
@@ -161,7 +157,15 @@
         "tier": "S"
       },
       {
+        "champion": "Kled",
+        "tier": "S"
+      },
+      {
         "champion": "Teemo",
+        "tier": "S"
+      },
+      {
+        "champion": "Malphite",
         "tier": "S"
       },
       {
@@ -173,15 +177,7 @@
         "tier": "S"
       },
       {
-        "champion": "Malphite",
-        "tier": "A"
-      },
-      {
         "champion": "Urgot",
-        "tier": "A"
-      },
-      {
-        "champion": "Gangplank",
         "tier": "A"
       },
       {
@@ -189,11 +185,15 @@
         "tier": "A"
       },
       {
+        "champion": "Gangplank",
+        "tier": "A"
+      },
+      {
         "champion": "Gwen",
         "tier": "A"
       },
       {
-        "champion": "Irelia",
+        "champion": "Sett",
         "tier": "A"
       },
       {
@@ -201,7 +201,7 @@
         "tier": "A"
       },
       {
-        "champion": "Sett",
+        "champion": "Irelia",
         "tier": "A"
       },
       {
@@ -217,19 +217,19 @@
         "tier": "A"
       },
       {
-        "champion": "Fiora",
-        "tier": "B"
+        "champion": "Quinn",
+        "tier": "A"
       },
       {
         "champion": "DrMundo",
-        "tier": "B"
-      },
-      {
-        "champion": "Quinn",
-        "tier": "B"
+        "tier": "A"
       },
       {
         "champion": "Heimerdinger",
+        "tier": "A"
+      },
+      {
+        "champion": "Fiora",
         "tier": "B"
       },
       {
@@ -237,11 +237,11 @@
         "tier": "B"
       },
       {
-        "champion": "Sion",
+        "champion": "Illaoi",
         "tier": "B"
       },
       {
-        "champion": "Illaoi",
+        "champion": "Sion",
         "tier": "B"
       },
       {
@@ -249,11 +249,15 @@
         "tier": "B"
       },
       {
-        "champion": "Yorick",
+        "champion": "Zaahen",
         "tier": "B"
       },
       {
-        "champion": "Zaahen",
+        "champion": "Trundle",
+        "tier": "B"
+      },
+      {
+        "champion": "Yorick",
         "tier": "B"
       },
       {
@@ -269,19 +273,15 @@
         "tier": "B"
       },
       {
+        "champion": "Darius",
+        "tier": "B"
+      },
+      {
         "champion": "Gragas",
         "tier": "B"
       },
       {
         "champion": "Renekton",
-        "tier": "B"
-      },
-      {
-        "champion": "Trundle",
-        "tier": "B"
-      },
-      {
-        "champion": "Darius",
         "tier": "B"
       },
       {
@@ -293,11 +293,11 @@
         "tier": "C"
       },
       {
-        "champion": "Jayce",
+        "champion": "Kennen",
         "tier": "C"
       },
       {
-        "champion": "Kennen",
+        "champion": "Jayce",
         "tier": "C"
       },
       {
@@ -311,10 +311,6 @@
         "tier": "S"
       },
       {
-        "champion": "RekSai",
-        "tier": "S"
-      },
-      {
         "champion": "Rammus",
         "tier": "S"
       },
@@ -323,19 +319,11 @@
         "tier": "S"
       },
       {
+        "champion": "RekSai",
+        "tier": "S"
+      },
+      {
         "champion": "Belveth",
-        "tier": "S"
-      },
-      {
-        "champion": "Ivern",
-        "tier": "S"
-      },
-      {
-        "champion": "Nocturne",
-        "tier": "S"
-      },
-      {
-        "champion": "Briar",
         "tier": "S"
       },
       {
@@ -343,8 +331,20 @@
         "tier": "S"
       },
       {
+        "champion": "Briar",
+        "tier": "S"
+      },
+      {
+        "champion": "Nocturne",
+        "tier": "S"
+      },
+      {
+        "champion": "Ivern",
+        "tier": "S"
+      },
+      {
         "champion": "Lillia",
-        "tier": "A"
+        "tier": "S"
       },
       {
         "champion": "Kayn",
@@ -355,15 +355,11 @@
         "tier": "A"
       },
       {
-        "champion": "MasterYi",
-        "tier": "A"
-      },
-      {
         "champion": "Evelynn",
         "tier": "A"
       },
       {
-        "champion": "Naafiri",
+        "champion": "MasterYi",
         "tier": "A"
       },
       {
@@ -371,27 +367,31 @@
         "tier": "A"
       },
       {
+        "champion": "Naafiri",
+        "tier": "A"
+      },
+      {
         "champion": "Zac",
         "tier": "A"
       },
       {
+        "champion": "Amumu",
+        "tier": "A"
+      },
+      {
+        "champion": "Nunu",
+        "tier": "A"
+      },
+      {
         "champion": "Talon",
+        "tier": "A"
+      },
+      {
+        "champion": "Kindred",
         "tier": "B"
       },
       {
         "champion": "XinZhao",
-        "tier": "B"
-      },
-      {
-        "champion": "Amumu",
-        "tier": "B"
-      },
-      {
-        "champion": "Nunu",
-        "tier": "B"
-      },
-      {
-        "champion": "Kindred",
         "tier": "B"
       },
       {
@@ -403,6 +403,10 @@
         "tier": "B"
       },
       {
+        "champion": "Graves",
+        "tier": "B"
+      },
+      {
         "champion": "Skarner",
         "tier": "B"
       },
@@ -411,19 +415,15 @@
         "tier": "B"
       },
       {
-        "champion": "Graves",
-        "tier": "B"
-      },
-      {
         "champion": "JarvanIV",
         "tier": "B"
       },
       {
-        "champion": "Elise",
+        "champion": "Sejuani",
         "tier": "B"
       },
       {
-        "champion": "Sejuani",
+        "champion": "Viego",
         "tier": "B"
       },
       {
@@ -435,15 +435,15 @@
         "tier": "B"
       },
       {
-        "champion": "Viego",
+        "champion": "Ekko",
+        "tier": "B"
+      },
+      {
+        "champion": "Elise",
         "tier": "B"
       },
       {
         "champion": "Khazix",
-        "tier": "B"
-      },
-      {
-        "champion": "Ekko",
         "tier": "B"
       },
       {
@@ -501,11 +501,11 @@
         "tier": "A"
       },
       {
-        "champion": "Milio",
+        "champion": "Nami",
         "tier": "A"
       },
       {
-        "champion": "Nami",
+        "champion": "Milio",
         "tier": "A"
       },
       {
@@ -525,15 +525,15 @@
         "tier": "A"
       },
       {
+        "champion": "Velkoz",
+        "tier": "A"
+      },
+      {
         "champion": "Bard",
         "tier": "A"
       },
       {
         "champion": "Maokai",
-        "tier": "A"
-      },
-      {
-        "champion": "Velkoz",
         "tier": "A"
       },
       {
@@ -549,6 +549,10 @@
         "tier": "B"
       },
       {
+        "champion": "Karma",
+        "tier": "B"
+      },
+      {
         "champion": "Pyke",
         "tier": "B"
       },
@@ -557,15 +561,11 @@
         "tier": "B"
       },
       {
-        "champion": "Karma",
+        "champion": "Lulu",
         "tier": "B"
       },
       {
         "champion": "Alistar",
-        "tier": "B"
-      },
-      {
-        "champion": "Lulu",
         "tier": "B"
       },
       {
@@ -631,23 +631,23 @@
         "tier": "A"
       },
       {
-        "champion": "Twitch",
-        "tier": "A"
-      },
-      {
         "champion": "MissFortune",
         "tier": "A"
       },
       {
+        "champion": "Twitch",
+        "tier": "A"
+      },
+      {
         "champion": "Tristana",
+        "tier": "A"
+      },
+      {
+        "champion": "Vayne",
         "tier": "B"
       },
       {
         "champion": "Lucian",
-        "tier": "B"
-      },
-      {
-        "champion": "Vayne",
         "tier": "B"
       },
       {
@@ -679,11 +679,11 @@
         "tier": "C"
       },
       {
-        "champion": "Yunara",
+        "champion": "Varus",
         "tier": "C"
       },
       {
-        "champion": "Varus",
+        "champion": "Yunara",
         "tier": "C"
       },
       {

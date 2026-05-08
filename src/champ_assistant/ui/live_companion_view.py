@@ -141,6 +141,35 @@ class _TeamStrip(QWidget):
 
         layout.addLayout(portraits_row)
 
+        # Role badge row beneath the portraits — gives the user
+        # immediate visual feedback when click cycles the override.
+        # Auto-detected roles render muted; manual overrides render in
+        # the accent color so the user can see which lanes they've
+        # corrected.
+        self._role_labels: list[QLabel] = []
+        roles_row = QHBoxLayout()
+        roles_row.setSpacing(2)
+        roles_row.setContentsMargins(0, 0, 0, 0)
+        for _ in range(5):
+            lbl = QLabel("")
+            lbl.setFixedWidth(_PORTRAIT_PX)
+            lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            lbl.setStyleSheet(self._role_label_stylesheet(overridden=False))
+            roles_row.addWidget(lbl)
+            self._role_labels.append(lbl)
+        layout.addLayout(roles_row)
+
+    @staticmethod
+    def _role_label_stylesheet(*, overridden: bool) -> str:
+        color = styles.ACCENT if overridden else styles.TEXT_MUTED
+        weight = "700" if overridden else "600"
+        return (
+            f"color: {color};"
+            f" font-size: {styles.FS_CAPTION}px;"
+            f" font-weight: {weight};"
+            " letter-spacing: 0.4px;"
+        )
+
     def enable_clicks(self) -> None:
         """Mark each slot as clickable so the cursor + hover state
         signal interactivity. Called once on the enemy strip."""
@@ -154,6 +183,8 @@ class _TeamStrip(QWidget):
         *,
         cell_ids: list[int] | None = None,
         tooltips: list[str] | None = None,
+        roles: list[str] | None = None,
+        overridden_indices: set[int] | None = None,
     ) -> None:
         """Render up to 5 portraits. ``keys`` is the ordered champion-key list;
         ``icon_lookup(key) -> QPixmap | None`` resolves the icon.
@@ -162,12 +193,19 @@ class _TeamStrip(QWidget):
         ``TeamMember.cell_id`` so click events emit the right id. When
         omitted, click events emit ``-1`` (effectively a noop on the
         receiver). ``tooltips`` is the parallel per-slot tip text;
-        empty / missing entries clear the tooltip on that slot."""
+        empty / missing entries clear the tooltip on that slot.
+        ``roles`` is the per-slot lane label (``"TOP"`` / ``""`` etc).
+        ``overridden_indices`` are slot indices where the role came
+        from a manual user override — rendered in the accent color so
+        the user sees which lanes they've corrected."""
         ids = list(cell_ids) if cell_ids is not None else [-1] * 5
         tips = list(tooltips) if tooltips is not None else [""] * 5
+        role_list = list(roles) if roles is not None else [""] * 5
+        overrides = overridden_indices or set()
         # Pad to 5 so index access is always safe.
         ids = (ids + [-1] * 5)[:5]
         tips = (tips + [""] * 5)[:5]
+        role_list = (role_list + [""] * 5)[:5]
         self._cell_ids = ids
         for i, slot in enumerate(self._slots):
             if i < len(keys) and keys[i]:
@@ -187,6 +225,11 @@ class _TeamStrip(QWidget):
                 slot.setPixmap(QPixmap())
                 slot.setText("")
             slot.setToolTip(tips[i])
+            # Role badge per slot.
+            self._role_labels[i].setText(role_list[i])
+            self._role_labels[i].setStyleSheet(
+                self._role_label_stylesheet(overridden=i in overrides)
+            )
 
     def _on_slot_clicked(self, slot_index: int) -> None:
         cell_id = self._cell_ids[slot_index] if 0 <= slot_index < len(self._cell_ids) else -1
@@ -383,17 +426,27 @@ class _SummaryRow(QWidget):
         ally_keys = self._team_keys(session.my_team, view)
         enemy_keys = self._team_keys(session.their_team, view)
         self._ally_strip.set_team(ally_keys, icon_lookup)
-        # Enemy strip carries cell_ids (so clicks emit the right one)
-        # and per-slot counter-tip tooltips.
-        enemy_cell_ids = [m.cell_id for m in session.their_team[:5]]
+        # Enemy strip carries cell_ids (so clicks emit the right one),
+        # per-slot counter-tip tooltips, and the role label that gives
+        # immediate feedback when the user clicks to cycle the override.
+        enemy_members = list(session.their_team[:5])
+        enemy_cell_ids = [m.cell_id for m in enemy_members]
         enemy_tooltips = [
-            view.enemy_counter_tips.get(m.cell_id, "")
-            for m in session.their_team[:5]
+            self._enemy_tooltip(m.cell_id, view) for m in enemy_members
         ]
+        enemy_roles = [
+            view.enemy_roles.get(m.cell_id, "") for m in enemy_members
+        ]
+        enemy_overridden = {
+            i for i, m in enumerate(enemy_members)
+            if m.cell_id in view.enemy_role_overridden
+        }
         self._enemy_strip.set_team(
             enemy_keys, icon_lookup,
             cell_ids=enemy_cell_ids,
             tooltips=enemy_tooltips,
+            roles=enemy_roles,
+            overridden_indices=enemy_overridden,
         )
 
         # Damage-type split — count members per profile, render as percentage.
@@ -407,6 +460,18 @@ class _SummaryRow(QWidget):
         e_e, m_e, l_e = self._safe_distribution(view.enemy_phase_distribution)
         self._ally_spikes.set_distribution(e_a, m_a, l_a)
         self._enemy_spikes.set_distribution(e_e, m_e, l_e)
+
+    @staticmethod
+    def _enemy_tooltip(cell_id: int, view: "SessionView") -> str:
+        """Compose the enemy-portrait tooltip from the per-cell counter
+        tip plus a click-to-cycle hint. The cycle hint is always shown
+        so the user discovers the click interaction even on enemies
+        that have no curated counter tip."""
+        tip = view.enemy_counter_tips.get(cell_id, "")
+        cycle_hint = "Click to cycle role override (Auto → TOP → JUNGLE → MID → BOT → SUPPORT → Auto)"
+        if tip:
+            return f"{tip}\n\n{cycle_hint}"
+        return cycle_hint
 
     @staticmethod
     def _safe_distribution(
