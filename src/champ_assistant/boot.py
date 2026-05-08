@@ -1327,6 +1327,16 @@ async def _run_lcda_watcher(
             cc_count = count_enemy_cc(enemy_keys)
             burst_count = count_enemy_burst(enemy_keys)
             mobility_count = count_enemy_mobility(enemy_keys)
+            # Aggregate every item the enemy team currently has in
+            # inventory — fed to GameContext so the build engine can
+            # react to specific purchases (Bloodthirster → grievous-
+            # wounds, Wit's End → MR, etc.) instead of relying only on
+            # champion-tag heuristics.
+            enemy_item_ids: frozenset[int] = frozenset(
+                iid
+                for e in enemies
+                for iid in (getattr(e, "item_ids", ()) or ())
+            )
             context = GameContext(
                 enemy_ap_count=ap_count,
                 enemy_ad_count=ad_count,
@@ -1337,6 +1347,7 @@ async def _run_lcda_watcher(
                 enemy_mobility_count=mobility_count,
                 game_time_s=float(getattr(snap, "game_time", 0.0) or 0.0),
                 player_behind=(enemies_val - allies_val) > 3000,
+                enemy_item_ids=enemy_item_ids,
             )
             archetype = detect_archetype(champion_dict)
             scaling = extract_scaling_profile(champion_dict)

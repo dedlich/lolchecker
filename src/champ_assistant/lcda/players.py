@@ -81,6 +81,10 @@ class LivePlayer:
     items_value: int = 0   # sum of items[].price — proxy for gold spent
     respawn_timer: float = 0.0  # seconds until respawn; 0 = alive
     position: str = ""    # LCDA role: "JUNGLE", "TOP", "MIDDLE", "BOTTOM", "UTILITY"
+    item_ids: tuple[int, ...] = ()
+    """Numeric Riot item IDs the player currently owns. Used by the
+    build-engine GameContext to detect specific enemy purchases (e.g.
+    Bloodthirster → boost anti-heal items)."""
 
     @property
     def is_alive(self) -> bool:
@@ -122,11 +126,15 @@ def parse_players(all_players: list[dict]) -> list[LivePlayer]:
         scores = entry.get("scores") or {}
         items = entry.get("items") or []
         items_value = 0
+        item_ids: list[int] = []
         for item in items:
             if isinstance(item, dict):
                 price = item.get("price") or 0
                 if isinstance(price, (int, float)):
                     items_value += int(price)
+                iid = item.get("itemID")
+                if isinstance(iid, int) and iid > 0:
+                    item_ids.append(iid)
         players.append(
             LivePlayer(
                 summoner_name=str(entry.get("summonerName") or ""),
@@ -142,6 +150,7 @@ def parse_players(all_players: list[dict]) -> list[LivePlayer]:
                 items_value=items_value,
                 respawn_timer=float(entry.get("respawnTimer") or 0.0),
                 position=str(entry.get("position") or "").upper(),
+                item_ids=tuple(item_ids),
             )
         )
     return players

@@ -39,6 +39,28 @@ _CRIT_MELEE: frozenset[str] = frozenset({"Yasuo", "Yone", "Tryndamere", "Nilah",
 # Champions that cannot buy boots (Cassiopeia passive).
 _NO_BOOTS: frozenset[str] = frozenset({"Cassiopeia"})
 
+# Item IDs that produce in-combat healing or lifesteal — every one of these
+# in an enemy build is one more reason to buy anti-heal. Champion-tag
+# sustain tracking (``SUSTAIN_KEYS``) catches the kit-based threats; this
+# catches the ones that come from the BUILD (Yasuo with BT, Lucian with
+# BT, Aatrox without sustain runes who still rushes a Hexdrinker, etc.).
+_LIFESTEAL_HEAL_ITEM_IDS: frozenset[int] = frozenset({
+    1053,  # Vampiric Scepter
+    1055,  # Doran's Blade
+    3072,  # Bloodthirster
+    3074,  # Ravenous Hydra
+    3115,  # Nashor's Tooth — fast attacks fuel any healing
+    3146,  # Hextech Gunblade
+    3153,  # Blade of the Ruined King
+    3156,  # Maw of Malmortius — Lifeline shield + lifesteal procs
+    3072,  # Bloodthirster (duplicate ok, frozenset)
+    3194,  # Adaptive Helm — high regen
+    6333,  # Death's Dance — heal-on-damage
+    6610,  # Sundered Sky — heal on first strike
+    6630,  # Goredrinker — was healing pre-mythic-removal
+    6675,  # Navori Quickblades — sustained crit auto pressure
+})
+
 # Boot name substrings — used to filter the full item list.
 _BOOT_KEYWORDS: tuple[str, ...] = (
     "berserker", "sorcerer's shoes", "plated steelcaps", "mercury's treads",
@@ -86,6 +108,12 @@ class GameContext:
     enemy_mobility_count: int = 0  # heavy dash/blink/chase pressure
     game_time_s: float = 0.0
     player_behind: bool = False  # ally gold < enemy gold by >3000
+    enemy_item_ids: frozenset[int] = frozenset()
+    """Numeric IDs of items the enemy team has currently bought. Built
+    from LCDA's per-player items list. Used for targeted reactions
+    that the champion-tag heuristic can't catch — e.g. "Yasuo bought
+    Bloodthirster" → anti-heal score bump regardless of his SUSTAIN_KEYS
+    membership; "Vayne bought Wit's End" → boost MR for our team."""
 
 
 @dataclass(frozen=True)
@@ -674,14 +702,32 @@ def score_item(
             score += bonus
             reasons.append(f"+{bonus:.0f} vs {context.enemy_ad_count} AD-Gegner (Armor)")
 
-        # Sustain enemies → grievous wounds items
-        if context.enemy_sustain_count >= 1 and kw(
+        # Anti-heal trigger — combine champion-kit sustain (SUSTAIN_KEYS)
+        # AND item-build sustain (anyone who bought lifesteal / healing
+        # items mid-game). The second source catches Yasuo / Lucian-into-
+        # Bloodthirster builds where the champion isn't tagged "sustain"
+        # but the build absolutely is.
+        is_anti_heal = kw(
             "grievous", "morello", "executioner", "thornmail",
             "chainsword", "mortal reminder",
-        ):
-            bonus = 30 + context.enemy_sustain_count * 10
-            score += bonus
-            reasons.append(f"+{bonus:.0f} vs {context.enemy_sustain_count} Sustain-Gegner (GW)")
+        )
+        if is_anti_heal:
+            heal_item_count = len(
+                _LIFESTEAL_HEAL_ITEM_IDS & context.enemy_item_ids
+            )
+            total_sustain = context.enemy_sustain_count + heal_item_count
+            if total_sustain >= 1:
+                bonus = 30 + total_sustain * 10
+                score += bonus
+                if heal_item_count > 0:
+                    reasons.append(
+                        f"+{bonus:.0f} vs {context.enemy_sustain_count} Sustain-Gegner "
+                        f"+ {heal_item_count} Lifesteal-Items (GW)"
+                    )
+                else:
+                    reasons.append(
+                        f"+{bonus:.0f} vs {context.enemy_sustain_count} Sustain-Gegner (GW)"
+                    )
 
         # Tank-heavy enemy comp → armor/magic penetration items
         if context.enemy_tank_count >= 2 and (apen_pct > 0 or mpen > 0):
@@ -837,22 +883,52 @@ ITEM_SYNERGIES: dict[frozenset[str], float] = {
 
 # ─── Purchase-order sort ─────────────────────────────────────────────────────
 
-def _buy_order_key(scored: ScoredItem, name_to_item: dict[str, dict]) -> float:
+def _buy_order_key(
+    scored: ScoredItem,
+    name_to_item: dict[str, dict],
+    game_time_s: float = 0.0,
+) -> float:
     """Return a sort key so core items are ordered cheapest-efficient-first.
 
-    Base key is score/price (gold efficiency). Two late-game penalties:
-    - % penetration items (Void Staff, Lord Dominik's) — only scale once
-      enemies have 100+ MR/armor, so you want them 4th-6th.
-    - Rabadon's Deathcap — % AP amplifier, always the very last buy.
+    Base key is score/price (gold efficiency). Late-game penalties push
+    items that need an enemy spike to come online out of the early slots:
+    - % penetration items (Void Staff, Lord Dominik's) only scale when
+      enemies have 100+ MR/armor — useless at min 5 → heavy penalty so
+      they slot 5th-6th.
+    - Rabadon's Deathcap (% AP amplifier) — needs enough AP to amplify;
+      always the very last buy.
+
+    ``game_time_s`` adds a HARD demotion when the current in-game time
+    is below the item's "useful from" threshold. Without this, an early-
+    push at minute 3 would still recommend Void Staff because the static
+    penalties only weight against other completed items — they don't know
+    that NO completed item is appropriate yet.
     """
     item = name_to_item.get(scored.item_name, {})
     stats = item.get("stats") or {}
+    name_lc = (item.get("name") or "").lower()
     price = max(int(((item.get("shop") or {}).get("prices") or {}).get("total", 0) or 0), 1000)
     key = scored.score / price
+    # Static penalty — score/price for typical mage items lands around
+    # 0.03-0.06, so 0.060 dominates the raw-score advantage of % pen.
     if _pct(stats.get("magicPenetration")) >= 25 or _pct(stats.get("armorPenetration")) >= 15:
-        key -= 0.020
-    if "rabadon" in (item.get("name") or "").lower():
-        key -= 0.030
+        key -= 0.060
+    if "rabadon" in name_lc:
+        key -= 0.080
+    # Hard time gate — no value buying these items before the enemy team
+    # has stacked enough resists / built enough items for the % multipliers
+    # to fire. Demoted to the bottom of the priority list when we're too
+    # early; the engine's situational column can still surface them.
+    if game_time_s > 0:
+        # %-pen needs ~3 enemy items of resists (~min 18-20).
+        if (
+            _pct(stats.get("magicPenetration")) >= 25
+            or _pct(stats.get("armorPenetration")) >= 15
+        ) and game_time_s < 18 * 60:
+            key -= 1.0
+        # Rabadon's needs ~2 AP items first (~min 14-16).
+        if "rabadon" in name_lc and game_time_s < 14 * 60:
+            key -= 1.0
     return key
 
 
@@ -974,8 +1050,11 @@ def recommend_items(
         if len(core) >= 6 and len(situational) >= 6:
             break
 
+    game_time_for_sort = context.game_time_s if context is not None else 0.0
     core_ordered = sorted(
-        core, key=lambda s: _buy_order_key(s, _name_to_item_data), reverse=True,
+        core,
+        key=lambda s: _buy_order_key(s, _name_to_item_data, game_time_for_sort),
+        reverse=True,
     )
 
     swap_suggestions = compute_swap_suggestions(
