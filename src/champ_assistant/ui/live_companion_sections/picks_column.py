@@ -91,11 +91,12 @@ class PicksColumn(QWidget):
 
     @staticmethod
     def _section_label(text: str) -> QLabel:
-        label = QLabel(text)
+        # Uppercase via .upper() — Qt QSS doesn't support text-transform.
+        label = QLabel(text.upper())
         label.setStyleSheet(
             f"color: {styles.TEXT_SECONDARY};"
             f" font-size: {styles.FS_LABEL}px;"
-            " font-weight: 700; letter-spacing: 0.5px;"
+            " font-weight: 700; letter-spacing: 1.6px;"
         )
         return label
 

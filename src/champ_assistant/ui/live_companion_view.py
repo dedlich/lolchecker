@@ -107,11 +107,11 @@ class _TeamStrip(QWidget):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(4)
 
-        title = QLabel(label)
+        title = QLabel(label.upper())
         title.setStyleSheet(
             f"color: {styles.TEXT_MUTED};"
             f" font-size: {styles.FS_LABEL}px;"
-            " font-weight: 700; letter-spacing: 1.2px;"
+            " font-weight: 700; letter-spacing: 1.6px;"
         )
         layout.addWidget(title)
 
@@ -548,11 +548,16 @@ def _panel_frame() -> QFrame:
 
 
 def _section_label(text: str) -> QLabel:
-    lab = QLabel(text)
+    """Section header style — small, uppercase, wide-tracked muted text.
+    Uppercase is applied via ``.upper()`` because Qt QSS doesn't
+    support ``text-transform: uppercase`` (silent no-op + parse warning
+    in older Qt). v1.10.111 restored the uppercase intent that was
+    lost when v1.10.104 dropped the unsupported QSS property."""
+    lab = QLabel(text.upper())
     lab.setStyleSheet(
         f"color: {styles.TEXT_MUTED};"
         f" font-size: {styles.FS_LABEL}px;"
-        " font-weight: 700; letter-spacing: 1.2px;"
+        " font-weight: 700; letter-spacing: 1.6px;"
         " padding: 4px 0;"
     )
     return lab
