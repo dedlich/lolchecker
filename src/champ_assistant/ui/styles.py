@@ -159,6 +159,71 @@ TIER_COLORS: Final[dict[str, str]] = {
 }
 
 
+def gradient_panel_stylesheet(
+    *,
+    selector: str = "QFrame",
+    radius: int | None = None,
+) -> str:
+    """Subtle vertical gradient for non-floating body panels (BuildCard,
+    ItemsPanel, GamePlanPanel, RosterPanel, SummaryRow).
+
+    Goes from a lighter top edge to a darker bottom edge — gives depth
+    without being flashy. Use ``apply_panel_shadow(frame)`` to add the
+    matching drop shadow for elevation.
+    """
+    r = radius if radius is not None else RADIUS
+    return (
+        f"{selector} {{"
+        " background: qlineargradient(x1:0, y1:0, x2:0, y2:1,"
+        f"  stop:0 {BG_ELEVATED},"
+        f"  stop:0.5 {BG_SECONDARY},"
+        f"  stop:1 {BG_PRIMARY});"
+        f" border: 1px solid {BORDER_FAINT};"
+        f" border-radius: {r}px;"
+        " }"
+    )
+
+
+def gradient_card_stylesheet(
+    *,
+    selector: str = "QFrame",
+    radius: int | None = None,
+) -> str:
+    """Lighter gradient for nested cards (matchup rows, picks rows,
+    roster rows). Reads as one elevation step ABOVE a panel — same
+    direction (top brighter, bottom darker) but starting from a higher
+    baseline so cards "pop" against their parent panel."""
+    r = radius if radius is not None else RADIUS
+    return (
+        f"{selector} {{"
+        " background: qlineargradient(x1:0, y1:0, x2:0, y2:1,"
+        f"  stop:0 {BG_INTERACT},"
+        f"  stop:1 {BG_TERTIARY});"
+        f" border: 1px solid {BORDER_FAINT};"
+        f" border-radius: {r}px;"
+        " }"
+    )
+
+
+def apply_panel_shadow(widget: object) -> None:
+    """Attach the SHADOW_PANEL drop-shadow effect to ``widget``.
+
+    Used by non-floating body panels in LiveCompanion so they lift
+    visually off the main window background. Floating widgets already
+    get their own shadow via ``FloatingWidget``.
+    """
+    from PyQt6.QtGui import QColor
+    from PyQt6.QtWidgets import QGraphicsDropShadowEffect, QWidget
+
+    assert isinstance(widget, QWidget)
+    profile = SHADOW_PANEL
+    effect = QGraphicsDropShadowEffect(widget)
+    effect.setBlurRadius(profile["blur"])
+    effect.setOffset(profile["x"], profile["y"])
+    effect.setColor(QColor(0, 0, 0, profile["alpha"]))
+    widget.setGraphicsEffect(effect)
+
+
 def floating_panel_stylesheet() -> str:
     """Single source of truth for the dark gradient + accent border that
     every floating mini-widget (scoreboard, minimap-timers, lobby-stats)
@@ -266,28 +331,44 @@ def global_stylesheet() -> str:
             font-family: {FONT_MONO};
         }}
 
-        /* Panels: layered cards with soft borders */
+        /* Panels: layered cards with subtle vertical gradient surfaces.
+           v1.10.107 lifted all of these from flat fills to gradients
+           paired with dropshadow effects on the wrapper widgets — the
+           depth pass for "next-level" feel.
+           Hover states bump the bottom stop toward BG_INTERACT so the
+           card visibly lifts on mouseover. */
         QFrame[panel="true"] {{
-            background-color: {BG_SECONDARY};
+            background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                stop:0 {BG_ELEVATED},
+                stop:0.5 {BG_SECONDARY},
+                stop:1 {BG_PRIMARY});
             border-radius: {RADIUS}px;
             border: 1px solid {BORDER_FAINT};
         }}
         QFrame[card="true"] {{
-            background-color: {BG_TERTIARY};
+            background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                stop:0 {BG_INTERACT},
+                stop:1 {BG_TERTIARY});
             border-radius: {RADIUS}px;
             border: 1px solid {BORDER_FAINT};
         }}
         QFrame[card="true"]:hover {{
             border-color: {BORDER_ACCENT};
-            background-color: {BG_ELEVATED};
+            background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                stop:0 {BG_INTERACT},
+                stop:1 {BG_ELEVATED});
         }}
         QFrame[role="row"] {{
-            background-color: {BG_TERTIARY};
+            background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                stop:0 {BG_INTERACT},
+                stop:1 {BG_TERTIARY});
             border-radius: {RADIUS}px;
             border: 1px solid {BORDER_FAINT};
         }}
         QFrame[role="row"]:hover {{
-            background-color: {BG_INTERACT};
+            background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                stop:0 {BG_INTERACT},
+                stop:1 {BG_ELEVATED});
             border-color: {BORDER_ACCENT};
         }}
 

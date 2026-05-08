@@ -403,11 +403,13 @@ class _SummaryRow(QWidget):
         outer.addWidget(self._enemy_spikes, 1)
         outer.addWidget(self._enemy_strip, 0)
 
+        # Gradient surface + drop shadow so the summary row reads as a
+        # primary card lifted off the body background — matches the
+        # body-column treatment from _panel_frame for visual cohesion.
         self.setStyleSheet(
-            f"QWidget {{ background-color: {styles.BG_SECONDARY};"
-            f" border: 1px solid {styles.BORDER};"
-            f" border-radius: {styles.RADIUS}px; }}"
+            styles.gradient_panel_stylesheet(selector="QWidget")
         )
+        styles.apply_panel_shadow(self)
 
     def update_summary(
         self,
@@ -531,13 +533,17 @@ class _SummaryRow(QWidget):
 
 
 def _panel_frame() -> QFrame:
-    """Reusable panel container with the project's panel-token styling."""
+    """Reusable panel container — gradient surface + subtle drop shadow
+    so the body columns lift off the main window background.
+
+    v1.10.107: switched from flat ``BG_SECONDARY`` to the
+    ``gradient_panel_stylesheet`` helper. Adds depth across the whole
+    LiveCompanion body in one place — every column (BuildCard,
+    ItemsPanel, GamePlanPanel) inherits the new look.
+    """
     f = QFrame()
-    f.setStyleSheet(
-        f"QFrame {{ background-color: {styles.BG_SECONDARY};"
-        f" border: 1px solid {styles.BORDER};"
-        f" border-radius: {styles.RADIUS}px; }}"
-    )
+    f.setStyleSheet(styles.gradient_panel_stylesheet(selector="QFrame"))
+    styles.apply_panel_shadow(f)
     return f
 
 
