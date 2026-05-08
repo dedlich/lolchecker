@@ -55,4 +55,36 @@ def fade_out(widget: QWidget, *, duration_ms: int | None = None,
     return anim
 
 
-__all__ = ["fade_in", "fade_out", "Qt"]
+def pulse_opacity(
+    widget: QWidget,
+    *,
+    min_opacity: float = 0.55,
+    max_opacity: float = 1.0,
+    period_ms: int = 1600,
+) -> QPropertyAnimation:
+    """Loop ``widget``'s opacity back and forth — for "live" indicators
+    that should signal active state without being distracting. Default
+    cadence is one full breath per 1.6 s, well under the 2 Hz threshold
+    where motion starts to read as "flashing" rather than "alive".
+
+    Caller must hold a strong reference (assign to ``self._pulse``) so
+    Qt doesn't garbage-collect the animation. Animation auto-loops
+    forever via ``setLoopCount(-1)`` until the caller stops it.
+    """
+    effect = widget.graphicsEffect()
+    if not isinstance(effect, QGraphicsOpacityEffect):
+        effect = QGraphicsOpacityEffect(widget)
+        widget.setGraphicsEffect(effect)
+    effect.setOpacity(max_opacity)
+    anim = QPropertyAnimation(effect, b"opacity", widget)
+    anim.setDuration(period_ms)
+    anim.setStartValue(max_opacity)
+    anim.setKeyValueAt(0.5, min_opacity)
+    anim.setEndValue(max_opacity)
+    anim.setEasingCurve(QEasingCurve.Type.InOutSine)
+    anim.setLoopCount(-1)
+    anim.start()
+    return anim
+
+
+__all__ = ["fade_in", "fade_out", "pulse_opacity", "Qt"]

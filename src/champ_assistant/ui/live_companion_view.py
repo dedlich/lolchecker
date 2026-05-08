@@ -1171,15 +1171,24 @@ class LiveCompanionView(QWidget):
         )
         layout.addWidget(title)
 
-        live = QLabel("LIVE")
-        live.setStyleSheet(
-            f"QLabel {{ background-color: {styles.DANGER};"
-            f" color: white; padding: 2px 6px;"
+        # LIVE pill — gradient + pulsing opacity loop signals the
+        # overlay is actively driven by real session data. Held as
+        # an instance attr to keep the QPropertyAnimation alive
+        # (Qt garbage-collects animations whose owners drop the ref).
+        self._live_pill = QLabel("LIVE")
+        self._live_pill.setStyleSheet(
+            "QLabel { background: qlineargradient("
+            "  x1:0, y1:0, x2:0, y2:1,"
+            f"  stop:0 {styles.DANGER_BRIGHT},"
+            f"  stop:1 {styles.DANGER});"
+            f" color: white; padding: 2px 8px;"
             f" border-radius: {styles.RADIUS_SMALL}px;"
             f" font-size: {styles.FS_CAPTION}px;"
-            " font-weight: 700; letter-spacing: 0.5px; }"
+            " font-weight: 800; letter-spacing: 1.4px; }"
         )
-        layout.addWidget(live)
+        layout.addWidget(self._live_pill)
+        from . import anim as _anim
+        self._live_pulse = _anim.pulse_opacity(self._live_pill)
         layout.addStretch(1)
 
         return header
