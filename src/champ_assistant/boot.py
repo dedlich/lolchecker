@@ -665,6 +665,23 @@ def _run_with_ui(args: argparse.Namespace) -> int:
         # / show_minimap_timers still need a restart (those gate
         # construction in boot.py — deferred).
         overlay.apply_runtime_settings()
+        # Vision services — partial runtime support. If the service
+        # was constructed at boot (flag was on then), start/stop are
+        # idempotent and safe to flip per the new flag. If it was
+        # None at boot (flag was off), toggle-on still needs a restart
+        # because there's nothing to start.
+        if vision_service is not None:
+            if new_state.enable_auto_camp_detection and not startup_mode.safe:
+                _safe_start("vision", vision_service.start)
+            else:
+                vision_service.stop()
+        if scoreboard_visibility_service is not None:
+            if new_state.enable_scoreboard_detection and not startup_mode.safe:
+                _safe_start(
+                    "scoreboard_visibility", scoreboard_visibility_service.start,
+                )
+            else:
+                scoreboard_visibility_service.stop()
         # Reset the prefetched-signature so the next snapshot kicks off
         # a fresh prefetch with the new credentials.
         assistant._game_plan_prefetched_for = ""
