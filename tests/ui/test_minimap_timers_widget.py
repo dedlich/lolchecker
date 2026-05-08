@@ -97,3 +97,40 @@ def test_update_snapshot_none_hides_widget(qt_app) -> None:
     w.show()
     w.update_snapshot(None)
     assert not w.isVisible()
+
+
+def test_set_user_enabled_false_hides_widget_immediately(qt_app) -> None:
+    """v1.10.99 construct-then-hide: when the user disables Show
+    Minimap Timers in Settings the widget hides immediately, even if
+    a snapshot tick later tries to re-show it."""
+    from champ_assistant.lcda.objectives import ObjectiveTimer
+
+    w = MinimapTimersWidget()
+    engine = JungleTimelineEngine()
+    w.attach_engine(engine)
+
+    class _FakeSnapshot:
+        game_time = 600.0
+        objectives = [
+            ObjectiveTimer(name="Dragon", next_spawn_seconds=900.0,
+                           last_killed_seconds=600.0),
+        ]
+        allies = []
+        active_summoner = ""
+
+    # Default user_enabled=True — snapshot shows the widget.
+    w.update_snapshot(_FakeSnapshot())
+    assert w.isVisible()
+
+    # Disable → hide immediately + future ticks must not re-summon.
+    w.set_user_enabled(False)
+    assert not w.isVisible()
+    w.update_snapshot(_FakeSnapshot())
+    assert not w.isVisible(), (
+        "user disabled the widget — snapshot tick must not re-show it"
+    )
+
+    # Re-enable → next tick shows again.
+    w.set_user_enabled(True)
+    w.update_snapshot(_FakeSnapshot())
+    assert w.isVisible()

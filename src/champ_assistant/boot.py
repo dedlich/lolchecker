@@ -682,6 +682,11 @@ def _run_with_ui(args: argparse.Namespace) -> int:
                 )
             else:
                 scoreboard_visibility_service.stop()
+        # Floating widgets — construct-then-hide (v1.10.99). The widgets
+        # are always constructed at boot; the flag only gates user-level
+        # visibility via set_user_enabled.
+        scoreboard.set_user_enabled(new_state.show_scoreboard)
+        minimap.set_user_enabled(new_state.show_minimap_timers)
         # Reset the prefetched-signature so the next snapshot kicks off
         # a fresh prefetch with the new credentials.
         assistant._game_plan_prefetched_for = ""
@@ -805,41 +810,48 @@ def _run_with_ui(args: argparse.Namespace) -> int:
     from champ_assistant.ui.recommendation_panel import RecommendationPanel
     from champ_assistant.ui.scoreboard_widget import ScoreboardWidget
     floating: list[object] = []
-    if persisted.show_scoreboard:
-        scoreboard = ScoreboardWidget()
-        floating.append(scoreboard)
-        # Always-on while in-game. Tab-driven peek doesn't survive
-        # Vanguard: low-level key polling is forbidden, vision detection
-        # produces false positives, and even RegisterHotKey's WM_HOTKEY
-        # message gets consumed somewhere in the focus chain when LoL
-        # is foreground (logs show 0 toggle_scoreboard fires across a
-        # full session of Ctrl+Alt+B presses). Persistent panel during
-        # in-game phases is the only thing that reliably works.
-        # The hotkey + scoreboard_visible flip path stays available so
-        # the user can manually toggle out-of-game / on demand.
-        def _drive_scoreboard_peek(old, new) -> None:  # type: ignore[no-untyped-def]
-            old_snap = old.lcda_snapshot
-            new_snap = new.lcda_snapshot
-            old_in_game = old_snap is not None and getattr(old_snap, "game_time", 0.0) > 0
-            new_in_game = new_snap is not None and getattr(new_snap, "game_time", 0.0) > 0
-            # Auto-show on game-start transition.
-            if not old_in_game and new_in_game:
-                scoreboard.set_peek_visible(True)
-                return
-            # Auto-hide on game-end transition.
-            if old_in_game and not new_in_game:
-                scoreboard.set_peek_visible(False)
-                return
-            # Out of game: respect manual hotkey flip.
-            if not new_in_game and old.scoreboard_visible != new.scoreboard_visible:
-                scoreboard.set_peek_visible(new.scoreboard_visible)
-        store.subscribe(_drive_scoreboard_peek)
-    minimap = None
-    if persisted.show_minimap_timers:
-        minimap = MinimapTimersWidget()
-        minimap.connect_scheduler(scheduler)
-        minimap.attach_engine(jungle_engine)
-        floating.append(minimap)
+    # Construct-then-hide (v1.10.99): both widgets are constructed
+    # unconditionally so the user can flip ``show_scoreboard`` /
+    # ``show_minimap_timers`` in Settings at runtime without a restart.
+    # The user-level toggle routes through ``set_user_enabled`` on each
+    # widget, which gates ``set_peek_visible`` / ``update_snapshot``
+    # internally — disabled widgets stay hidden even if the in-game
+    # peek driver / snapshot tick tries to summon them.
+    scoreboard = ScoreboardWidget()
+    scoreboard.set_user_enabled(persisted.show_scoreboard)
+    floating.append(scoreboard)
+    # Always-on while in-game. Tab-driven peek doesn't survive
+    # Vanguard: low-level key polling is forbidden, vision detection
+    # produces false positives, and even RegisterHotKey's WM_HOTKEY
+    # message gets consumed somewhere in the focus chain when LoL
+    # is foreground (logs show 0 toggle_scoreboard fires across a
+    # full session of Ctrl+Alt+B presses). Persistent panel during
+    # in-game phases is the only thing that reliably works.
+    # The hotkey + scoreboard_visible flip path stays available so
+    # the user can manually toggle out-of-game / on demand.
+    def _drive_scoreboard_peek(old, new) -> None:  # type: ignore[no-untyped-def]
+        old_snap = old.lcda_snapshot
+        new_snap = new.lcda_snapshot
+        old_in_game = old_snap is not None and getattr(old_snap, "game_time", 0.0) > 0
+        new_in_game = new_snap is not None and getattr(new_snap, "game_time", 0.0) > 0
+        # Auto-show on game-start transition.
+        if not old_in_game and new_in_game:
+            scoreboard.set_peek_visible(True)
+            return
+        # Auto-hide on game-end transition.
+        if old_in_game and not new_in_game:
+            scoreboard.set_peek_visible(False)
+            return
+        # Out of game: respect manual hotkey flip.
+        if not new_in_game and old.scoreboard_visible != new.scoreboard_visible:
+            scoreboard.set_peek_visible(new.scoreboard_visible)
+    store.subscribe(_drive_scoreboard_peek)
+
+    minimap = MinimapTimersWidget()
+    minimap.connect_scheduler(scheduler)
+    minimap.attach_engine(jungle_engine)
+    minimap.set_user_enabled(persisted.show_minimap_timers)
+    floating.append(minimap)
     # Recommendation panel — surfaces decision_engine output as
     # severity-sorted on-screen hints. Always shown (it self-hides
     # when no recs are active), so we can validate behavior in real

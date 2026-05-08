@@ -247,6 +247,11 @@ class ScoreboardWidget(FloatingWidget):
         self._champion_icons: dict[str, QPixmap] = {}
         # Summoner-spell-name → 32x32 QPixmap (Flash, Ignite, …).
         self._spell_icons: dict[str, QPixmap] = {}
+        # User-level show_scoreboard toggle. Default True so legacy
+        # construction sites that never call set_user_enabled keep
+        # working unchanged — boot.py overrides this from persisted
+        # state when constructing the widget.
+        self._user_enabled: bool = True
         self.setStyleSheet(styles.floating_panel_stylesheet())
         outer = QVBoxLayout(self)
         outer.setContentsMargins(10, 6, 10, 6)
@@ -523,11 +528,27 @@ class ScoreboardWidget(FloatingWidget):
 
         Snapshot must have arrived at least once for the panel to show;
         an empty panel hovering over an in-game scoreboard would be confusing.
+        Also gated on the user-level ``show_scoreboard`` flag — see
+        ``set_user_enabled``.
         """
-        should_show = visible and self._latest_snapshot is not None
+        should_show = (
+            visible
+            and self._latest_snapshot is not None
+            and self._user_enabled
+        )
         if should_show and not self.isVisible():
             self.fade_appear()
         elif not should_show and self.isVisible():
+            self.hide()
+
+    def set_user_enabled(self, enabled: bool) -> None:
+        """Whether the user has Settings → Show Scoreboard turned on.
+        When disabled, the widget never shows even if the in-game
+        peek driver tries to summon it. Lets boot.py construct the
+        widget unconditionally so Settings can flip it at runtime
+        without restart (v1.10.99)."""
+        self._user_enabled = enabled
+        if not enabled and self.isVisible():
             self.hide()
 
     @staticmethod

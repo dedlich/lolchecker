@@ -72,6 +72,10 @@ class MinimapTimersWidget(QWidget):
         self._deferred_scheduler = None  # type: ignore[var-annotated]
         self._latest_objectives: dict[str, ObjectiveTimer] = {}
         self._latest_game_time = 0.0
+        # User-level show_minimap_timers toggle. Default True so legacy
+        # construction sites that don't call set_user_enabled keep
+        # working unchanged. boot.py overrides this from persisted state.
+        self._user_enabled: bool = True
 
         # Calibration state.
         self._calibration_mode = False
@@ -136,7 +140,7 @@ class MinimapTimersWidget(QWidget):
         re-pin to the in-game minimap (every tick, in case the user
         moved their game window) and forward objective state to the
         layer."""
-        if snapshot is None:
+        if snapshot is None or not self._user_enabled:
             self.hide()
             return
         self._pin_to_game_minimap()
@@ -158,6 +162,16 @@ class MinimapTimersWidget(QWidget):
                 self._map_layer.set_team(local.team)
         if not self.isVisible():
             self.show()
+
+    def set_user_enabled(self, enabled: bool) -> None:
+        """Whether the user has Settings → Show Minimap Timers turned on.
+        When disabled, future ``update_snapshot`` calls hide the widget
+        instead of showing it. Lets boot.py construct the widget
+        unconditionally so Settings can flip it at runtime without
+        restart (v1.10.99)."""
+        self._user_enabled = enabled
+        if not enabled and self.isVisible():
+            self.hide()
 
     def _pin_to_game_minimap(self) -> None:
         """Move + resize to overlay the LoL window's bottom-right
