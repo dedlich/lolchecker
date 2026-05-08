@@ -18,8 +18,13 @@ in a normal window which is friendlier to headless / pytest-qt).
 """
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 from PyQt6.QtCore import QEvent, QPoint, Qt, pyqtSignal
 from PyQt6.QtGui import QGuiApplication, QKeySequence, QMouseEvent, QPixmap, QShortcut
+
+if TYPE_CHECKING:
+    from .roster_window import RosterWindow
 from PyQt6.QtWidgets import (
     QFrame,
     QHBoxLayout,
@@ -52,6 +57,10 @@ class MainOverlay(QMainWindow):
     # (champion_key, rune_names, item_names)
     pick_hover_requested = pyqtSignal(str)  # bubbled from PicksColumn
     ban_hover_requested = pyqtSignal(str)   # bubbled from BanPanel
+
+    # boot.py attaches a RosterWindow at startup; declared here as the
+    # canonical attr so the assignment doesn't need a type-ignore.
+    _roster_window: "RosterWindow | None" = None
 
     def __init__(
         self,
@@ -226,6 +235,7 @@ class MainOverlay(QMainWindow):
         # Item icon cache (item NAME like "Stridebreaker" → scaled QPixmap).
         # Same async-fill path as champion icons.
         self._item_icons: dict[str, QPixmap] = {}
+        self._spell_icons: dict[str, QPixmap] = {}
         # Rune icon cache (rune NAME like "Conqueror" → scaled QPixmap).
         self._rune_icons: dict[str, QPixmap] = {}
         self._last_view: SessionView | None = None
@@ -267,6 +277,16 @@ class MainOverlay(QMainWindow):
         if self._last_view is not None:
             self.update_view(self._last_view)
 
+    def set_spell_icons(self, icons: dict[str, QPixmap]) -> None:
+        """Inject prefetched summoner-spell icons keyed by spell NAME
+        (e.g. ``"Flash"``). LiveCompanion's _ItemsPanel renders the
+        locked champion's summoners as icons instead of the prior
+        text-only ``Flash · Ignite`` line. Same async-fill pattern as
+        item / rune icons."""
+        self._spell_icons.update(icons)
+        if self._last_view is not None:
+            self.update_view(self._last_view)
+
     def show_onboarding_if_needed(self) -> None:
         """Surface the welcome banner only on the user's very first run.
         Read from overlay_config so the decision lives next to the rest
@@ -291,7 +311,15 @@ class MainOverlay(QMainWindow):
             view, self._icon_for_key,
             rune_icons=self._rune_icons,
             item_icons=self._item_icons,
+            spell_icons=self._spell_icons,
         )
+        # RosterWindow is a separate top-level window that owns its own
+        # show/hide based on subphase. Wired via ``boot.py`` and stored
+        # as ``self._roster_window`` when present (the test fixture for
+        # MainOverlay alone doesn't construct one).
+        roster = getattr(self, "_roster_window", None)
+        if roster is not None:
+            roster.update_view(view, self._icon_for_key)
         # Champ-select state machine: pivot which panels are visible based
         # on the current sub-phase (bans → picks → loading-screen profiles).
         self._apply_champ_select_subphase(view)
@@ -481,15 +509,26 @@ class MainOverlay(QMainWindow):
         """Drive LiveCompanion visibility from the session's display_subphase.
 
         ``in_game`` / ``idle`` collapse the window to a narrow strip and
-        hide LiveCompanion entirely. Every active champ-select subphase
-        (ban / pick / finalization / planning / loading) shows it; the
-        per-section visibility (BansColumn empty-state vs populated, etc.)
-        is owned by the columns themselves.
+        hide LiveCompanion entirely. ``loading`` (game starting — user
+        is on the loading screen) hides LiveCompanion too: the dedicated
+        RosterWindow takes over the user's attention. Every other
+        active champ-select subphase (ban / pick / finalization /
+        planning) shows LiveCompanion; the per-section visibility
+        (BansColumn empty-state vs populated, etc.) is owned by the
+        columns themselves.
         """
         session = view.session
         subphase = session.display_subphase() if session is not None else "idle"
 
         if subphase in ("in_game", "idle"):
+            self._live_companion.setVisible(False)
+            self._set_width(self._W_INGAME)
+            return
+
+        if subphase == "loading":
+            # Loading screen — hand off to RosterWindow. LiveCompanion
+            # collapses (champ-select decisions are over; user is reading
+            # roster info).
             self._live_companion.setVisible(False)
             self._set_width(self._W_INGAME)
             return

@@ -50,7 +50,7 @@ from PyQt6.QtWidgets import (
 )
 
 from . import styles
-from .live_companion_sections import BansColumn, PicksColumn, RosterPanel
+from .live_companion_sections import BansColumn, PicksColumn
 
 if TYPE_CHECKING:
     from ..data.models import ChampSelectMember
@@ -788,6 +788,7 @@ class _ItemsPanel(QWidget):
 
     _RUNE_PX = 28
     _ITEM_PX = 32
+    _SPELL_PX = 28
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -812,14 +813,17 @@ class _ItemsPanel(QWidget):
         runes_holder.setLayout(self._runes_row)
         frame_layout.addWidget(runes_holder)
 
-        # Summoner spells row.
+        # Summoner spells row — icons (Flash / Ignite / Heal etc).
+        # v1.10.109: was text-only. Spell icons are prefetched and
+        # routed through ``MainOverlay.set_spell_icons`` → LiveCompanion
+        # → here.
         frame_layout.addWidget(_section_label("Summoner Spells"))
-        self._spells_line = _muted_label("—")
-        self._spells_line.setStyleSheet(
-            f"color: {styles.TEXT_PRIMARY};"
-            f" font-size: {styles.FS_BODY}px; font-weight: 600;"
-        )
-        frame_layout.addWidget(self._spells_line)
+        self._spells_row = QHBoxLayout()
+        self._spells_row.setSpacing(6)
+        self._spells_row.setContentsMargins(0, 0, 0, 0)
+        spells_holder = QWidget()
+        spells_holder.setLayout(self._spells_row)
+        frame_layout.addWidget(spells_holder)
 
         # Items section — single combined row for now.
         frame_layout.addWidget(_section_label("Items"))
@@ -841,13 +845,15 @@ class _ItemsPanel(QWidget):
         view: "SessionView",
         rune_icons: dict[str, "QPixmap"],
         item_icons: dict[str, "QPixmap"],
+        spell_icons: dict[str, "QPixmap"] | None = None,
     ) -> None:
         build = view.my_champion_build
         _BuildCard._clear_layout_qhbox(self._runes_row)
         _BuildCard._clear_layout_qhbox(self._items_row)
+        _BuildCard._clear_layout_qhbox(self._spells_row)
+        spells = spell_icons or {}
 
         if build is None:
-            self._spells_line.setText("—")
             self._empty_hint.show()
             return
         self._empty_hint.hide()
@@ -859,10 +865,12 @@ class _ItemsPanel(QWidget):
             ))
         self._runes_row.addStretch(1)
 
-        if build.summoners:
-            self._spells_line.setText(" · ".join(build.summoners))
-        else:
-            self._spells_line.setText("—")
+        for name in build.summoners[:2]:
+            self._spells_row.addWidget(self._icon_label(
+                name, spells.get(name), self._SPELL_PX,
+                fallback_color=styles.ACCENT,
+            ))
+        self._spells_row.addStretch(1)
 
         for i, name in enumerate(build.items[:6]):
             self._items_row.addWidget(self._icon_label(
@@ -1132,16 +1140,6 @@ class LiveCompanionView(QWidget):
         body_layout.addWidget(self._game_plan_panel, 2)
         outer.addWidget(body, 1)
 
-        # Roster panel — both teams' pre-game profiles. Hidden during
-        # BAN_PICK / planning to keep the active-draft layout clean;
-        # surfaced during finalization / loading-screen window when
-        # all 10 picks are settled and the user has a few seconds to
-        # read mains / win-rates / streaks. Closes the b53fa9e
-        # feature ask (v1.10.103).
-        self._roster_panel = RosterPanel()
-        self._roster_panel.setVisible(False)
-        outer.addWidget(self._roster_panel)
-
         self.setStyleSheet(
             f"QWidget {{ background-color: {styles.BG_PRIMARY}; }}"
         )
@@ -1180,6 +1178,7 @@ class LiveCompanionView(QWidget):
         *,
         rune_icons: "dict[str, QPixmap] | None" = None,
         item_icons: "dict[str, QPixmap] | None" = None,
+        spell_icons: "dict[str, QPixmap] | None" = None,
     ) -> None:
         """Called from the overlay on every SessionView refresh."""
         self._summary_row.update_summary(view, icon_lookup=icon_lookup)
@@ -1187,16 +1186,10 @@ class LiveCompanionView(QWidget):
         self._bans_column.update_bans(view, icon_lookup)
         self._picks_column.update_picks(view, icon_lookup)
         self._items_panel.update_panel(
-            view, rune_icons or {}, item_icons or {},
+            view, rune_icons or {}, item_icons or {}, spell_icons or {},
         )
         self._game_plan_panel.update_panel(view)
-        # Roster panel: visible only during finalization / loading
-        # subphase (when all 10 picks are settled). Hidden during
-        # the active draft.
-        session = view.session
-        subphase = session.display_subphase() if session is not None else "idle"
-        if subphase in ("finalization", "loading"):
-            self._roster_panel.setVisible(True)
-            self._roster_panel.update_panel(view, icon_lookup)
-        else:
-            self._roster_panel.setVisible(False)
+        # Roster panel was split out into its own RosterWindow in
+        # v1.10.110. The window owns its own visibility (loading-screen
+        # subphase only) and is wired in MainOverlay alongside the
+        # other floating widgets.

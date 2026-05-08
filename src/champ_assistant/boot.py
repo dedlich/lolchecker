@@ -867,6 +867,18 @@ def _run_with_ui(args: argparse.Namespace) -> int:
     from champ_assistant.ui.insight_panel import InsightPanel
     insight_panel = InsightPanel()
     floating.append(insight_panel)
+
+    # RosterWindow — separate top-level window that takes over the
+    # screen during the loading-screen phase (LCU GAME_STARTING). All
+    # 10 players' mains / WR / streak. Hidden during BAN_PICK so
+    # LiveCompanion has the user's attention; surfaces only after
+    # lock-in when the user is reading roster info on the loading
+    # screen. v1.10.110 — split out of LiveCompanion's body per
+    # "loading screen should be extra window" feedback.
+    from champ_assistant.ui.roster_window import RosterWindow
+    roster_window = RosterWindow()
+    floating.append(roster_window)
+    overlay._roster_window = roster_window
     if getattr(args, "demo_recommendations", False):
         recommendation_panel.populate_demo()
         recommendation_panel.show()
@@ -1622,6 +1634,10 @@ async def _hydrate_champions_and_icons(
         )
     overlay.summoner_tracker.set_champion_icons(name_to_pixmap)
     overlay.summoner_tracker.set_spell_icons(spell_pixmaps)
+    # LiveCompanion's _ItemsPanel renders the locked champion's
+    # summoner spells as icons too (v1.10.109). Same prefetched
+    # pixmaps, just routed via the overlay's set_spell_icons hop.
+    overlay.set_spell_icons(spell_pixmaps)
     # Per-lane scoreboard rows show champion icons + summoner-spell slots.
     # The ScoreboardWidget instance lives in the floating widget list — find
     # it via Qt's top-level widget registry rather than threading another arg
