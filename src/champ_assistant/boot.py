@@ -647,6 +647,11 @@ def _run_with_ui(args: argparse.Namespace) -> int:
             # recommendation_panel is constructed. Real runtime always
             # has it bound by the time Settings is reachable.
             pass
+        # Widget-visibility flags (show_summoners, show_spikes) for
+        # the always-constructed panels in MainOverlay. show_scoreboard
+        # / show_minimap_timers still need a restart (those gate
+        # construction in boot.py — deferred).
+        overlay.apply_runtime_settings()
         # Reset the prefetched-signature so the next snapshot kicks off
         # a fresh prefetch with the new credentials.
         assistant._game_plan_prefetched_for = ""

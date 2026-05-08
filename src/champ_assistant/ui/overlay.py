@@ -614,6 +614,32 @@ class MainOverlay(QMainWindow):
         if self._save_state:
             overlay_config.save(self._persisted)
 
+    def apply_runtime_settings(self) -> None:
+        """Re-read the persisted overlay state from disk and apply
+        runtime-toggleable flags. Called by ``_on_settings_changed`` in
+        boot.py so widget-visibility flips in Settings → Widgets take
+        effect immediately instead of waiting for the next launch.
+
+        Only applies flags whose target widgets are *always constructed*
+        — ``show_summoners`` + ``show_spikes`` here. ``show_scoreboard``
+        and ``show_minimap_timers`` gate widget construction at boot,
+        so toggling them on can't summon a non-existent widget; those
+        still need a restart (deferred — needs a construct-then-hide
+        refactor in boot.py).
+        """
+        if not self._save_state:
+            return
+        fresh = overlay_config.load()
+        # Reuse the existing toggle path so the title-bar button state +
+        # _persisted + saved-to-disk all stay in sync. Idempotent —
+        # _on_panel_toggled is safe to call with the current value.
+        if fresh.show_summoners != self._persisted.show_summoners:
+            self._title_bar.set_panel_visible("summoners", fresh.show_summoners)
+            self._on_panel_toggled("summoners", fresh.show_summoners)
+        if fresh.show_spikes != self._persisted.show_spikes:
+            self._title_bar.set_panel_visible("spikes", fresh.show_spikes)
+            self._on_panel_toggled("spikes", fresh.show_spikes)
+
     def closeEvent(self, event) -> None:  # type: ignore[no-untyped-def]
         if self._save_state:
             self._persisted.x = self.x()

@@ -163,3 +163,43 @@ def test_frameless_flag_sets_window_hint(qtbot) -> None:  # type: ignore[no-unty
     flags = w.windowFlags()
     assert flags & Qt.WindowType.FramelessWindowHint
     assert flags & Qt.WindowType.WindowStaysOnTopHint
+
+
+def test_apply_runtime_settings_propagates_widget_visibility_flips(
+    qtbot, tmp_path, monkeypatch,  # type: ignore[no-untyped-def]
+) -> None:
+    """v1.10.96: Settings → Widgets → uncheck Show Summoners must take
+    effect without a restart. Previously the dialog persisted to disk
+    but the running overlay's ``_persisted`` was stale, so
+    ``_panel_allowed`` kept returning the old value and the LCDA
+    dispatcher kept feeding snapshots into the supposedly-hidden panel.
+    """
+    from champ_assistant import overlay_config
+
+    isolated = tmp_path / "overlay.json"
+    monkeypatch.setattr(overlay_config, "config_path", lambda: isolated)
+
+    # Boot with both panels enabled — the default.
+    state = overlay_config.OverlayState()
+    state.show_summoners = True
+    state.show_spikes = True
+    overlay_config.save(state)
+
+    overlay = MainOverlay(load_persisted_state=True)
+    qtbot.addWidget(overlay)
+    assert overlay._panel_allowed("summoners") is True
+    assert overlay._panel_allowed("spikes") is True
+
+    # Simulate the user opening Settings, unchecking both boxes, hitting
+    # Save — that path writes to disk via overlay_config.save and emits
+    # settings_changed. boot.py's handler then calls apply_runtime_settings.
+    state.show_summoners = False
+    state.show_spikes = False
+    overlay_config.save(state)
+    overlay.apply_runtime_settings()
+
+    assert overlay._panel_allowed("summoners") is False
+    assert overlay._panel_allowed("spikes") is False
+    # Widgets are also hidden — the LCDA dispatcher checks setVisible().
+    assert overlay._summoner_tracker.isVisible() is False
+    assert overlay._power_spike_panel.isVisible() is False
