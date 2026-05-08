@@ -610,7 +610,20 @@ def _run_with_ui(args: argparse.Namespace) -> int:
         from champ_assistant import overlay_config as _ovc
         from champ_assistant import secrets
         from champ_assistant.runtime_factory import _build_profile_service
-        assistant._profile_service = _build_profile_service()
+        # Update the running ProfileService in place when possible — the
+        # underlying httpx.AsyncClient + connection pool survive, no leak.
+        # Falls back to a rebuild when no service was constructed yet
+        # (paranoia path; runtime_factory always creates one).
+        riot_key = secrets.riot_api_key()
+        riot_region = secrets.riot_region()
+        if assistant._profile_service is not None and hasattr(
+            assistant._profile_service, "set_credentials",
+        ):
+            assistant._profile_service.set_credentials(
+                api_key=riot_key, region=riot_region,
+            )
+        else:
+            assistant._profile_service = _build_profile_service()
         assistant._enemy_profiles_by_cell.clear()
         new_key = secrets.llm_api_key()
         new_provider = secrets.llm_provider()
@@ -819,12 +832,11 @@ def _run_with_ui(args: argparse.Namespace) -> int:
     floating.append(recommendation_panel)
 
     # InsightPanel — detail-view of the top recommendation. Hidden by
-    # default; toggled via Ctrl+Alt+I global hotkey.
+    # default; toggled via Ctrl+Alt+I global hotkey. The decision-loop
+    # stashes the latest top rec on ``_insight._latest_top`` directly
+    # so the hotkey handler always opens with the most current value.
     from champ_assistant.ui.insight_panel import InsightPanel
     insight_panel = InsightPanel()
-    # Track the latest top-rec so InsightPanel.toggle() always opens
-    # with the most current recommendation, not a stale one.
-    _latest_top_rec: list = [None]
     floating.append(insight_panel)
     if getattr(args, "demo_recommendations", False):
         recommendation_panel.populate_demo()

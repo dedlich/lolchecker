@@ -199,6 +199,12 @@ class ProfileService:
     def enabled(self) -> bool:
         return self._client.enabled
 
+    def set_credentials(self, *, api_key: str, region: str | None = None) -> None:
+        """Forward to the underlying RiotApiClient and clear the per-cell
+        cache so the next fetch hits the new endpoint with the new key."""
+        self._client.set_credentials(api_key=api_key, region=region)
+        self._cache.clear()
+
     def cached(self, summoner_name: str) -> EnemyProfile | None:
         return self._cache.get(summoner_name.lower())
 

@@ -209,3 +209,26 @@ def test_streak_for_loss_run_is_negative() -> None:
     assert wins == 0
     assert losses == 3
     assert streak == -3
+
+
+def test_set_credentials_updates_key_in_place() -> None:
+    """v1.10.97: ``set_credentials`` swaps the X-Riot-Token header on the
+    existing httpx.AsyncClient. Previously ``_on_settings_changed``
+    rebuilt ProfileService → new RiotApiClient → new AsyncClient and
+    leaked the old client's connection pool every save."""
+    client = RiotApiClient(API_KEY, region="EUW")
+    assert client._client.headers["X-Riot-Token"] == API_KEY
+    assert client.region == "EUW"
+
+    client.set_credentials(api_key="RGAPI-rotated", region="NA")
+    assert client._client.headers["X-Riot-Token"] == "RGAPI-rotated"
+    assert client.region == "NA"
+    assert client._api_key == "RGAPI-rotated"
+
+
+def test_set_credentials_with_no_region_leaves_region_unchanged() -> None:
+    """API-key-only update path — Settings only flipped the LLM key,
+    the user kept their region. Region must persist."""
+    client = RiotApiClient(API_KEY, region="EUW")
+    client.set_credentials(api_key="RGAPI-new")
+    assert client.region == "EUW"

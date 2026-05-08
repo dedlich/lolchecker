@@ -124,6 +124,18 @@ class RiotApiClient:
     async def aclose(self) -> None:
         await self._client.aclose()
 
+    def set_credentials(self, *, api_key: str, region: str | None = None) -> None:
+        """Update credentials in place. Mirrors the pattern used by
+        ``GamePlanLLMService`` / ``RuntimeCounterStore`` so the running
+        ``httpx.AsyncClient`` (and its connection pool) survives a
+        settings save — previously ``_on_settings_changed`` rebuilt
+        ProfileService from scratch, leaking the old client every time.
+        """
+        self._api_key = api_key
+        self._client.headers["X-Riot-Token"] = api_key
+        if region:
+            self.region = region.upper()
+
     @property
     def enabled(self) -> bool:
         return bool(self._api_key)
