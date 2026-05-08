@@ -59,11 +59,12 @@ def test_tab_titles_match_documented_order(qt_app, isolated_overlay_config) -> N
 # Coverage — every togglable OverlayState field has a checkbox
 # ----------------------------------------------------------------------
 TOGGLABLE_FIELDS_TO_CHECKBOXES = {
-    # show_objectives intentionally omitted — ObjectivePanel was retired
-    # in favor of the minimap-overlay timers; the field stays in
-    # OverlayState as a no-op for back-compat with persisted configs.
-    # show_lobby_stats removed in v1.10.80 — LobbyStatsWidget retired in
-    # favour of LiveCompanionView's built-in team summary row.
+    # Retired toggles intentionally omitted from this map:
+    #   show_lobby_stats — v1.10.80 (LobbyStatsWidget retired in favour
+    #     of LiveCompanionView's built-in team summary row).
+    #   show_objectives — v1.10.90 (ObjectivePanel was retired earlier;
+    #     the dead OverlayState field was finally removed in v1.10.90
+    #     after sitting unread for several versions).
     "show_summoners":               "_cb_summoners",
     "show_spikes":                  "_cb_spikes",
     "show_scoreboard":              "_cb_scoreboard",

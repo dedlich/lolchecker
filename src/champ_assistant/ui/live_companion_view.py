@@ -58,24 +58,9 @@ if TYPE_CHECKING:
 
 # Callable signature for the icon lookup the overlay passes in.
 IconLookup = Callable[[str], "QPixmap | None"]
-TagsLookup = Callable[[str], list[str]]
-
-
-# ─── Phase-tag heuristic ────────────────────────────────────────────────────
-# Maps champion-tag substrings (from static/tags.json) to a power-spike phase.
-# The heuristic is intentionally simple: each champ contributes 1.0 to the
-# winning phase. Aggregated across 5 picks, the team bar shows the share.
-_EARLY_TAGS = ("Early-Game", "Lane-Bully")
-_LATE_TAGS = ("Late-Game", "Hyper-Carry", "Scaling")
-
-
-def _phase_for_tags(tags: list[str]) -> str:
-    """Return ``"early"`` / ``"mid"`` / ``"late"`` for a champion tag list."""
-    if any(t in _EARLY_TAGS for t in tags):
-        return "early"
-    if any(t in _LATE_TAGS for t in tags):
-        return "late"
-    return "mid"
+# (Phase-tag heuristic moved to ``view_builder._team_phase_distribution``
+# in v1.10.90 — the UI now reads pre-computed phase counts off the
+# SessionView. Empty stubs no longer leak into the rendered bars.)
 
 
 # ─── Portrait helpers ───────────────────────────────────────────────────────
@@ -309,11 +294,13 @@ class _SummaryRow(QWidget):
     def update_summary(
         self,
         view: "SessionView",
-        tags_lookup: TagsLookup,
         icon_lookup: IconLookup,
     ) -> None:
-        """Pull team rosters + damage profiles + tag-derived phase scores
-        out of the SessionView and feed each sub-widget."""
+        """Pull team rosters + damage profiles + phase distribution out of
+        the SessionView and feed each sub-widget. v1.10.90: phase data
+        now arrives pre-computed via ``view.{ally,enemy}_phase_distribution``
+        — previously a stub ``tags_lookup`` lambda always returned ``[]``
+        making every team render as pure mid-game."""
         session = view.session
         if session is None:
             return
@@ -329,11 +316,22 @@ class _SummaryRow(QWidget):
         self._ally_damage.set_split(ap_a, ad_a)
         self._enemy_damage.set_split(ap_e, ad_e)
 
-        # Phase distribution — count tag-derived phase per champion.
-        e_a, m_a, l_a = self._phase_split(ally_keys, tags_lookup)
-        e_e, m_e, l_e = self._phase_split(enemy_keys, tags_lookup)
+        # Phase distribution — pre-computed in view_builder.
+        e_a, m_a, l_a = self._safe_distribution(view.ally_phase_distribution)
+        e_e, m_e, l_e = self._safe_distribution(view.enemy_phase_distribution)
         self._ally_spikes.set_distribution(e_a, m_a, l_a)
         self._enemy_spikes.set_distribution(e_e, m_e, l_e)
+
+    @staticmethod
+    def _safe_distribution(
+        dist: tuple[int, int, int],
+    ) -> tuple[int, int, int]:
+        """Render at minimum 1-1-1 if the team has no locked picks yet so
+        the bar shows three visible segments instead of collapsing."""
+        early, mid, late = dist
+        if early + mid + late == 0:
+            return (1, 1, 1)
+        return (early, mid, late)
 
     @staticmethod
     def _team_keys(
@@ -376,26 +374,6 @@ class _SummaryRow(QWidget):
         if total <= 0:
             return (0, 0)
         return (round(ap / total * 100), round(ad / total * 100))
-
-    @staticmethod
-    def _phase_split(
-        keys: list[str], tags_lookup: TagsLookup,
-    ) -> tuple[int, int, int]:
-        early = mid = late = 0
-        for key in keys:
-            if not key:
-                continue
-            phase = _phase_for_tags(tags_lookup(key))
-            if phase == "early":
-                early += 1
-            elif phase == "late":
-                late += 1
-            else:
-                mid += 1
-        # Render at minimum 1-1-1 if no data so the bar has visible segments.
-        if early + mid + late == 0:
-            return (1, 1, 1)
-        return (early, mid, late)
 
 
 # ─── Body columns ───────────────────────────────────────────────────────────
@@ -1021,11 +999,7 @@ class LiveCompanionView(QWidget):
         item_icons: "dict[str, QPixmap] | None" = None,
     ) -> None:
         """Called from the overlay on every SessionView refresh."""
-        self._summary_row.update_summary(
-            view,
-            tags_lookup=lambda _key: [],  # tag map plumbing follows
-            icon_lookup=icon_lookup,
-        )
+        self._summary_row.update_summary(view, icon_lookup=icon_lookup)
         self._build_card.update_card(view, icon_lookup)
         self._bans_column.update_bans(view, icon_lookup)
         self._picks_column.update_picks(view, icon_lookup)

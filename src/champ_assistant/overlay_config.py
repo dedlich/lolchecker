@@ -30,7 +30,6 @@ class OverlayState:
     frameless: bool = True
     collapsed: bool = False  # user-toggled "minimize" state
     opacity: float = 0.92    # only applied in overlay mode
-    show_objectives: bool = True
     show_summoners: bool = True
     show_spikes: bool = True
     show_scoreboard: bool = True
@@ -98,11 +97,12 @@ def load() -> OverlayState:
     if not isinstance(data, dict):
         return OverlayState()
     state = OverlayState()
-    # ``show_lobby_stats`` was removed in v1.10.80 (LobbyStatsWidget retired);
-    # if a persisted config still has the field it's silently dropped here.
+    # ``show_lobby_stats`` removed in v1.10.80 (LobbyStatsWidget retired);
+    # ``show_objectives`` removed in v1.10.90 (ObjectivePanel retired earlier).
+    # If a persisted config still has either field it's silently dropped.
     for field in ("x", "y", "width", "height", "anchor",
                   "always_on_top", "frameless", "collapsed",
-                  "opacity", "show_objectives", "show_summoners",
+                  "opacity", "show_summoners",
                   "show_spikes", "show_scoreboard", "show_minimap_timers",
                   "floating_positions",
                   "onboarding_seen", "diagnostics_enabled",

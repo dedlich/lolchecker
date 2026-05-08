@@ -57,6 +57,17 @@ class SessionView(BaseModel):
     LiveCompanion ally-side "Damage Type" bar. Added in v1.10.85 to
     fix the 0% / 0% rendering caused by the prior empty-tag stub."""
 
+    ally_phase_distribution: tuple[int, int, int] = (0, 0, 0)
+    """``(early, mid, late)`` champion counts on the ally team, derived
+    from the static tag heuristic in ``view_builder``. Drives the
+    LiveCompanion power-spikes bar. Added in v1.10.90 — same kind of
+    bug as the v1.10.85 ally damage one (UI was getting an empty
+    ``tags_lookup`` stub)."""
+
+    enemy_phase_distribution: tuple[int, int, int] = (0, 0, 0)
+    """``(early, mid, late)`` champion counts on the enemy team. Same
+    derivation as ``ally_phase_distribution``."""
+
     game_plan_enabled: bool = False
     """True iff a LLM API key is configured. The game-plan panel reads
     this to differentiate "in-flight, will arrive next snapshot" from

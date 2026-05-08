@@ -336,6 +336,37 @@ def _compute_ally_damage_profile(
     return out
 
 
+# Tags that map to early / late phase. Anything else falls into mid.
+_EARLY_PHASE_TAGS = ("Early-Game", "Lane-Bully")
+_LATE_PHASE_TAGS = ("Late-Game", "Hyper-Carry", "Scaling")
+
+
+def _team_phase_distribution(
+    members: list[TeamMember], deps: ViewBuilderDeps,
+) -> tuple[int, int, int]:
+    """Count (early, mid, late) champions on a team using the static
+    tag heuristic.
+
+    Added in v1.10.90 to fix the LiveCompanion power-spikes bar which
+    previously fed an empty ``tags_lookup`` stub through the UI and
+    always rendered every team as pure mid-game."""
+    early = mid = late = 0
+    for m in members[:5]:
+        if m.champion_id == 0:
+            continue
+        champ = deps.champions.get(m.champion_id)
+        if champ is None:
+            continue
+        tags = deps.tags.tags_for(champ.key) or champ.tags
+        if any(t in _EARLY_PHASE_TAGS for t in tags):
+            early += 1
+        elif any(t in _LATE_PHASE_TAGS for t in tags):
+            late += 1
+        else:
+            mid += 1
+    return (early, mid, late)
+
+
 def _compute_picks(
     session: ChampSelectSession, deps: ViewBuilderDeps,
 ) -> tuple[list[PickSuggestion], list[CompositionGap]]:
@@ -461,6 +492,8 @@ def build_session_view(
     enemy_roles = _compute_enemy_roles(session, deps)
     enemy_damage_profile = _compute_enemy_damage_profile(session, deps)
     ally_damage_profile = _compute_ally_damage_profile(session, deps)
+    ally_phase_distribution = _team_phase_distribution(session.my_team, deps)
+    enemy_phase_distribution = _team_phase_distribution(session.their_team, deps)
     suggestions, gaps = _compute_picks(session, deps)
 
     # Look up the recommended build for each suggestion in the local
@@ -552,6 +585,8 @@ def build_session_view(
         enemy_role_overridden=set(deps.enemy_role_overrides.keys()),
         enemy_damage_profile=enemy_damage_profile,
         ally_damage_profile=ally_damage_profile,
+        ally_phase_distribution=ally_phase_distribution,
+        enemy_phase_distribution=enemy_phase_distribution,
         game_plan_enabled=deps.game_plan_enabled,
         suggestion_builds=suggestion_builds,
         suggestion_build_reasons=suggestion_build_reasons,
