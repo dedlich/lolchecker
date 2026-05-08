@@ -80,6 +80,30 @@ HARD_CC_KEYS = frozenset({
     "Skarner", "Warwick", "MissFortune",
 })
 
+# Champions with reliable single-target burst kill threat — assassins
+# + heavy magic-burst mages. Triggers Zhonya's / Stopwatch / Banshee's
+# / GA recommendations on the carry's build. Curated rather than tag-
+# derived because some Mage tags include sustained-damage kits like
+# Cassiopeia that aren't true "burst" threats.
+BURST_KEYS = frozenset({
+    "Zed", "Talon", "LeBlanc", "Akali", "Katarina", "Diana",
+    "Fizz", "Kassadin", "Ahri", "Syndra", "Veigar", "Lux",
+    "Annie", "Brand", "Vex", "Rengar", "Kha'Zix", "Khazix",
+    "Nocturne", "Pantheon", "Qiyana", "Naafiri",
+})
+
+# Champions whose kit revolves around dash / blink / heavy slows-into-
+# them frustration. Triggers Frozen Heart / Iceborn Gauntlet / Randuin's
+# / Dead Man's Plate on tank/bruiser builds. The aura items lock these
+# down better than raw armor stacking.
+MOBILITY_KEYS = frozenset({
+    "Yasuo", "Yone", "Tryndamere", "Camille", "Irelia", "Riven",
+    "Fiora", "Akshan", "Master Yi", "MasterYi", "Kayn", "Viego",
+    "Hecarim", "Lee Sin", "LeeSin", "Diana", "Akali", "Zed",
+    "Renekton", "Shyvana", "Volibear", "Aatrox", "Jax",
+    "Wukong", "MonkeyKing", "Talon", "Vi",
+})
+
 # Boots map: which generic-boot in a base build gets swapped for
 # which adaptation. Items NOT in this map don't swap.
 _GENERIC_BOOTS = {
@@ -115,6 +139,36 @@ def _team_damage_profile(
         if champ_tags & AD_TAGS:
             ad += 1
     return ap, ad
+
+
+def count_enemy_cc(enemy_keys: list[str]) -> int:
+    """Count enemies with reliable hard-CC kits (stuns / suppressions /
+    unbounded knockups). Drives the ``enemy_cc_count`` axis on
+    ``GameContext`` so build-engine scoring can boost tenacity / QSS-
+    family items."""
+    return sum(1 for k in enemy_keys if k and k in HARD_CC_KEYS)
+
+
+def count_enemy_burst(enemy_keys: list[str]) -> int:
+    """Count enemies with single-target burst kill threat (assassins +
+    heavy burst mages). Drives recommendations for Zhonya's, Stopwatch,
+    Banshee's Veil, GA on the carry's build."""
+    return sum(1 for k in enemy_keys if k and k in BURST_KEYS)
+
+
+def count_enemy_mobility(enemy_keys: list[str]) -> int:
+    """Count enemies with high-mobility kits (dashes / blinks / chase
+    pressure). Drives recommendations for slow-aura items like Frozen
+    Heart / Iceborn Gauntlet / Randuin's / Dead Man's Plate."""
+    return sum(1 for k in enemy_keys if k and k in MOBILITY_KEYS)
+
+
+def count_enemy_sustain(enemy_keys: list[str]) -> int:
+    """Count enemies with heavy in-combat sustain (lifesteal kits,
+    self-heal). Drives Grievous Wounds item recommendations.
+    Companion to ``count_enemy_cc / _burst / _mobility`` for
+    consistency."""
+    return sum(1 for k in enemy_keys if k and k in SUSTAIN_KEYS)
 
 
 def _swap_item(items: list[str], replacement: str) -> tuple[list[str], str | None]:

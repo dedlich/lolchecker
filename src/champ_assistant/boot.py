@@ -1289,6 +1289,9 @@ async def _run_lcda_watcher(
             from champ_assistant.data.champion_scaling import extract_scaling_profile
             from champ_assistant.advisor.build_adapter import (
                 SUSTAIN_KEYS,
+                count_enemy_burst,
+                count_enemy_cc,
+                count_enemy_mobility,
                 damage_profile_for_tags,
             )
             from champ_assistant.data.meraki import MerakiClient, MerakiError
@@ -1315,11 +1318,23 @@ async def _run_lcda_watcher(
                     tank_count += 1
             allies_val = sum(int(getattr(a, "items_value", 0) or 0) for a in (getattr(snap, "allies", []) or []))
             enemies_val = sum(int(getattr(e, "items_value", 0) or 0) for e in enemies)
+            # New axes (v1.10.118): hard-CC / burst / mobility counts
+            # drive the swap-suggestion engine + new tenacity / anti-
+            # burst / slow-aura scoring rules.
+            enemy_keys = [
+                str(getattr(e, "champion_name", "") or "") for e in enemies
+            ]
+            cc_count = count_enemy_cc(enemy_keys)
+            burst_count = count_enemy_burst(enemy_keys)
+            mobility_count = count_enemy_mobility(enemy_keys)
             context = GameContext(
                 enemy_ap_count=ap_count,
                 enemy_ad_count=ad_count,
                 enemy_sustain_count=sustain_count,
                 enemy_tank_count=tank_count,
+                enemy_cc_count=cc_count,
+                enemy_burst_count=burst_count,
+                enemy_mobility_count=mobility_count,
                 game_time_s=float(getattr(snap, "game_time", 0.0) or 0.0),
                 player_behind=(enemies_val - allies_val) > 3000,
             )

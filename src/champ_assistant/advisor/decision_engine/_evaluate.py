@@ -6,11 +6,16 @@ directly.
 """
 from __future__ import annotations
 
+from collections.abc import Callable
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from ...lcda.source import LcdaSnapshot
     from ...lcda.spell_tracker import SpellTracker
+
+# Build-result-fed rules share a 2-arg signature (snapshot, build_result).
+# Aliased so the helper that runs them can be typed without quoting.
+_BuildRule = Callable[["LcdaSnapshot", object], "Recommendation | None"]
 
 from ._core import Recommendation
 from ._rules import (
@@ -18,6 +23,7 @@ from ._rules import (
     rule_enemy_combat_spell_down,
     rule_enemy_flash_down,
     rule_enemy_tp_down,
+    rule_build_swap,
     rule_situational_build,
 )
 
@@ -103,16 +109,25 @@ def evaluate(
             except Exception:  # noqa: BLE001
                 timer.record(rule_name, (perf_counter() - t0) * 1000.0)
     if situational_build is not None:
-        t0 = perf_counter()
-        try:
-            rec = rule_situational_build(snapshot, situational_build)
-            timer.record(
-                "rule_situational_build", (perf_counter() - t0) * 1000.0,
-                fired=rec is not None,
-            )
-            if rec is not None:
-                out.append(rec)
-        except Exception:  # noqa: BLE001
-            timer.record("rule_situational_build", (perf_counter() - t0) * 1000.0)
+        # Both build-result-fed rules share the same try/except shape;
+        # collapsed into a small helper so the noqa-on-broad-except
+        # only lives in one place. rule_build_swap pairs with
+        # rule_situational_build — same 2-min cadence, same BuildResult
+        # input.
+        def _run_build_rule(name: str, fn: _BuildRule) -> None:
+            t = perf_counter()
+            try:
+                rec = fn(snapshot, situational_build)
+                timer.record(
+                    name, (perf_counter() - t) * 1000.0,
+                    fired=rec is not None,
+                )
+                if rec is not None:
+                    out.append(rec)
+            except Exception:  # noqa: BLE001
+                timer.record(name, (perf_counter() - t) * 1000.0)
+
+        _run_build_rule("rule_situational_build", rule_situational_build)
+        _run_build_rule("rule_build_swap", rule_build_swap)
     out.sort(key=lambda r: _SEVERITY_RANK.get(r.severity, 99))
     return _suppress_dominated(out)

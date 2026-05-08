@@ -925,3 +925,268 @@ def test_synergy_boosts_liandry_when_rylai_in_pool() -> None:
     # Both synergy partners must appear in core (synergy should keep them together)
     assert "Liandry's Torment" in core_names
     assert "Rylai's Crystal Scepter" in core_names
+
+
+# ─── New v1.10.118 axes: enemy_cc / enemy_burst / enemy_mobility ────────────
+
+def test_count_enemy_cc_matches_curated_set() -> None:
+    """Counts only champions in HARD_CC_KEYS — case sensitive (LCU role
+    tokens are uppercase, champion keys are PascalCase)."""
+    from champ_assistant.advisor.build_adapter import count_enemy_cc
+    assert count_enemy_cc(["Leona", "Nautilus", "Ahri"]) == 2
+    assert count_enemy_cc(["Garen", "Yasuo", "Tryndamere"]) == 0
+    # Unknown / empty entries don't crash.
+    assert count_enemy_cc(["", "FuturePatchChamp"]) == 0
+
+
+def test_count_enemy_burst_matches_curated_set() -> None:
+    from champ_assistant.advisor.build_adapter import count_enemy_burst
+    assert count_enemy_burst(["Zed", "Talon", "LeBlanc", "Garen"]) == 3
+    assert count_enemy_burst(["Sett", "Mundo"]) == 0
+
+
+def test_count_enemy_mobility_matches_curated_set() -> None:
+    from champ_assistant.advisor.build_adapter import count_enemy_mobility
+    assert count_enemy_mobility(["Yasuo", "Tryndamere", "Camille", "Soraka"]) == 3
+    # Both Lee Sin name variants curated since DataDragon spaces the key.
+    assert count_enemy_mobility(["Lee Sin"]) == 1
+
+
+def test_score_item_boosts_quicksilver_against_cc_team() -> None:
+    """Heavy-CC enemy → Quicksilver Sash gets the new tenacity bonus.
+    Uses a bare-bones item dict matching the engine's expected shape."""
+    from champ_assistant.advisor.build_engine import (
+        ChampionArchetype,
+        GameContext,
+        score_item,
+    )
+    qss = {
+        "id": 3140,
+        "name": "Quicksilver Sash",
+        "tier": 3,
+        "removed": False,
+        "shop": {"purchasable": True, "prices": {"total": 1300}},
+        "stats": {"magicResistance": {"flat": 30}},
+        "passives": [],
+        "simpleDescription": "Quicksilver active removes all crowd control.",
+    }
+    arch = ChampionArchetype(
+        damage_type="physical",
+        item_damage_type="physical",
+        play_style="bruiser",
+        is_ranged=False,
+        has_mana=True,
+        primary_position="MIDDLE",
+        scaling_attributes=frozenset(),
+    )
+    neutral = GameContext()
+    cc_heavy = GameContext(enemy_cc_count=3)
+    neutral_score = score_item(qss, arch, neutral).score
+    contextual_score = score_item(qss, arch, cc_heavy).score
+    assert contextual_score > neutral_score, (
+        f"QSS should score higher vs CC-heavy (neutral={neutral_score}, "
+        f"contextual={contextual_score})"
+    )
+
+
+def test_score_item_boosts_zhonya_against_burst_team() -> None:
+    """Burst enemies → Zhonya's Hourglass picks up the anti-burst rule."""
+    from champ_assistant.advisor.build_engine import (
+        ChampionArchetype,
+        GameContext,
+        score_item,
+    )
+    zhonya = {
+        "id": 3157,
+        "name": "Zhonya's Hourglass",
+        "tier": 3,
+        "removed": False,
+        "shop": {"purchasable": True, "prices": {"total": 2600}},
+        "stats": {"abilityPower": {"flat": 65}, "armor": {"flat": 45}},
+        "passives": [{"name": "Stasis"}],
+        "simpleDescription": "Stasis active prevents all damage for 2.5s.",
+    }
+    arch = ChampionArchetype(
+        damage_type="magic",
+        item_damage_type="magic",
+        play_style="mage",
+        is_ranged=True,
+        has_mana=True,
+        primary_position="MIDDLE",
+        scaling_attributes=frozenset(),
+    )
+    neutral = score_item(zhonya, arch, GameContext()).score
+    burst = score_item(zhonya, arch, GameContext(enemy_burst_count=2)).score
+    assert burst > neutral
+
+
+def test_score_item_boosts_frozen_heart_against_mobility_team() -> None:
+    """Mobility-heavy enemies → Frozen Heart picks up the slow-aura rule."""
+    from champ_assistant.advisor.build_engine import (
+        ChampionArchetype,
+        GameContext,
+        score_item,
+    )
+    frozen = {
+        "id": 3110,
+        "name": "Frozen Heart",
+        "tier": 3,
+        "removed": False,
+        "shop": {"purchasable": True, "prices": {"total": 2400}},
+        "stats": {"armor": {"flat": 80}, "mana": {"flat": 400}},
+        "passives": [{"name": "Winter's Caress"}],
+        "simpleDescription": "Frozen Heart slows nearby enemies' attack speed.",
+    }
+    arch = ChampionArchetype(
+        damage_type="physical",
+        item_damage_type="physical",
+        play_style="tank",
+        is_ranged=False,
+        has_mana=True,
+        primary_position="TOP",
+        scaling_attributes=frozenset(),
+    )
+    neutral = score_item(frozen, arch, GameContext()).score
+    mobility = score_item(frozen, arch, GameContext(enemy_mobility_count=3)).score
+    assert mobility > neutral
+
+
+# ─── compute_swap_suggestions diff engine ────────────────────────────────────
+
+def test_compute_swap_suggestions_returns_empty_for_neutral_context() -> None:
+    """No enemy data populated → no signal → no swaps. The empty
+    return tells the rule to stay silent rather than emit noise."""
+    from champ_assistant.advisor.build_engine import (
+        compute_swap_suggestions,
+        GameContext,
+        detect_archetype,
+    )
+    champ = _mage_champ()
+    arch = detect_archetype(champ)
+    suggestions = compute_swap_suggestions(
+        champion=champ, items={}, archetype=arch,
+        context=GameContext(),
+    )
+    assert suggestions == ()
+
+
+def test_compute_swap_suggestions_returns_empty_when_items_dict_empty() -> None:
+    from champ_assistant.advisor.build_engine import (
+        compute_swap_suggestions,
+        GameContext,
+        detect_archetype,
+    )
+    champ = _mage_champ()
+    arch = detect_archetype(champ)
+    suggestions = compute_swap_suggestions(
+        champion=champ, items={}, archetype=arch,
+        context=GameContext(enemy_ap_count=3),
+    )
+    assert suggestions == ()
+
+
+# ─── rule_build_swap surface ─────────────────────────────────────────────────
+
+def test_rule_build_swap_returns_none_without_build_result() -> None:
+    from champ_assistant.advisor.decision_engine import rule_build_swap
+    snap = _Snap(game_time=300.0)
+    assert rule_build_swap(snap, None) is None
+
+
+def test_rule_build_swap_silent_before_two_minutes() -> None:
+    """Same 2-min cadence as rule_situational_build — no early-game spam."""
+    from champ_assistant.advisor.decision_engine import rule_build_swap
+    from champ_assistant.advisor.build_engine import BuildSwap
+    snap = _Snap(game_time=100.0)
+    result = _make_build_result()
+    # Force a swap suggestion onto the result so the silence is purely
+    # about the time gate.
+    result_with_swap = BuildResult(
+        champion_name=result.champion_name,
+        archetype=result.archetype,
+        core_items=result.core_items,
+        situational_items=result.situational_items,
+        boots_name=result.boots_name,
+        boots_id=result.boots_id,
+        starter_name=result.starter_name,
+        starter_id=result.starter_id,
+        swap_suggestions=(BuildSwap(
+            skip_item="Bad", skip_item_id=1,
+            replacement="Good", replacement_id=2,
+            reason="vs 3 AP-Gegner",
+            score_delta=42.0,
+        ),),
+    )
+    assert rule_build_swap(snap, result_with_swap) is None
+
+
+def test_rule_build_swap_silent_when_no_swaps() -> None:
+    """The default empty swap_suggestions tuple → no recommendation."""
+    from champ_assistant.advisor.decision_engine import rule_build_swap
+    snap = _Snap(game_time=300.0)
+    result = _make_build_result()
+    assert result.swap_suggestions == ()
+    assert rule_build_swap(snap, result) is None
+
+
+def test_rule_build_swap_fires_with_top_swap() -> None:
+    """When swap_suggestions has entries, fires with kind=build_swap and
+    a "Swap X → Y" headline. The top-by-score-delta wins."""
+    from champ_assistant.advisor.decision_engine import rule_build_swap
+    from champ_assistant.advisor.build_engine import BuildSwap
+    snap = _Snap(game_time=300.0)
+    base = _make_build_result()
+    result = BuildResult(
+        champion_name=base.champion_name,
+        archetype=base.archetype,
+        core_items=base.core_items,
+        situational_items=base.situational_items,
+        boots_name=base.boots_name,
+        boots_id=base.boots_id,
+        starter_name=base.starter_name,
+        starter_id=base.starter_id,
+        swap_suggestions=(
+            BuildSwap(
+                skip_item="Bloodthirster", skip_item_id=3072,
+                replacement="Mortal Reminder", replacement_id=3033,
+                reason="vs 2 Sustain-Gegner (GW)",
+                score_delta=44.0,
+            ),
+        ),
+    )
+    rec = rule_build_swap(snap, result)
+    assert rec is not None
+    assert rec.kind == "build_swap"
+    assert rec.severity == "info"
+    assert "Bloodthirster" in rec.text
+    assert "Mortal Reminder" in rec.text
+
+
+def test_evaluate_runs_both_build_rules() -> None:
+    """The shared try/except helper must run BOTH build-result-fed
+    rules — situational AND swap. Pin the order so future refactors
+    don't accidentally drop one."""
+    from champ_assistant.advisor.decision_engine import evaluate
+    from champ_assistant.advisor.build_engine import BuildSwap
+    snap = _Snap(game_time=300.0)
+    base = _make_build_result()
+    result = BuildResult(
+        champion_name=base.champion_name,
+        archetype=base.archetype,
+        core_items=base.core_items,
+        situational_items=base.situational_items,
+        boots_name=base.boots_name,
+        boots_id=base.boots_id,
+        starter_name=base.starter_name,
+        starter_id=base.starter_id,
+        swap_suggestions=(BuildSwap(
+            skip_item="X", skip_item_id=1,
+            replacement="Y", replacement_id=2,
+            reason="vs 3 AP",
+            score_delta=30.0,
+        ),),
+    )
+    recs = evaluate(snap, situational_build=result)
+    kinds = {r.kind for r in recs}
+    assert "situational_build" in kinds
+    assert "build_swap" in kinds

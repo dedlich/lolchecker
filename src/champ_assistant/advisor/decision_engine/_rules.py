@@ -384,3 +384,52 @@ def rule_situational_build(
         kind="situational_build",
         reasons=all_reasons,
     )
+
+
+def rule_build_swap(
+    snapshot: "LcdaSnapshot",
+    build_result: object,
+) -> Recommendation | None:
+    """Surface a "skip X, buy Y instead" recommendation when the
+    standard build's choice scored materially worse than an alternative
+    under the live matchup.
+
+    Like ``rule_situational_build``, this runs on the same 2-min cadence
+    and reads ``BuildResult`` (passed in by ``evaluate``). The actual
+    swap calculation lives in ``build_engine.compute_swap_suggestions``
+    which diffs the neutral-baseline ranking vs the contextual one —
+    this rule is just the in-game surface.
+
+    Top 1 swap by score-delta is chosen. Stays silent when no
+    suggestions exist (early game, balanced matchup, or no score gap).
+    """
+    from ..build_engine import BuildResult  # local import avoids circular
+
+    if not isinstance(build_result, BuildResult):
+        return None
+
+    game_time = float(getattr(snapshot, "game_time", 0.0) or 0.0)
+    if game_time < 120.0:
+        return None
+
+    swaps = build_result.swap_suggestions
+    if not swaps:
+        return None
+
+    top = swaps[0]
+    text = f"Swap: {top.skip_item} → {top.replacement}"
+    reasons = (
+        f"Skip {top.skip_item} ({top.reason})",
+        f"Buy {top.replacement} instead — score Δ +{top.score_delta:.0f}",
+    )
+
+    return Recommendation(
+        text=text,
+        severity="info",
+        category="lane",
+        confidence=0.80,
+        risk="LOW",
+        ttl_s=120.0,
+        kind="build_swap",
+        reasons=reasons,
+    )
