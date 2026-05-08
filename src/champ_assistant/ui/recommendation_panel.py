@@ -52,6 +52,26 @@ _CATEGORY_GLYPHS: dict[str, str] = {
     "lane":      "≡",   # bars — laning play
 }
 
+# Win-path anchor — coaching-frame label rendered under each rec.
+# Maps the ``Recommendation.win_path`` value (set by the win-path
+# tagger in evaluate) to the German italic line + color the user sees.
+# Empty string entries are intentionally absent — the row hides the
+# anchor entirely when the rec carries no win_path tag.
+_WIN_PATH_LABELS: dict[str, str] = {
+    "primary_path":    "→ Game Plan: weiter auf Win-Path",
+    "spike_window":    "→ Power-Spike-Fenster: Druck JETZT",
+    "threat_response": "→ Threat Response: gegen Enemy-Threat",
+    "avoid_mistake":   "→ Niemals: vermeidet das Lose-Game",
+    "closing_window":  "→ Closing Window: Spiel beenden",
+}
+_WIN_PATH_COLORS: dict[str, str] = {
+    "primary_path":    styles.ACCENT,
+    "spike_window":    styles.SUCCESS,
+    "threat_response": styles.DANGER,
+    "avoid_mistake":   styles.WARNING,
+    "closing_window":  styles.ACCENT_BRIGHT,
+}
+
 
 class _RecRow(QFrame):
     """One recommendation card. Left strip = severity, glyph =
@@ -96,6 +116,15 @@ class _RecRow(QFrame):
         self._glyph.setStyleSheet(self._glyph_stylesheet("info"))
         layout.addWidget(self._glyph)
 
+        # Body is a vertical stack: rec text on top, optional
+        # win-path anchor below ("→ Threat Response: gegen Sustain").
+        # The anchor is the v1.10.120 coaching coherence layer — every
+        # rec links back to the locked WinCondition.
+        from PyQt6.QtWidgets import QSizePolicy, QVBoxLayout
+        body_col = QVBoxLayout()
+        body_col.setContentsMargins(0, 0, 0, 0)
+        body_col.setSpacing(2)
+
         self._text = QLabel("")
         self._text.setWordWrap(True)
         # QLabel + word-wrap inside QHBoxLayout returns single-line
@@ -105,7 +134,6 @@ class _RecRow(QFrame):
         # vertical space when wrap kicks in. Combined with the row's own
         # vertical Expanding policy it solves the "only top message
         # fully present" symptom from v1.10.83.
-        from PyQt6.QtWidgets import QSizePolicy
         self._text.setSizePolicy(
             QSizePolicy.Policy.Expanding,
             QSizePolicy.Policy.MinimumExpanding,
@@ -116,7 +144,24 @@ class _RecRow(QFrame):
         # keeps the pill snug around the text rather than extending to
         # the row edges.
         self._text.setStyleSheet(self._pill_stylesheet(styles.TEXT_PRIMARY))
-        layout.addWidget(self._text, 1)
+        body_col.addWidget(self._text)
+
+        # Win-path anchor — small italic line under the text. Hidden
+        # when rec.win_path is empty (untagged rec). Color matches the
+        # win_path category so the user can scan severity (text color)
+        # AND coaching-frame (anchor color) at a glance.
+        self._win_path_anchor = QLabel("")
+        self._win_path_anchor.setStyleSheet(
+            f"color: {styles.TEXT_MUTED};"
+            f" font-size: {styles.FS_LABEL}px;"
+            " font-style: italic;"
+            " padding-left: 2px;"
+        )
+        self._win_path_anchor.setWordWrap(True)
+        self._win_path_anchor.hide()
+        body_col.addWidget(self._win_path_anchor)
+
+        layout.addLayout(body_col, 1)
         # Meta label still allocated so existing render() paths don't crash,
         # but it's hidden in chat-mode — no TTL/confidence chrome.
         self._meta = QLabel("")
@@ -133,6 +178,21 @@ class _RecRow(QFrame):
         self._text.setStyleSheet(self._pill_stylesheet(color))
         self._glyph.setText(_CATEGORY_GLYPHS.get(rec.category, "•"))
         self._glyph.setStyleSheet(self._glyph_stylesheet(rec.severity))
+        # Win-path anchor — coaching-frame label below the rec text.
+        # Empty win_path → hide (untagged rec, e.g. legacy rule).
+        anchor_text = _WIN_PATH_LABELS.get(rec.win_path, "")
+        if anchor_text:
+            anchor_color = _WIN_PATH_COLORS.get(rec.win_path, styles.TEXT_MUTED)
+            self._win_path_anchor.setText(anchor_text)
+            self._win_path_anchor.setStyleSheet(
+                f"color: {anchor_color};"
+                f" font-size: {styles.FS_LABEL}px;"
+                " font-style: italic;"
+                " padding-left: 2px;"
+            )
+            self._win_path_anchor.show()
+        else:
+            self._win_path_anchor.hide()
         # Background is always transparent in chat-mode — no glow variant.
         self.setStyleSheet(self._stylesheet_for(rec.severity))
         # Stash for paintEvent — confidence bar at bottom of the card.

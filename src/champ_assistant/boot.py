@@ -1438,10 +1438,16 @@ async def _run_lcda_watcher(
         except Exception:
             log.exception("maybe_update_build_failed")
         try:
+            # Latest WinCondition (locked in champ-select) drives the
+            # win_path tag on every emitted recommendation — the
+            # in-game coaching anchor under each rec headline.
+            _last_view = getattr(overlay, "_last_view", None)
+            wc = getattr(_last_view, "win_condition", None) if _last_view else None
             recs = _decisions.evaluate(
                 snap,
                 spell_tracker=overlay.summoner_tracker.tracker(),
                 situational_build=_build_result[0],
+                win_condition=wc,
             )
             top = recs[0].text if recs else ""
             if top and top != _last_recommendation[0]:

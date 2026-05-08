@@ -299,6 +299,14 @@ class Recommendation:
     # recommendations that cover the same signal. Default "" = no
     # suppression relationship. Never shown to the user.
     kind: str = ""
+    # Pro-coaching anchor (v1.10.120). Names which part of the per-game
+    # WinCondition this rec serves so the UI can render a small italic
+    # link line under the headline ("→ Threat Response: LeBlanc burst").
+    # Empty string = rec wasn't tagged (default for legacy rules; the
+    # tagger fills it post-evaluate based on kind + matchup tags).
+    # Allowed values: "primary_path" / "spike_window" / "threat_response"
+    # / "avoid_mistake" / "closing_window" / "" (untagged).
+    win_path: str = ""
 
 
 # --------------------------------------------------------------------------

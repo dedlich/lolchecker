@@ -12,6 +12,7 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from ...lcda.source import LcdaSnapshot
     from ...lcda.spell_tracker import SpellTracker
+    from ..win_condition import WinCondition
 
 # Build-result-fed rules share a 2-arg signature (snapshot, build_result).
 # Aliased so the helper that runs them can be typed without quoting.
@@ -52,6 +53,7 @@ def evaluate(
     rules: tuple = ALL_RULES,
     spell_tracker: "SpellTracker | None" = None,
     situational_build: object = None,
+    win_condition: "WinCondition | None" = None,
 ) -> list[Recommendation]:
     """Run every rule against ``snapshot`` and return the non-None
     results sorted by severity (alerts first). Pure function — safe
@@ -66,6 +68,12 @@ def evaluate(
     ``situational_build``: a ``BuildResult`` from the build engine.
     When provided, fires ``rule_situational_build`` with item recs
     adjusted for the live enemy team composition.
+
+    ``win_condition``: the ``WinCondition`` produced at champ-select
+    lock-in. When provided, every emitted recommendation gets tagged
+    with ``win_path`` so the UI can render a coaching anchor under
+    the headline ("→ Threat Response: gegen Sustain"). Forward-string
+    type annotation keeps the actual import inside the tagger module.
     """
     if snapshot is None:
         return []
@@ -130,4 +138,11 @@ def evaluate(
         _run_build_rule("rule_situational_build", rule_situational_build)
         _run_build_rule("rule_build_swap", rule_build_swap)
     out.sort(key=lambda r: _SEVERITY_RANK.get(r.severity, 99))
-    return _suppress_dominated(out)
+    out = _suppress_dominated(out)
+    # Pro-coaching anchor — tag every surviving rec with which part of
+    # the WinCondition it serves. Tagging happens after suppression so
+    # we don't waste effort on dominated recs.
+    if win_condition is not None:
+        from ._win_path_tagger import tag_recommendation
+        out = [tag_recommendation(r, win_condition) for r in out]
+    return out
