@@ -7,5 +7,6 @@ from __future__ import annotations
 
 from .bans_column import BansColumn
 from .picks_column import PicksColumn
+from .roster_panel import RosterPanel
 
-__all__ = ["BansColumn", "PicksColumn"]
+__all__ = ["BansColumn", "PicksColumn", "RosterPanel"]

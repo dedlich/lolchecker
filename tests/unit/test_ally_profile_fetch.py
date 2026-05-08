@@ -1,10 +1,17 @@
 """Tests for the team-profile fetch path.
 
-LobbyStatsWidget was retired in v1.10.80 and ally fetching was paused
-in v1.10.91 (no UI consumer in LiveCompanion yet). The orchestrator
-now schedules ENEMY fetches only — these tests pin that contract so a
-future re-enable of ally fetching is a deliberate flip, not a silent
-regression.
+History:
+  * v1.10.79 (b53fa9e) wired ally fetching for the floating
+    LobbyStatsWidget.
+  * v1.10.80 retired LobbyStatsWidget; ally data went unread.
+  * v1.10.91 paused ally fetching to save API quota.
+  * v1.10.103 re-enabled ally fetching, gated on subphase: only
+    during FINALIZATION / loading (when the LiveCompanion roster
+    panel surfaces it). BAN_PICK / planning still fetches enemies
+    only.
+
+These tests pin the subphase-gated contract so the gates don't drift
+silently in a future refactor.
 """
 from __future__ import annotations
 
@@ -24,9 +31,10 @@ def _session(
     my_team: list[TeamMember],
     their_team: list[TeamMember],
     local_cell: int = 0,
+    phase: str = "BAN_PICK",
 ) -> ChampSelectSession:
     return ChampSelectSession(
-        phase="BAN_PICK",
+        phase=phase,
         localPlayerCellId=local_cell,
         myTeam=my_team,
         theirTeam=their_team,
@@ -47,17 +55,12 @@ def _members(side: str, *, with_local: bool = True) -> list[TeamMember]:
 
 
 # ----------------------------------------------------------------------
-# _maybe_fetch_profiles schedules ENEMY fetches only (v1.10.91)
+# _maybe_fetch_profiles — subphase-gated dispatch (v1.10.103)
 # ----------------------------------------------------------------------
-def test_maybe_fetch_profiles_schedules_enemies_only() -> None:
-    """Enemy team gets 5 fetches; ally team gets 0 (paused pending an
-    ally-roster panel in LiveCompanion). Original feature ask is
-    archived in commit b53fa9e."""
+def _make_app() -> tuple[object, list[tuple[int, bool]]]:
+    """Build a minimal ChampAssistant + capture list for scheduling tests."""
     from champ_assistant.app import ChampAssistant
 
-    # Construct a minimal ChampAssistant just to exercise
-    # _schedule_profile_fetch's branching. We mock the profile
-    # service so we can observe the calls without real HTTP.
     profile_service = MagicMock()
     profile_service.enabled = True
 
@@ -73,11 +76,19 @@ def test_maybe_fetch_profiles_schedules_enemies_only() -> None:
         scheduled.append((member.cell_id, is_ally))
 
     app._schedule_profile_fetch = _capture  # type: ignore[method-assign]
+    return app, scheduled
 
+
+def test_ban_pick_phase_schedules_enemies_only() -> None:
+    """During the active draft, only enemy profiles are fetched. Ally
+    identities aren't shown anywhere until the loading screen, so
+    fetching them now is wasted API quota."""
+    app, scheduled = _make_app()
     sess = _session(
         my_team=_members("my"),
         their_team=_members("their"),
         local_cell=0,
+        phase="BAN_PICK",
     )
     app._maybe_fetch_profiles(sess)
 
@@ -86,9 +97,46 @@ def test_maybe_fetch_profiles_schedules_enemies_only() -> None:
 
     ally_cells = {c for c, ally in scheduled if ally}
     assert ally_cells == set(), (
-        "ally fetching is paused as of v1.10.91 — re-enable when an "
-        "ally-roster panel exists in LiveCompanion"
+        "BAN_PICK phase: ally fetching must stay paused. Re-enable "
+        "only during FINALIZATION / loading."
     )
+
+
+def test_finalization_phase_schedules_both_teams() -> None:
+    """FINALIZATION fires the LiveCompanion roster panel — ally
+    fetches kick off here so data lands before the loading screen."""
+    app, scheduled = _make_app()
+    sess = _session(
+        my_team=_members("my"),
+        their_team=_members("their"),
+        local_cell=0,
+        phase="FINALIZATION",
+    )
+    app._maybe_fetch_profiles(sess)
+
+    enemy_cells = {c for c, ally in scheduled if not ally}
+    assert enemy_cells == {5, 6, 7, 8, 9}
+
+    ally_cells = {c for c, ally in scheduled if ally}
+    # 4 of 5 — local cell 0 skipped (don't fetch our own profile).
+    assert ally_cells == {1, 2, 3, 4}
+    assert 0 not in ally_cells
+
+
+def test_game_starting_phase_schedules_both_teams() -> None:
+    """``GAME_STARTING`` is the loading-screen phase. Same wiring as
+    FINALIZATION — both teams fetched."""
+    app, scheduled = _make_app()
+    sess = _session(
+        my_team=_members("my"),
+        their_team=_members("their"),
+        local_cell=0,
+        phase="GAME_STARTING",
+    )
+    app._maybe_fetch_profiles(sess)
+
+    ally_cells = {c for c, ally in scheduled if ally}
+    assert ally_cells == {1, 2, 3, 4}
 
 
 def test_schedule_profile_fetch_uses_separate_inflight_keys() -> None:

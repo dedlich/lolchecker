@@ -296,25 +296,24 @@ class ChampAssistant:
 
     def _maybe_fetch_profiles(self, session: ChampSelectSession) -> None:
         """If a Riot API key is configured, fire off async profile lookups
-        for the ENEMY team. Empty/no-key/no-puuid → noop. Cached results
+        for both teams. Empty/no-key/no-puuid → noop. Cached results
         show up on the next view rebuild without blocking session
         rendering.
 
-        Rate-limit reality: 5 enemies × ~4 API endpoints = ~20 calls
-        per champ-select. Personal Riot dev keys allow 100 / 2 min, so
-        a single champ-select fits with margin. Repeated lobbies in
-        rapid succession may hit the limit — failures degrade
-        silently to empty profiles via the existing ProfileService
-        error path.
+        Subphase-gated to keep Riot dev-key quota sane:
+          * BAN_PICK / PLANNING: enemy team only (~20 API calls).
+            Ally identities aren't shown anywhere during the draft.
+          * FINALIZATION / loading: both teams (~36 calls). The
+            LiveCompanion roster panel surfaces ally mains/WR/last-10
+            during the loading-screen window (v1.10.103 — closes the
+            b53fa9e feature ask). Fetching during finalization gives
+            data a few seconds to land before the loading screen.
 
-        Ally fetching is currently paused (v1.10.91): the original
-        consumer was the floating LobbyStatsWidget, which was retired
-        in v1.10.80. LiveCompanion does not yet have an ally-roster
-        panel that surfaces mains/win-rate/last-10 (the data the user
-        originally asked for in commit b53fa9e). The fetch + storage
-        + view-builder wiring is left intact behind ``_ally_profiles_by_cell``
-        so re-enabling is a one-line toggle when the UI consumer ships.
-        Until then we save ~16 API calls per champ-select.
+        Rate-limit reality: personal Riot dev keys allow 100 / 2 min,
+        so one champ-select fits with margin. Failures degrade silently
+        to empty profiles via the existing ProfileService error path.
+        Local player is always skipped — no point fetching our own
+        profile.
         """
         if self._profile_service is None or not getattr(
             self._profile_service, "enabled", False
@@ -322,6 +321,16 @@ class ChampAssistant:
             return
         for member in session.their_team:
             self._schedule_profile_fetch(member, is_ally=False)
+        # Ally fetching gated on subphase. ``display_subphase`` returns
+        # one of the documented strings — finalization / loading both
+        # surface the roster panel.
+        subphase = session.display_subphase()
+        if subphase in ("finalization", "loading"):
+            local_cell = session.local_player_cell_id
+            for member in session.my_team:
+                if member.cell_id == local_cell:
+                    continue  # don't fetch our own profile
+                self._schedule_profile_fetch(member, is_ally=True)
 
     def _schedule_profile_fetch(
         self,

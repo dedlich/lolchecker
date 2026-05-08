@@ -50,7 +50,7 @@ from PyQt6.QtWidgets import (
 )
 
 from . import styles
-from .live_companion_sections import BansColumn, PicksColumn
+from .live_companion_sections import BansColumn, PicksColumn, RosterPanel
 
 if TYPE_CHECKING:
     from ..data.models import ChampSelectMember
@@ -970,6 +970,16 @@ class LiveCompanionView(QWidget):
         body_layout.addWidget(self._game_plan_panel, 2)
         outer.addWidget(body, 1)
 
+        # Roster panel — both teams' pre-game profiles. Hidden during
+        # BAN_PICK / planning to keep the active-draft layout clean;
+        # surfaced during finalization / loading-screen window when
+        # all 10 picks are settled and the user has a few seconds to
+        # read mains / win-rates / streaks. Closes the b53fa9e
+        # feature ask (v1.10.103).
+        self._roster_panel = RosterPanel()
+        self._roster_panel.setVisible(False)
+        outer.addWidget(self._roster_panel)
+
         self.setStyleSheet(
             f"QWidget {{ background-color: {styles.BG_PRIMARY}; }}"
         )
@@ -1018,3 +1028,13 @@ class LiveCompanionView(QWidget):
             view, rune_icons or {}, item_icons or {},
         )
         self._game_plan_panel.update_panel(view)
+        # Roster panel: visible only during finalization / loading
+        # subphase (when all 10 picks are settled). Hidden during
+        # the active draft.
+        session = view.session
+        subphase = session.display_subphase() if session is not None else "idle"
+        if subphase in ("finalization", "loading"):
+            self._roster_panel.setVisible(True)
+            self._roster_panel.update_panel(view, icon_lookup)
+        else:
+            self._roster_panel.setVisible(False)
