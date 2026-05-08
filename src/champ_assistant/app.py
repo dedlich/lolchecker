@@ -511,14 +511,24 @@ class ChampAssistant:
 
         local_cell = session.local_player_cell_id
         ally_cells = {m.cell_id for m in session.my_team}
+        # Per-iteration counters so we can tell *why* the scheduled
+        # count was 0: skipped-as-local, no-champ-id, or no-match.
+        skipped_local = skipped_no_champ = skipped_no_match = 0
+        session_champ_ids = sorted(
+            m.champion_id for m in session.my_team + session.their_team
+        )
+        gameflow_champ_ids = sorted(members_by_champ_id.keys())
         scheduled = 0
         for member in list(session.my_team) + list(session.their_team):
             if member.cell_id == local_cell:
+                skipped_local += 1
                 continue
             if member.champion_id == 0:
+                skipped_no_champ += 1
                 continue
             gameflow_member = members_by_champ_id.get(member.champion_id)
             if gameflow_member is None:
+                skipped_no_match += 1
                 continue
             puuid = gameflow_member.get("puuid")
             sid = gameflow_member.get("summonerId")
@@ -547,8 +557,12 @@ class ChampAssistant:
             scheduled += 1
 
         logger.info(
-            "gameflow_fetch_done resolved=%d scheduled=%d",
+            "gameflow_fetch_done resolved=%d scheduled=%d "
+            "skipped_local=%d skipped_no_champ=%d skipped_no_match=%d "
+            "session_champ_ids=%s gameflow_champ_ids=%s",
             len(members_by_champ_id), scheduled,
+            skipped_local, skipped_no_champ, skipped_no_match,
+            session_champ_ids, gameflow_champ_ids,
         )
 
     def _schedule_runtime_fetch(self, enemy_key: str, role: Role) -> None:
