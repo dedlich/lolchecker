@@ -521,19 +521,30 @@ class MainOverlay(QMainWindow):
         subphase = session.display_subphase() if session is not None else "idle"
 
         if subphase in ("in_game", "idle"):
+            # Re-show main if a previous transition hid it (loading
+            # screen exits to in_game directly).
+            if not self.isVisible():
+                self.show()
             self._live_companion.setVisible(False)
             self._set_width(self._W_INGAME)
             return
 
         if subphase == "loading":
-            # Loading screen — hand off to RosterWindow. LiveCompanion
-            # collapses (champ-select decisions are over; user is reading
-            # roster info).
+            # Loading screen — hand off completely to RosterWindow.
+            # The main overlay window hides entirely; otherwise the
+            # user stares at an empty narrow strip with LiveCompanion
+            # collapsed inside it (the v1.10.110 / v1.10.111 user
+            # report: "there is nothing in the app").
             self._live_companion.setVisible(False)
-            self._set_width(self._W_INGAME)
+            if self.isVisible():
+                self.hide()
             return
 
         # Active champ-select — wider window so LiveCompanion has room.
+        # Re-show the main window if it was hidden during a previous
+        # loading-screen transition.
+        if not self.isVisible():
+            self.show()
         self._live_companion.setVisible(True)
         self._set_width(self._W_CHAMP_SELECT)
 

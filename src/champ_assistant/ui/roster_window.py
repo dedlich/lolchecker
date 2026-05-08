@@ -84,13 +84,16 @@ class RosterWindow(FloatingWidget):
     def update_view(self, view: "SessionView", icon_lookup: IconLookup) -> None:
         """Show during loading-screen subphase, hide otherwise. Roster
         rows always re-render so the window has fresh data the moment
-        the user un-hides via subphase transition."""
+        the user un-hides via subphase transition. Raises to front on
+        first reveal so the user notices it (it's a separate top-level
+        window — easy to lose to z-order otherwise)."""
         session = view.session
         subphase = session.display_subphase() if session is not None else "idle"
         if subphase == "loading":
             self._roster.update_panel(view, icon_lookup)
             if not self.isVisible():
                 self.show()
+                self.raise_()
         else:
             if self.isVisible():
                 self.hide()
