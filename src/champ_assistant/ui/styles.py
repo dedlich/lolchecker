@@ -167,18 +167,19 @@ def gradient_panel_stylesheet(
     """Subtle vertical gradient for non-floating body panels (BuildCard,
     ItemsPanel, GamePlanPanel, RosterPanel, SummaryRow).
 
-    Goes from a lighter top edge to a darker bottom edge — gives depth
-    without being flashy. Use ``apply_panel_shadow(frame)`` to add the
-    matching drop shadow for elevation.
+    Two-stop and shallow on purpose: just enough lighting cue to give
+    depth without competing with content. Stays well above
+    ``BG_PRIMARY`` so the panel bottom edge remains visible against the
+    window. The drop shadow added by ``apply_panel_shadow`` defines
+    the actual edge — no border needed.
     """
     r = radius if radius is not None else RADIUS
     return (
         f"{selector} {{"
         " background: qlineargradient(x1:0, y1:0, x2:0, y2:1,"
         f"  stop:0 {BG_ELEVATED},"
-        f"  stop:0.5 {BG_SECONDARY},"
-        f"  stop:1 {BG_PRIMARY});"
-        f" border: 1px solid {BORDER_FAINT};"
+        f"  stop:1 {BG_SECONDARY});"
+        f" border: none;"
         f" border-radius: {r}px;"
         " }"
     )
@@ -331,45 +332,35 @@ def global_stylesheet() -> str:
             font-family: {FONT_MONO};
         }}
 
-        /* Panels: layered cards with subtle vertical gradient surfaces.
-           v1.10.107 lifted all of these from flat fills to gradients
-           paired with dropshadow effects on the wrapper widgets — the
-           depth pass for "next-level" feel.
-           Hover states bump the bottom stop toward BG_INTERACT so the
-           card visibly lifts on mouseover. */
+        /* Panels carry the depth (gradient + shadow + border).
+           Inner cards / rows are intentionally borderless and
+           flat-on-panel so the eye doesn't read "card-in-card-in-card"
+           noise. Hover state alone signals interactivity — no border
+           flicker, no gradient flicker.
+           v1.10.108: walked back v1.10.107's nested-gradient + nested-
+           border approach which produced the Russian-doll look. */
         QFrame[panel="true"] {{
             background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
                 stop:0 {BG_ELEVATED},
-                stop:0.5 {BG_SECONDARY},
-                stop:1 {BG_PRIMARY});
+                stop:1 {BG_SECONDARY});
             border-radius: {RADIUS}px;
-            border: 1px solid {BORDER_FAINT};
+            border: none;
         }}
         QFrame[card="true"] {{
-            background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
-                stop:0 {BG_INTERACT},
-                stop:1 {BG_TERTIARY});
+            background-color: transparent;
             border-radius: {RADIUS}px;
-            border: 1px solid {BORDER_FAINT};
+            border: none;
         }}
         QFrame[card="true"]:hover {{
-            border-color: {BORDER_ACCENT};
-            background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
-                stop:0 {BG_INTERACT},
-                stop:1 {BG_ELEVATED});
+            background-color: {BG_HIGHLIGHT};
         }}
         QFrame[role="row"] {{
-            background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
-                stop:0 {BG_INTERACT},
-                stop:1 {BG_TERTIARY});
+            background-color: transparent;
             border-radius: {RADIUS}px;
-            border: 1px solid {BORDER_FAINT};
+            border: none;
         }}
         QFrame[role="row"]:hover {{
-            background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
-                stop:0 {BG_INTERACT},
-                stop:1 {BG_ELEVATED});
-            border-color: {BORDER_ACCENT};
+            background-color: {BG_HIGHLIGHT};
         }}
 
         /* Status + tray-related */
