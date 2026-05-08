@@ -69,6 +69,11 @@ def _make_app() -> tuple[object, list[tuple[int, bool]]]:
     app._enemy_profiles_by_cell = {}
     app._ally_profiles_by_cell = {}
     app._profile_inflight = set()
+    # v1.10.127: gameflow-session fallback runs once per champ-select
+    # to recover privacy-stripped puuids; the dispatch flag must exist
+    # on the instance even when ``__init__`` is bypassed in tests.
+    app._gameflow_fetch_dispatched = False
+    app._profile_coalescer = MagicMock()
 
     scheduled: list[tuple[int, bool]] = []
 

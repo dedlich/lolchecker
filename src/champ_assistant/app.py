@@ -18,6 +18,8 @@ import logging
 from collections.abc import Callable
 from pathlib import Path
 
+from pydantic import ValidationError
+
 from .advisor.composition import CompositionGap, analyze_composition
 from .advisor.counters import find_counters
 from .advisor.picks import PickSuggestion, suggest_picks
@@ -110,6 +112,13 @@ class ChampAssistant:
         # window never appeared because phase == "GAME_STARTING" never
         # fired).
         self._loading_screen_active: bool = False
+        # Gameflow-session fallback gate. ``/lol-champ-select/v1/session``
+        # privacy-strips puuid + summoner_id from all 9 non-local cells
+        # at every phase, so during FINALIZATION / GAME_STARTING we hit
+        # ``/lol-gameflow/v1/session`` once to recover the IDs needed for
+        # profile lookups. Set on first hit of a session, cleared when a
+        # new champ-select arrives so the next game re-runs the fetch.
+        self._gameflow_fetch_dispatched: bool = False
         # Last champ-select session we saw before it was deleted —
         # RosterPanel needs the my_team / their_team rosters during the
         # loading screen, but ``_latest_session`` is None once the LCU
@@ -193,6 +202,7 @@ class ChampAssistant:
             self._connection_state = "connected"
             self._loading_screen_active = False
             self._loading_screen_session = None
+            self._gameflow_fetch_dispatched = False
             logger.info(
                 "session_received phase=%r my_team=%d their_team=%d local_cell=%d",
                 session.phase,
@@ -354,23 +364,9 @@ class ChampAssistant:
         Local player is always skipped — no point fetching our own
         profile.
         """
-        # Diagnostic line — once per session_received tick, log whether
-        # the service is enabled and how many members carry a puuid /
-        # summoner_id. Empty-roster pages will show NO mains/WR data;
-        # this surfaces the cause without strap-on debug calls.
-        service_enabled = bool(
-            self._profile_service is not None
-            and getattr(self._profile_service, "enabled", False)
-        )
-        ids_count = sum(
-            1 for m in session.their_team + session.my_team
-            if m.puuid or m.summoner_id
-        )
-        logger.info(
-            "profile_fetch_gate enabled=%s ids_with_puuid_or_sid=%d phase=%r",
-            service_enabled, ids_count, session.phase,
-        )
-        if not service_enabled:
+        if self._profile_service is None or not getattr(
+            self._profile_service, "enabled", False
+        ):
             return
         for member in session.their_team:
             self._schedule_profile_fetch(member, is_ally=False)
@@ -384,6 +380,19 @@ class ChampAssistant:
                 if member.cell_id == local_cell:
                     continue  # don't fetch our own profile
                 self._schedule_profile_fetch(member, is_ally=True)
+        # ``/lol-champ-select/v1/session`` privacy-strips puuid +
+        # summoner_id from all 9 non-local cells, so the loop above
+        # only fetches our own profile (and we skip it). Gameflow
+        # session is the supported LCU endpoint that DOES expose both
+        # teams' IDs from FINALIZATION onward — fire a one-shot at
+        # that phase to recover them.
+        if subphase in ("finalization", "loading") and \
+                not self._gameflow_fetch_dispatched:
+            self._gameflow_fetch_dispatched = True
+            self._profile_coalescer.schedule(
+                "gameflow_session_fetch",
+                self._fetch_gameflow_session_ids,
+            )
 
     def _schedule_profile_fetch(
         self,
@@ -442,6 +451,105 @@ class ChampAssistant:
                 member.cell_id, is_ally, exc,
             )
         # Inflight discard handled by the Coalescer wrapper.
+
+    async def _fetch_gameflow_session_ids(self) -> None:
+        """One-shot fetch of ``/lol-gameflow/v1/session`` to recover the
+        puuid + summoner_id for every cell — values that are stripped
+        from ``/lol-champ-select/v1/session`` for privacy. Maps the
+        gameflow team rosters back to champ-select cell_ids by
+        ``championId`` (unambiguous in 5v5) and schedules profile
+        fetches for the resolved IDs.
+        """
+        from champ_assistant.lcu.client import LcuClient, LcuClientError
+        from champ_assistant.lcu.lockfile import (
+            LockfileNotFound,
+            find_lockfile,
+            parse_lockfile,
+        )
+
+        session = self._latest_session
+        if session is None:
+            return
+        try:
+            lockfile = parse_lockfile(find_lockfile())
+        except LockfileNotFound:
+            logger.info("gameflow_fetch_skipped reason=lockfile_missing")
+            return
+
+        try:
+            async with LcuClient(lockfile) as lcu:
+                response = await lcu.get("/lol-gameflow/v1/session")
+        except LcuClientError as exc:
+            logger.info("gameflow_fetch_failed: %s", exc)
+            return
+        if response.status_code != 200:
+            logger.info("gameflow_fetch_status status=%d", response.status_code)
+            return
+        try:
+            data = response.json()
+        except ValueError as exc:
+            logger.info("gameflow_fetch_decode_failed: %s", exc)
+            return
+
+        game_data = data.get("gameData") or {}
+        members_by_champ_id: dict[int, dict[str, object]] = {}
+        for team_key in ("teamOne", "teamTwo"):
+            team = game_data.get(team_key) or []
+            for entry in team:
+                if not isinstance(entry, dict):
+                    continue
+                cid = entry.get("championId")
+                if isinstance(cid, int) and cid > 0:
+                    members_by_champ_id[cid] = entry
+
+        if not members_by_champ_id:
+            logger.info(
+                "gameflow_fetch_empty phase=%r",
+                data.get("phase"),
+            )
+            return
+
+        local_cell = session.local_player_cell_id
+        ally_cells = {m.cell_id for m in session.my_team}
+        scheduled = 0
+        for member in list(session.my_team) + list(session.their_team):
+            if member.cell_id == local_cell:
+                continue
+            if member.champion_id == 0:
+                continue
+            gameflow_member = members_by_champ_id.get(member.champion_id)
+            if gameflow_member is None:
+                continue
+            puuid = gameflow_member.get("puuid")
+            sid = gameflow_member.get("summonerId")
+            if not (isinstance(puuid, str) and puuid) and \
+                    not (isinstance(sid, int) and sid > 0):
+                continue
+            # Build a synthetic TeamMember carrying the recovered IDs —
+            # ``populate_by_name=True`` on the model accepts the LCU
+            # camelCase aliases directly.
+            try:
+                synthetic = TeamMember.model_validate({
+                    "cellId": member.cell_id,
+                    "championId": member.champion_id,
+                    "summonerId": sid if isinstance(sid, int) else None,
+                    "puuid": puuid if isinstance(puuid, str) else None,
+                })
+            except ValidationError as exc:
+                logger.info(
+                    "gameflow_synth_member_failed cell=%d: %s",
+                    member.cell_id, exc,
+                )
+                continue
+            self._schedule_profile_fetch(
+                synthetic, is_ally=member.cell_id in ally_cells,
+            )
+            scheduled += 1
+
+        logger.info(
+            "gameflow_fetch_done resolved=%d scheduled=%d",
+            len(members_by_champ_id), scheduled,
+        )
 
     def _schedule_runtime_fetch(self, enemy_key: str, role: Role) -> None:
         """Kick off a Groq fetch in the background; re-renders on success.
