@@ -120,7 +120,7 @@ class BansColumn(QWidget):
             f" QFrame[role='row']:hover {{ background-color: {styles.BG_INTERACT}; }}"
         )
         h = QHBoxLayout(row)
-        h.setContentsMargins(8, 4, 8, 4)
+        h.setContentsMargins(12, 8, 12, 8)
         h.setSpacing(8)
 
         icon = QLabel()

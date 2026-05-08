@@ -379,10 +379,10 @@ class _SummaryRow(QWidget):
         super().__init__(parent)
         outer = QHBoxLayout(self)
         outer.setContentsMargins(
-            styles.SPACING_GRID, styles.SPACING_GRID,
-            styles.SPACING_GRID, styles.SPACING_GRID,
+            styles.SPACING_LOOSE, styles.SPACING_WIDE,
+            styles.SPACING_LOOSE, styles.SPACING_WIDE,
         )
-        outer.setSpacing(styles.SPACING_GRID)
+        outer.setSpacing(styles.SPACING_LOOSE)
 
         self._ally_strip = _TeamStrip("Your Team")
         self._enemy_strip = _TeamStrip("Enemy Team")
@@ -566,7 +566,7 @@ def _section_label(text: str) -> QLabel:
         f"color: {styles.TEXT_MUTED};"
         f" font-size: {styles.FS_LABEL}px;"
         " font-weight: 700; letter-spacing: 1.6px;"
-        " padding: 4px 0;"
+        " padding: 10px 0 6px 0;"
     )
     return lab
 
@@ -597,10 +597,10 @@ class _BuildCard(QWidget):
         self._frame = _panel_frame()
         frame_layout = QVBoxLayout(self._frame)
         frame_layout.setContentsMargins(
-            styles.SPACING_GRID, styles.SPACING_GRID,
-            styles.SPACING_GRID, styles.SPACING_GRID,
+            styles.SPACING_LOOSE, styles.SPACING_WIDE,
+            styles.SPACING_LOOSE, styles.SPACING_WIDE,
         )
-        frame_layout.setSpacing(8)
+        frame_layout.setSpacing(styles.SPACING_GRID)
 
         # Header row — icon + champion name + role label.
         header = QHBoxLayout()
@@ -812,10 +812,10 @@ class _ItemsPanel(QWidget):
         self._frame = _panel_frame()
         frame_layout = QVBoxLayout(self._frame)
         frame_layout.setContentsMargins(
-            styles.SPACING_GRID, styles.SPACING_GRID,
-            styles.SPACING_GRID, styles.SPACING_GRID,
+            styles.SPACING_LOOSE, styles.SPACING_WIDE,
+            styles.SPACING_LOOSE, styles.SPACING_WIDE,
         )
-        frame_layout.setSpacing(8)
+        frame_layout.setSpacing(styles.SPACING_GRID)
 
         # Runes row.
         frame_layout.addWidget(_section_label("Runes"))
@@ -945,10 +945,10 @@ class _GamePlanPanel(QWidget):
         self._frame = _panel_frame()
         frame_layout = QVBoxLayout(self._frame)
         frame_layout.setContentsMargins(
-            styles.SPACING_GRID, styles.SPACING_GRID,
-            styles.SPACING_GRID, styles.SPACING_GRID,
+            styles.SPACING_LOOSE, styles.SPACING_WIDE,
+            styles.SPACING_LOOSE, styles.SPACING_WIDE,
         )
-        frame_layout.setSpacing(10)
+        frame_layout.setSpacing(styles.SPACING_GRID)
 
         # Header — Game Plan + PLUS pill (matches screenshot's free vs
         # paid framing; we don't actually have a paid tier, the pill is
@@ -1111,10 +1111,10 @@ class LiveCompanionView(QWidget):
 
         outer = QVBoxLayout(self)
         outer.setContentsMargins(
-            styles.SPACING_GRID, styles.SPACING_GRID,
-            styles.SPACING_GRID, styles.SPACING_GRID,
+            styles.SPACING_WIDE, styles.SPACING_WIDE,
+            styles.SPACING_WIDE, styles.SPACING_WIDE,
         )
-        outer.setSpacing(styles.SPACING_GRID)
+        outer.setSpacing(styles.SPACING_WIDE)
 
         outer.addWidget(self._build_header())
         self._summary_row = _SummaryRow()

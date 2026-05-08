@@ -141,7 +141,7 @@ class PicksColumn(QWidget):
             f" QFrame[role='row']:hover {{ background-color: {styles.BG_INTERACT}; }}"
         )
         outer = QVBoxLayout(row)
-        outer.setContentsMargins(8, 4, 8, 4)
+        outer.setContentsMargins(12, 8, 12, 8)
         outer.setSpacing(2)
 
         head = QHBoxLayout()

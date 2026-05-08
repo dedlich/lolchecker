@@ -53,7 +53,7 @@ class _RosterRow(QFrame):
         super().__init__()
         self.setProperty("card", True)
         layout = QHBoxLayout(self)
-        layout.setContentsMargins(8, 4, 8, 4)
+        layout.setContentsMargins(12, 8, 12, 8)
         layout.setSpacing(8)
 
         self._portrait = QLabel()
