@@ -194,10 +194,26 @@ class _TeamStrip(QWidget):
         )
 
     def enable_clicks(self) -> None:
-        """Mark each slot as clickable so the cursor + hover state
-        signal interactivity. Called once on the enemy strip."""
+        """Mark each slot as clickable: pointing-hand cursor + hover
+        feedback (border picks up the accent color, soft glow). Only
+        called on the enemy strip — ally portraits stay non-interactive
+        and don't react to hover."""
         for slot in self._slots:
             slot.setCursor(Qt.CursorShape.PointingHandCursor)
+            slot.setProperty("clickable", True)
+            slot.setStyleSheet(
+                "QLabel[clickable='true'] {"
+                f" background-color: {styles.BG_TERTIARY};"
+                f" border: 1px solid {styles.BORDER};"
+                f" border-radius: {styles.RADIUS_SMALL}px;"
+                f" color: {styles.TEXT_MUTED};"
+                f" font-size: {styles.FS_CAPTION}px;"
+                " }"
+                "QLabel[clickable='true']:hover {"
+                f" border: 1px solid {styles.ACCENT};"
+                f" background-color: {styles.BG_INTERACT};"
+                " }"
+            )
 
     def set_team(
         self,
