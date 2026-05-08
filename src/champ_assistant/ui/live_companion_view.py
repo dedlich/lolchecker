@@ -69,6 +69,29 @@ _PORTRAIT_PX = 36
 _PORTRAIT_SLOT_PX = 40  # icon + 2px halo + 2px gap
 
 
+# Three-letter role abbreviations so the badge fits inside _PORTRAIT_PX.
+# Earlier the label rendered the full LCU role name and clipped — the
+# user's screenshot showed "SUPPORT" rendering as "UPPOR".
+_ROLE_ABBREVIATIONS: dict[str, str] = {
+    "TOP": "TOP",
+    "JUNGLE": "JNG",
+    "MID": "MID",
+    "MIDDLE": "MID",
+    "BOT": "BOT",
+    "BOTTOM": "BOT",
+    "SUPPORT": "SUP",
+    "UTILITY": "SUP",
+}
+
+
+def _role_abbrev(role: str) -> str:
+    """Map an LCU role token to a 3-letter badge abbreviation. Empty
+    input → empty (no role assigned yet)."""
+    if not role:
+        return ""
+    return _ROLE_ABBREVIATIONS.get(role.upper(), role[:3].upper())
+
+
 class _PortraitSlot(QLabel):
     """One portrait in a ``_TeamStrip``. Carries a slot index so the
     parent strip can re-emit clicks with the right cell. Click handler
@@ -226,7 +249,7 @@ class _TeamStrip(QWidget):
                 slot.setText("")
             slot.setToolTip(tips[i])
             # Role badge per slot.
-            self._role_labels[i].setText(role_list[i])
+            self._role_labels[i].setText(_role_abbrev(role_list[i]))
             self._role_labels[i].setStyleSheet(
                 self._role_label_stylesheet(overridden=i in overrides)
             )

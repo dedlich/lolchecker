@@ -12,7 +12,31 @@ from PyQt6.QtCore import QPointF, Qt
 from PyQt6.QtGui import QMouseEvent
 from PyQt6.QtWidgets import QApplication
 
-from champ_assistant.ui.live_companion_view import _PortraitSlot, _TeamStrip
+from champ_assistant.ui.live_companion_view import (
+    _PortraitSlot,
+    _TeamStrip,
+    _role_abbrev,
+)
+
+
+def test_role_abbreviation_maps_lcu_tokens_to_three_letter_badges() -> None:
+    """v1.10.115: full role names like SUPPORT clipped to UPPOR at the
+    portrait width. Abbreviation map keeps the badge under the
+    _PORTRAIT_PX cap."""
+    assert _role_abbrev("TOP") == "TOP"
+    assert _role_abbrev("JUNGLE") == "JNG"
+    assert _role_abbrev("MIDDLE") == "MID"
+    assert _role_abbrev("MID") == "MID"
+    assert _role_abbrev("BOTTOM") == "BOT"
+    assert _role_abbrev("BOT") == "BOT"
+    # Both the LCU token (UTILITY) and the user-facing token (SUPPORT)
+    # collapse to the same SUP badge.
+    assert _role_abbrev("SUPPORT") == "SUP"
+    assert _role_abbrev("UTILITY") == "SUP"
+    # Empty / unknown — degrade to the first 3 chars uppercased rather
+    # than raising. Empty stays empty so no badge renders.
+    assert _role_abbrev("") == ""
+    assert _role_abbrev("planet") == "PLA"
 
 
 @pytest.fixture
@@ -113,9 +137,11 @@ def test_team_strip_role_label_shows_resolved_role(qt_app) -> None:
         overridden_indices={2},  # MID was manually overridden
     )
 
-    # All five labels render their lane.
+    # All five labels render the 3-letter abbreviation that fits the
+    # portrait width (v1.10.115 — full names like "SUPPORT" clipped
+    # to "UPPOR" at the previous fixed width).
     assert [lbl.text() for lbl in strip._role_labels] == [
-        "TOP", "JUNGLE", "MID", "BOT", "SUPPORT",
+        "TOP", "JNG", "MID", "BOT", "SUP",
     ]
     # Slot 2 (overridden) renders in accent; others muted.
     assert styles.ACCENT in strip._role_labels[2].styleSheet()
@@ -127,7 +153,7 @@ def test_team_strip_empty_role_clears_label(qt_app) -> None:
     inference) the label stays blank rather than showing a stale
     value from a prior tick."""
     strip = _TeamStrip("Enemy Team")
-    # First populate with roles.
+    # First populate with roles. (Abbreviated to TOP — same as input.)
     strip.set_team(
         keys=["Garen"], icon_lookup=lambda k: None,
         cell_ids=[5], roles=["TOP"],
