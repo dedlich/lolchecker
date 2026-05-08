@@ -354,9 +354,23 @@ class ChampAssistant:
         Local player is always skipped — no point fetching our own
         profile.
         """
-        if self._profile_service is None or not getattr(
-            self._profile_service, "enabled", False
-        ):
+        # Diagnostic line — once per session_received tick, log whether
+        # the service is enabled and how many members carry a puuid /
+        # summoner_id. Empty-roster pages will show NO mains/WR data;
+        # this surfaces the cause without strap-on debug calls.
+        service_enabled = bool(
+            self._profile_service is not None
+            and getattr(self._profile_service, "enabled", False)
+        )
+        ids_count = sum(
+            1 for m in session.their_team + session.my_team
+            if m.puuid or m.summoner_id
+        )
+        logger.info(
+            "profile_fetch_gate enabled=%s ids_with_puuid_or_sid=%d phase=%r",
+            service_enabled, ids_count, session.phase,
+        )
+        if not service_enabled:
             return
         for member in session.their_team:
             self._schedule_profile_fetch(member, is_ally=False)
