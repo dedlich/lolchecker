@@ -437,8 +437,12 @@ class _SummaryRow(QWidget):
         # Gradient surface + drop shadow so the summary row reads as a
         # primary card lifted off the body background — matches the
         # body-column treatment from _panel_frame for visual cohesion.
+        # Property-scoped so the gradient stays on the SummaryRow itself
+        # without cascading into every QLabel descendant (v1.10.116
+        # bug fix — QLabel is a QWidget subclass).
+        self.setProperty("panel", True)
         self.setStyleSheet(
-            styles.gradient_panel_stylesheet(selector="QWidget")
+            styles.gradient_panel_stylesheet(selector="QWidget[panel='true']")
         )
         styles.apply_panel_shadow(self)
 
@@ -573,7 +577,12 @@ def _panel_frame() -> QFrame:
     ItemsPanel, GamePlanPanel) inherits the new look.
     """
     f = QFrame()
-    f.setStyleSheet(styles.gradient_panel_stylesheet(selector="QFrame"))
+    # Mark the frame so the gradient rule's property selector matches.
+    # Without this the v1.10.107-style ``QFrame { ... }`` rule cascaded
+    # into every QLabel descendant (QLabel inherits from QFrame),
+    # which v1.10.116 fixes by switching to a property-scoped selector.
+    f.setProperty("panel", True)
+    f.setStyleSheet(styles.gradient_panel_stylesheet())
     styles.apply_panel_shadow(f)
     return f
 

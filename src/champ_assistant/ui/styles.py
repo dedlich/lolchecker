@@ -164,7 +164,7 @@ TIER_COLORS: Final[dict[str, str]] = {
 
 def gradient_panel_stylesheet(
     *,
-    selector: str = "QFrame",
+    selector: str = "QFrame[panel='true']",
     radius: int | None = None,
 ) -> str:
     """Subtle vertical gradient for non-floating body panels (BuildCard,
@@ -175,6 +175,15 @@ def gradient_panel_stylesheet(
     ``BG_PRIMARY`` so the panel bottom edge remains visible against the
     window. The drop shadow added by ``apply_panel_shadow`` defines
     the actual edge — no border needed.
+
+    The default selector matches a property attribute (``panel='true'``)
+    rather than the bare ``QFrame`` type. v1.10.116 fix: QLabel
+    inherits from QFrame in Qt's class tree, so a bare ``QFrame { ... }``
+    rule cascades to every QLabel descendant inside a panel — each
+    section title rendered as its own gradient pill. Property selectors
+    don't cascade to subclasses unless the property is set, which gives
+    us the right "panel only" scoping. Callers that want the gradient
+    must mark the frame via ``frame.setProperty('panel', True)``.
     """
     r = radius if radius is not None else RADIUS
     return (
