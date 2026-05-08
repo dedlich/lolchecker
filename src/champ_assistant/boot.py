@@ -603,7 +603,11 @@ def _run_with_ui(args: argparse.Namespace) -> int:
     # "set_credentials in place" so post-init state (lolalytics
     # fetcher attached to RuntimeCounterStore, patch on
     # GamePlanLLMService) survives the credential update.
+    # v1.10.93: also propagate runtime toggle flips so telemetry +
+    # diagnostics start/stop on the same Save click instead of
+    # silently waiting for a restart.
     def _on_settings_changed() -> None:
+        from champ_assistant import overlay_config as _ovc
         from champ_assistant import secrets
         from champ_assistant.runtime_factory import _build_profile_service
         assistant._profile_service = _build_profile_service()
@@ -618,6 +622,20 @@ def _run_with_ui(args: argparse.Namespace) -> int:
             assistant._runtime_counters.set_credentials(
                 api_key=new_key, provider=new_provider,
             )
+        # Reload persisted state so toggle flips apply without a
+        # restart. Safe Mode + Low Resource Mode still take effect
+        # only on next launch (they alter startup behavior, not
+        # runtime), so we only act on toggles whose effect is
+        # genuinely runtime-reversible.
+        new_state = _ovc.load()
+        if new_state.diagnostics_enabled:
+            _safe_start("diagnostics", diagnostics.start)
+        else:
+            diagnostics.stop()
+        if new_state.enable_telemetry and not startup_mode.safe:
+            _safe_start("telemetry", telemetry_recorder.start)
+        else:
+            telemetry_recorder.stop()
         # Reset the prefetched-signature so the next snapshot kicks off
         # a fresh prefetch with the new credentials.
         assistant._game_plan_prefetched_for = ""
