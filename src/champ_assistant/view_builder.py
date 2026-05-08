@@ -396,10 +396,14 @@ def _phase_for_champion_key(champion_key: str, deps: ViewBuilderDeps) -> str:
 
 def _compute_picks(
     session: ChampSelectSession, deps: ViewBuilderDeps,
-) -> tuple[list[PickSuggestion], list[CompositionGap]]:
+) -> list[PickSuggestion]:
+    """Top-N pick suggestions for the local player. Composition gaps
+    are computed internally to bias scoring but are not returned —
+    no UI consumer reads them. (v1.10.101: dropped the tuple shape +
+    the dead ``SessionView.gaps`` field.)"""
     me = session.me
     if me is None or me.assigned_position is None:
-        return [], []
+        return []
 
     my_role = me.assigned_position
     my_keys = _team_keys(session.my_team, deps.champions)
@@ -422,12 +426,12 @@ def _compute_picks(
                 deps=deps,
             )
             if lane_suggestions:
-                return lane_suggestions[:5], gaps
+                return lane_suggestions[:5]
 
     # Fallback: tier-based suggestions when no lane opponent yet OR
     # we have no counter data for them.
     enriched = _enriched_counters(enemy_keys, my_role, deps)
-    suggestions = suggest_picks(
+    return suggest_picks(
         my_role,
         my_keys,
         enemy_keys,
@@ -437,7 +441,6 @@ def _compute_picks(
         deps.tags,
         limit=5,
     )
-    return suggestions, gaps
 
 
 def _compute_picks_categorized(
@@ -521,7 +524,7 @@ def build_session_view(
     ally_damage_profile = _compute_ally_damage_profile(session, deps)
     ally_phase_distribution = _team_phase_distribution(session.my_team, deps)
     enemy_phase_distribution = _team_phase_distribution(session.their_team, deps)
-    suggestions, gaps = _compute_picks(session, deps)
+    suggestions = _compute_picks(session, deps)
 
     # Look up the recommended build for each suggestion in the local
     # player's role. Falls back to {} silently when builds aren't seeded.
@@ -603,7 +606,6 @@ def build_session_view(
         session=session,
         enemy_counters=enemy_counters,
         suggestions=suggestions,
-        gaps=gaps,
         enemy_names=enemy_names,
         enemy_keys=enemy_keys,
         all_champion_keys={c.id: c.key for c in deps.champions.values()},

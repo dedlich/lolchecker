@@ -11,7 +11,6 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 from ..advisor.ban_suggestions import BanSuggestion
-from ..advisor.composition import CompositionGap
 from ..advisor.picks import PickSuggestion
 from ..data.models import ChampionBuild, ChampSelectSession, CounterEntry, Role
 from ..profiling.profile import EnemyProfile
@@ -27,7 +26,6 @@ class SessionView(BaseModel):
     # Indexed by enemy cell_id → counters in *that enemy's* role
     enemy_counters: dict[int, list[CounterEntry]] = Field(default_factory=dict)
     suggestions: list[PickSuggestion] = Field(default_factory=list)
-    gaps: list[CompositionGap] = Field(default_factory=list)
     enemy_names: dict[int, str] = Field(default_factory=dict)
     """Map champion id → display name (filled from Data Dragon by integration)."""
 
