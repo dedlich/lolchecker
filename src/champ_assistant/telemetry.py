@@ -110,6 +110,15 @@ class TelemetryRecorder(QObject):
         # doesn't have to scan the whole ring on each tick.
         self._pending: list[dict[str, Any]] = []
 
+        # ``_running`` gates ``_pending`` appends so disabling telemetry
+        # mid-session (Settings → uncheck → Save) actually stops disk
+        # writes instead of silently queueing forever. ``_ring`` keeps
+        # accepting events either way — it's bounded by ``maxlen``,
+        # used only for in-memory ``recent()`` debugging.
+        # Default ``True`` matches the legacy "construct + record + manual
+        # _flush" pattern several tests rely on.
+        self._running: bool = True
+
         self._timer = QTimer(self)
         self._timer.setInterval(int(flush_interval_s * 1000))
         self._timer.timeout.connect(self._flush)
@@ -119,6 +128,7 @@ class TelemetryRecorder(QObject):
     # -- lifecycle --------------------------------------------------------
 
     def start(self) -> None:
+        self._running = True
         if not self._timer.isActive():
             self._timer.start()
             logger.info("telemetry started; flush every %ds", self._timer.interval() // 1000)
@@ -128,13 +138,17 @@ class TelemetryRecorder(QObject):
             self._timer.stop()
         # Final flush so the last few seconds aren't lost on a clean exit.
         self._flush()
+        # Drop the ``_running`` flag AFTER the final flush so any in-flight
+        # ``record()`` calls landing during the flush still get written.
+        self._running = False
 
     # -- input ------------------------------------------------------------
 
     def record(self, event: str, payload: dict[str, Any] | None = None) -> None:
         """Capture an event. Non-blocking: appends to in-memory deque
-        and pending-flush list. The caller's call site sees only a
-        deque.append + list.append under a single lock.
+        and (when running) the pending-flush list. The caller's call
+        site sees a deque.append plus an optional list.append under a
+        single lock.
 
         Payload must be JSON-serializable and contain ONLY internal
         UI/state values (no user input, chat, account data, etc. —
@@ -146,7 +160,8 @@ class TelemetryRecorder(QObject):
         }
         with self._lock:
             self._ring.append(entry)
-            self._pending.append(entry)
+            if self._running:
+                self._pending.append(entry)
 
     # -- inspection -------------------------------------------------------
 

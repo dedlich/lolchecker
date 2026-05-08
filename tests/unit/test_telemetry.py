@@ -86,6 +86,48 @@ def test_flush_is_idempotent_when_no_pending(tmp_path: Path, qt_app) -> None:  #
     assert not path.exists()
 
 
+def test_record_after_stop_does_not_grow_pending(tmp_path: Path, qt_app) -> None:  # type: ignore[no-untyped-def]
+    """v1.10.95: stopping telemetry must short-circuit ``_pending``
+    appends. Otherwise long sessions where the user disabled telemetry
+    via Settings would accumulate unbounded events in memory until
+    process exit (the timer is stopped, so they never flush)."""
+    path = tmp_path / "t.jsonl"
+    rec = TelemetryRecorder(path=path)
+    rec.start()
+    rec.record("before_stop", {"x": 1})
+    rec.stop()
+    # Final flush has already written the pre-stop event to disk and
+    # cleared _pending. From here, every record() must be discarded
+    # from the pending queue (ring still accepts it for debugging).
+    for i in range(50):
+        rec.record("after_stop", {"i": i})
+    assert rec._pending == [], (
+        "telemetry pending queue grew after stop() — memory leak"
+    )
+    # Ring still has the disabled-period entries (bounded by maxlen).
+    recent = rec.recent()
+    assert any(e["event"] == "after_stop" for e in recent)
+
+
+def test_start_after_stop_resumes_pending_appends(tmp_path: Path, qt_app) -> None:  # type: ignore[no-untyped-def]
+    """Re-enabling telemetry must restore the pending-queue path so
+    new events flush to disk on the next interval. Events recorded
+    during the disabled window stay dropped — that matches the user's
+    intent when they unchecked telemetry."""
+    path = tmp_path / "t.jsonl"
+    rec = TelemetryRecorder(path=path)
+    rec.start()
+    rec.stop()
+    rec.record("during_off", {"x": 1})
+    rec.start()
+    rec.record("after_on", {"y": 2})
+    assert any(e["event"] == "after_on" for e in rec._pending)
+    assert not any(e["event"] == "during_off" for e in rec._pending), (
+        "events recorded while telemetry was off must not flush "
+        "after re-enable"
+    )
+
+
 def test_rotation_at_size_cap(tmp_path: Path, qt_app) -> None:  # type: ignore[no-untyped-def]
     path = tmp_path / "t.jsonl"
     rec = TelemetryRecorder(path=path, max_file_bytes=100)
