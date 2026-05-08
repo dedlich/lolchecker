@@ -367,6 +367,33 @@ def _team_phase_distribution(
     return (early, mid, late)
 
 
+def _phase_for_champion_key(champion_key: str, deps: ViewBuilderDeps) -> str:
+    """Single-champion phase classification using the same tag heuristic
+    as ``_team_phase_distribution``. Returns ``"early"`` / ``"mid"`` /
+    ``"late"`` / ``""``.
+
+    Added in v1.10.100 so the LiveCompanion right-column "Champion
+    Power Spikes" line can show a real per-champion read instead of
+    the previous generic L6/L11/L16 fallback."""
+    if not champion_key:
+        return ""
+    tags = deps.tags.tags_for(champion_key)
+    if not tags:
+        # Fall back to the Champion record (DataDragon tags) when the
+        # static curated tags map doesn't have an entry yet.
+        for champ in deps.champions.values():
+            if champ.key == champion_key:
+                tags = list(champ.tags)
+                break
+    if not tags:
+        return ""
+    if any(t in _EARLY_PHASE_TAGS for t in tags):
+        return "early"
+    if any(t in _LATE_PHASE_TAGS for t in tags):
+        return "late"
+    return "mid"
+
+
 def _compute_picks(
     session: ChampSelectSession, deps: ViewBuilderDeps,
 ) -> tuple[list[PickSuggestion], list[CompositionGap]]:
@@ -599,5 +626,6 @@ def build_session_view(
         picks_synergy=picks_synergy,
         my_champion_key=my_champion_key,
         my_champion_role=my_role,
+        my_champion_phase=_phase_for_champion_key(my_champion_key, deps),
         my_champion_build=my_champion_build,
     )

@@ -887,14 +887,25 @@ class _GamePlanPanel(QWidget):
 
         Doesn't need an LLM: ``static/tags.json`` already encodes the
         phase signal as Early-Game / Late-Game / Hyper-Carry / Scaling
-        tags. Combined with the universal level-6/11/16 ult unlock
-        thresholds this gives a useful at-a-glance read."""
-        # Tag-based phase classification.
-        # We don't have direct access to the static tags map here, so
-        # the lookup goes through ``view.session`` only when we need
-        # ally / enemy distinction — but the locked champion's tags
-        # are not on the SessionView. Fall back to a phase-agnostic
-        # reminder of the two universal spike windows.
+        tags. v1.10.100 routes that signal through
+        ``SessionView.my_champion_phase`` instead of falling back to a
+        generic L6/L11/L16 reminder."""
+        phase = view.my_champion_phase
+        if phase == "early":
+            return (
+                f"{key} — early-game lane bully. Snowball L1-9, force "
+                "trades on cooldown advantages. Falls off after L11."
+            )
+        if phase == "late":
+            return (
+                f"{key} — scaling / late-game carry. Survive the early "
+                "phase, hit core 2-3 items, take over teamfights L11+."
+            )
+        if phase == "mid":
+            return (
+                f"{key} — mid-game power spike. Strongest L6-13 with "
+                "ult + first item; play around teamfights, not solo lanes."
+            )
         return (
             f"{key} — universal spikes at L6 (ult), L11 (R+1), L16 (R+2). "
             "Item spikes track in the Recommended Build column."

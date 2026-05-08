@@ -121,6 +121,14 @@ class SessionView(BaseModel):
     """Recommended build (runes/items/summoners/skill_order) for the locked champion.
     None when champion not yet locked or no build data available."""
 
+    my_champion_phase: str = ""
+    """Static-tag phase classification for the locked champion: ``"early"``
+    / ``"mid"`` / ``"late"`` / ``""``. Drives the LiveCompanion right
+    column's Champion Power Spikes one-liner. Empty before lock-in.
+    Same heuristic as ``ally_phase_distribution`` — Early-Game /
+    Lane-Bully → early, Late-Game / Hyper-Carry / Scaling → late, all
+    others → mid. Added in v1.10.100."""
+
     game_plan_text: str = ""
     """LLM-generated game-plan paragraph for the locked champion in the
     confirmed matchup. Empty until a cached prose is available — populated
