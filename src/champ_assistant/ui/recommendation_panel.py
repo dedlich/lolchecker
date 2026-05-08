@@ -84,6 +84,22 @@ class _RecRow(QFrame):
         super().__init__()
         self.setProperty("rec-row", True)
         self.setStyleSheet(self._stylesheet_for("info"))
+        # Without an explicit vertical size policy the QFrame defaults to
+        # Preferred/Preferred — when the inner QLabel word-wraps to 2+
+        # lines, heightForWidth doesn't reliably propagate up through
+        # QHBoxLayout → QFrame → QVBoxLayout, so the row keeps its single-
+        # line sizeHint and the wrapped text visually overflows into the
+        # row below (v1.10.122 user report: "2nd level messages overlap").
+        from PyQt6.QtWidgets import QSizePolicy
+        self.setSizePolicy(
+            QSizePolicy.Policy.Expanding,
+            QSizePolicy.Policy.MinimumExpanding,
+        )
+        # Floor the row at ~2 wrapped body lines + the win_path anchor +
+        # padding. Belt-and-braces: even if heightForWidth misbehaves the
+        # row still owns enough vertical real estate to render its text
+        # without spilling into the next row.
+        self.setMinimumHeight(72)
         # Confidence-bar state — set by render(). Defaults make the
         # bar invisible until a real Recommendation lands.
         self._severity: str | None = None

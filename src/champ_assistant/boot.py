@@ -837,6 +837,11 @@ def _run_with_ui(args: argparse.Namespace) -> int:
         # Auto-show on game-start transition.
         if not old_in_game and new_in_game:
             scoreboard.set_peek_visible(True)
+            # Same edge clears the orchestrator's loading-screen flag —
+            # the RosterWindow hides as soon as the game is actually live.
+            # state_store wraps each listener in its own try/except so a
+            # failure here can't kill sibling subscribers.
+            assistant.notify_game_active()
             return
         # Auto-hide on game-end transition.
         if old_in_game and not new_in_game:

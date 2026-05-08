@@ -82,14 +82,17 @@ class RosterWindow(FloatingWidget):
         self.hide()
 
     def update_view(self, view: "SessionView", icon_lookup: IconLookup) -> None:
-        """Show during loading-screen subphase, hide otherwise. Roster
-        rows always re-render so the window has fresh data the moment
-        the user un-hides via subphase transition. Raises to front on
-        first reveal so the user notices it (it's a separate top-level
-        window — easy to lose to z-order otherwise)."""
+        """Show during the loading screen, hide otherwise. Two triggers:
+        the LCU's ``GAME_STARTING`` phase (rare — Riot often skips it)
+        and the orchestrator's ``loading_screen_active`` flag, which is
+        set when the LCU deletes the champ-select session and cleared
+        when LCDA reports an active game. The flag is the reliable
+        signal in v1.10.122+; the subphase check stays for sessions that
+        do see the GAME_STARTING phase."""
         session = view.session
         subphase = session.display_subphase() if session is not None else "idle"
-        if subphase == "loading":
+        should_show = subphase == "loading" or view.loading_screen_active
+        if should_show:
             self._roster.update_panel(view, icon_lookup)
             if not self.isVisible():
                 self.show()

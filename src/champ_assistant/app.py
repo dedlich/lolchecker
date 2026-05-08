@@ -103,6 +103,19 @@ class ChampAssistant:
         # Per-cell manual role overrides for the enemy team. cell_id → Role.
         # Cleared when a session is reset (disconnect / different game).
         self._enemy_role_overrides: dict[int, Role] = {}
+        # True between LCU's champ-select session-delete and LCDA going
+        # live. RosterWindow keys on this so it shows over the loading
+        # screen even when the LCU skips the GAME_STARTING phase
+        # (which happens often and was the v1.10.121 bug — the dedicated
+        # window never appeared because phase == "GAME_STARTING" never
+        # fired).
+        self._loading_screen_active: bool = False
+        # Last champ-select session we saw before it was deleted —
+        # RosterPanel needs the my_team / their_team rosters during the
+        # loading screen, but ``_latest_session`` is None once the LCU
+        # fires the Delete event. Cached here on session_ended and
+        # reused when ``_loading_screen_active`` is True.
+        self._loading_screen_session: ChampSelectSession | None = None
 
         # Wire UI: refresh shortcut re-renders the latest session view.
         self.overlay.refresh_requested.connect(self._on_refresh_requested)
@@ -132,13 +145,24 @@ class ChampAssistant:
             # the client is still alive. Clear our cached session but stay
             # connected so the next session picks up without a UI flicker.
             logger.info("session_ended_received clearing cached session")
+            # Cache the just-deleted session so the RosterWindow can
+            # render the actual roster during the loading screen.
+            self._loading_screen_session = self._latest_session
             self._latest_session = None
             self._enemy_role_overrides.clear()
             self._enemy_profiles_by_cell.clear()
             self._ally_profiles_by_cell.clear()
             if self._profile_service is not None:
                 self._profile_service.clear()
-            view = SessionView(connection_state=self._connection_state)
+            # Champ-select just ended — we're either on the loading screen
+            # (game accepted), or the user dodged. Either way, raise the
+            # roster window. ``notify_game_active`` (LCDA-driven) and the
+            # next ``session`` event clear it. Worst case: a dodge keeps
+            # the window up until the next champ-select, which is fine —
+            # it's a separate top-level window the user can close.
+            self._loading_screen_active = True
+            view = self._build_view(self._loading_screen_session)
+            view = view.model_copy(update={"loading_screen_active": True})
         elif event_type == "connected":
             logger.info("orchestrator_state state=connected")
             self._connection_state = "connected"
@@ -156,6 +180,9 @@ class ChampAssistant:
                 return self._push_view(SessionView(connection_state=self._connection_state))
             self._latest_session = session
             self._connection_state = "connected"
+            # Fresh champ-select supersedes any lingering loading-screen flag.
+            self._loading_screen_active = False
+            self._loading_screen_session = None
             logger.info(
                 "session_received phase=%r my_team=%d their_team=%d local_cell=%d",
                 session.phase,
@@ -242,6 +269,8 @@ class ChampAssistant:
             )
             if cached:
                 view = view.model_copy(update={"game_plan_text": cached})
+        if self._loading_screen_active:
+            view = view.model_copy(update={"loading_screen_active": True})
         return view
 
     def _team_keys_from_session(
@@ -418,6 +447,17 @@ class ChampAssistant:
 
 
     # -- Live data updates ------------------------------------------------
+
+    def notify_game_active(self) -> None:
+        """LCDA reports an active game (game_time > 0) — clear the
+        loading-screen flag so the RosterWindow hides. Called once per
+        game from boot.py's LCDA watcher on the off→on transition."""
+        if not self._loading_screen_active:
+            return
+        self._loading_screen_active = False
+        self._loading_screen_session = None
+        view = self._build_view(self._latest_session)
+        self._push_view(view)
 
     def cycle_enemy_role_override(self, cell_id: int) -> Role | None:
         """Advance the manual override for an enemy cell through the cycle:

@@ -148,3 +148,14 @@ class SessionView(BaseModel):
     from ``GamePlanLLMService.get_cached`` in ``_build_view``. The
     background prefetch fires on lock-in so this lights up on the
     snapshot AFTER the LLM responds, not the lock-in tick itself."""
+
+    loading_screen_active: bool = False
+    """True between the LCU deleting the champ-select session and LCDA
+    reporting an active game. ``ChampSelectSession.display_subphase()``
+    only returns ``"loading"`` when ``phase == "GAME_STARTING"``, but
+    Riot's LCU often skips that phase and goes straight to deleting the
+    session — so the dedicated RosterWindow never surfaced over the
+    loading screen. The orchestrator sets this on ``session_ended`` and
+    clears it when a new champ-select session arrives or LCDA reports
+    ``game_time > 0``. RosterWindow shows when this OR the subphase
+    fires (v1.10.122)."""
