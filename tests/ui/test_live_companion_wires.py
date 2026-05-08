@@ -68,10 +68,52 @@ def test_picks_column_emits_pick_hover_requested(qt_app) -> None:  # type: ignor
         PickSuggestion(champion_key="Ahri", score=7.5, tier="A", reasons=[]),
         icon_lookup=lambda key: None,
         accent=styles.SUCCESS,
+        build_reasons=[],
     )
     _press(row)
 
     assert received == ["Ahri"]
+
+
+def test_picks_column_renders_build_reasons(qt_app) -> None:  # type: ignore[no-untyped-def]
+    """When ``view.suggestion_build_reasons`` carries adaptation reasons
+    for a pick (e.g. "vs AP-heavy → Mercury's Treads"), the row must
+    surface them — otherwise the build-adapter signal is invisible to
+    the player. v1.10.91 wire-up: PicksColumn used to ignore this
+    field entirely (PickCard rendered it, but the LiveCompanion redesign
+    replaced PickCard with a minimal row that dropped the reasons line).
+    """
+    from PyQt6.QtWidgets import QLabel
+
+    column = PicksColumn()
+    row = column._row(
+        PickSuggestion(champion_key="Ahri", score=7.5, tier="A", reasons=[]),
+        icon_lookup=lambda key: None,
+        accent=styles.SUCCESS,
+        build_reasons=["vs AP-heavy → Mercury's Treads", "anti-burst MR boots"],
+    )
+    labels = row.findChildren(QLabel)
+    texts = [lbl.text() for lbl in labels]
+    matched = [t for t in texts if "Mercury" in t]
+    assert matched, f"build-reasons label missing — got texts {texts}"
+
+
+def test_picks_column_no_reasons_when_empty(qt_app) -> None:  # type: ignore[no-untyped-def]
+    """No reasons in the dict → no italic line. Keeps the row compact
+    when the build adapter didn't change anything."""
+    from PyQt6.QtWidgets import QLabel
+
+    column = PicksColumn()
+    row = column._row(
+        PickSuggestion(champion_key="Ahri", score=7.5, tier="A", reasons=[]),
+        icon_lookup=lambda key: None,
+        accent=styles.SUCCESS,
+        build_reasons=[],
+    )
+    labels = row.findChildren(QLabel)
+    texts = [lbl.text() for lbl in labels]
+    # Only icon (empty), name, score — no build-reason line.
+    assert not any("⚙" in t for t in texts), f"unexpected reasons label: {texts}"
 
 
 def test_clickable_rows_use_pointing_hand_cursor(qt_app) -> None:  # type: ignore[no-untyped-def]

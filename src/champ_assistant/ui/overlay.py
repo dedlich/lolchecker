@@ -34,7 +34,6 @@ from ..lcda.source import LcdaSnapshot
 from . import styles
 from .enemy_row import EnemyRow
 from .live_companion_view import LiveCompanionView
-from .pick_card import PickCard
 from .power_spike_panel import PowerSpikePanel
 from .summoner_tracker import SummonerTrackerPanel
 from .title_bar import TitleBar
@@ -51,7 +50,7 @@ class MainOverlay(QMainWindow):
     settings_changed = pyqtSignal()       # user saved a new API key
     apply_build_requested = pyqtSignal(str, "PyQt_PyObject", "PyQt_PyObject")
     # (champion_key, rune_names, item_names)
-    pick_hover_requested = pyqtSignal(str)  # bubbled from PickCard
+    pick_hover_requested = pyqtSignal(str)  # bubbled from PicksColumn
     ban_hover_requested = pyqtSignal(str)   # bubbled from BanPanel
 
     def __init__(
@@ -250,7 +249,7 @@ class MainOverlay(QMainWindow):
 
     def set_item_icons(self, icons: dict[str, QPixmap]) -> None:
         """Inject prefetched item icons keyed by ITEM NAME (not ID).
-        Re-renders the current view so PickCard rows show icons in
+        Re-renders the current view so build rows show icons in
         place of the prior text-only build display."""
         self._item_icons.update(icons)
         if self._last_view is not None:

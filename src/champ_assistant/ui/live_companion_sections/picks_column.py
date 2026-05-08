@@ -112,16 +112,22 @@ class PicksColumn(QWidget):
             self._empty_state.show()
             return
         self._empty_state.hide()
+        reasons = view.suggestion_build_reasons
         for s in counter:
-            self._counter_col.addWidget(self._row(s, icon_lookup, styles.ACCENT))
+            self._counter_col.addWidget(
+                self._row(s, icon_lookup, styles.ACCENT, reasons.get(s.champion_key, []))
+            )
         for s in synergy:
-            self._synergy_col.addWidget(self._row(s, icon_lookup, styles.SUCCESS))
+            self._synergy_col.addWidget(
+                self._row(s, icon_lookup, styles.SUCCESS, reasons.get(s.champion_key, []))
+            )
 
     def _row(
         self,
         suggestion: "PickSuggestion",
         icon_lookup: IconLookup,
         accent: str,
+        build_reasons: list[str],
     ) -> _ClickableRow:
         row = _ClickableRow(
             suggestion.champion_key,
@@ -133,9 +139,13 @@ class PicksColumn(QWidget):
             f" border-left: 3px solid {accent}; }}"
             f" QFrame[role='row']:hover {{ background-color: {styles.BG_INTERACT}; }}"
         )
-        h = QHBoxLayout(row)
-        h.setContentsMargins(8, 4, 8, 4)
-        h.setSpacing(8)
+        outer = QVBoxLayout(row)
+        outer.setContentsMargins(8, 4, 8, 4)
+        outer.setSpacing(2)
+
+        head = QHBoxLayout()
+        head.setContentsMargins(0, 0, 0, 0)
+        head.setSpacing(8)
 
         icon = QLabel()
         icon.setFixedSize(self.ICON_SIZE_PX, self.ICON_SIZE_PX)
@@ -147,14 +157,14 @@ class PicksColumn(QWidget):
         pix = icon_lookup(suggestion.champion_key)
         if pix is not None and not pix.isNull():
             icon.setPixmap(pix)
-        h.addWidget(icon)
+        head.addWidget(icon)
 
         name = QLabel(suggestion.champion_key)
         name.setStyleSheet(
             f"color: {styles.TEXT_PRIMARY};"
             f" font-size: {styles.FS_BODY}px; font-weight: 700;"
         )
-        h.addWidget(name, 1)
+        head.addWidget(name, 1)
 
         score = QLabel(f"{int(round(suggestion.score))}")
         score.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
@@ -164,7 +174,20 @@ class PicksColumn(QWidget):
             f" font-size: {styles.FS_BODY}px; font-weight: 700;"
         )
         score.setFixedWidth(32)
-        h.addWidget(score)
+        head.addWidget(score)
+        outer.addLayout(head)
+
+        if build_reasons:
+            reasons_text = " · ".join(build_reasons[:2])
+            reasons_label = QLabel(f"⚙ {reasons_text}")
+            reasons_label.setWordWrap(True)
+            reasons_label.setStyleSheet(
+                f"color: {styles.ACCENT};"
+                f" font-size: {styles.FS_LABEL}px;"
+                " font-style: italic;"
+                f" padding-left: {self.ICON_SIZE_PX + 8}px;"
+            )
+            outer.addWidget(reasons_label)
         return row
 
     @staticmethod
