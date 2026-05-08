@@ -39,7 +39,7 @@ def section_header(text: str) -> QLabel:
     label.setStyleSheet(
         f"color: {styles.ACCENT};"
         f" font-size: {styles.FS_LABEL}px;"
-        " font-weight: 700; text-transform: uppercase;"
+        " font-weight: 700;"
         " letter-spacing: 1.6px; padding: 12px 0 4px 0;"
     )
     return label
@@ -54,7 +54,6 @@ def hint_label(text: str) -> QLabel:
         f"color: {styles.TEXT_MUTED};"
         f" font-size: {styles.FS_CAPTION}px;"
         f" padding-left: 24px; padding-bottom: 6px;"
-        " line-height: 1.4;"
     )
     label.setWordWrap(True)
     return label

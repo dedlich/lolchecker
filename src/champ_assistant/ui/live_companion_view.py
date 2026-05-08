@@ -83,7 +83,6 @@ class _TeamStrip(QWidget):
             f"color: {styles.TEXT_MUTED};"
             f" font-size: {styles.FS_LABEL}px;"
             " font-weight: 700; letter-spacing: 1.2px;"
-            " text-transform: uppercase;"
         )
         layout.addWidget(title)
 
@@ -396,7 +395,7 @@ def _section_label(text: str) -> QLabel:
         f"color: {styles.TEXT_MUTED};"
         f" font-size: {styles.FS_LABEL}px;"
         " font-weight: 700; letter-spacing: 1.2px;"
-        " text-transform: uppercase; padding: 4px 0;"
+        " padding: 4px 0;"
     )
     return lab
 
@@ -810,7 +809,7 @@ class _GamePlanPanel(QWidget):
         )
         self._plan_body.setStyleSheet(
             f"color: {styles.TEXT_SECONDARY};"
-            f" font-size: {styles.FS_BODY}px; line-height: 1.4;"
+            f" font-size: {styles.FS_BODY}px;"
         )
         self._plan_body.setWordWrap(True)
         frame_layout.addWidget(self._plan_body)
@@ -1004,7 +1003,7 @@ class LiveCompanionView(QWidget):
             f" color: white; padding: 2px 6px;"
             f" border-radius: {styles.RADIUS_SMALL}px;"
             f" font-size: {styles.FS_CAPTION}px;"
-            " font-weight: 700; letter-spacing: 0.5px; }}"
+            " font-weight: 700; letter-spacing: 0.5px; }"
         )
         layout.addWidget(live)
         layout.addStretch(1)

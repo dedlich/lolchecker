@@ -238,7 +238,6 @@ def global_stylesheet() -> str:
             font-size: {FS_LABEL}px;
             font-weight: 700;
             color: {TEXT_MUTED};
-            text-transform: uppercase;
             letter-spacing: 1.2px;
             padding: 2px 0;
         }}
