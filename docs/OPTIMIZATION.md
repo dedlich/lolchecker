@@ -122,45 +122,56 @@ fetches, and any future fan-out (e.g. summoner-spell metadata).
 
 ## 2. Performance (charter pillar A)
 
-### 2.1 Decision engine evaluates all 61 rules every tick
+### 2.1 Decision engine evaluates all 61 rules every tick — DEFERRED, NOT A BOTTLENECK
 
 [advisor/decision_engine/_rules.py](../src/champ_assistant/advisor/decision_engine/_rules.py)
-has 61 `rule_*` functions; the evaluator runs each one per LCDA tick. Most
+has 61+ `rule_*` functions; the evaluator runs each one per LCDA tick. Most
 short-circuit early on `game_time`, but they all pay function-call + import
 overhead.
 
-**Fix paths in priority order:**
+**Measurement (v1.10.103 baseline, ``scripts/bench.py --iterations 500
+--per-rule``):**
+
+| Metric            | Value     |
+| ----------------- | --------- |
+| mean / eval       | 75.7 µs   |
+| median / eval     | 101 µs    |
+| p95 / eval        | 123 µs    |
+| top rule p95      | 10 µs (`rule_dragon_window`) |
+
+At 0.5 Hz (one eval per 2 s — see §2.2) that's **~0.005 % CPU**. Even a
+10× speedup would be invisible at runtime. The 5+-day refactor budgeted
+for rule grouping would optimize a non-bottleneck.
+
+**Decision:** *do not* refactor. Re-measure if §2.1 trade-offs change —
+e.g. if per-rule-group cadence opts some rules to 5+ Hz, or if the rule
+count grows past ~200, or if a rule's helper code (e.g. `_core.py`)
+sprouts an O(N) loop over players.
+
+**Fix paths kept here in case the situation changes:**
 
 1. **Group rules by precondition** so the engine evaluates one group at a
-   time. E.g. `objectives_group` only runs when `objectives` differ from
-   prior tick; `summoner_cd_group` only when a tracked spell is on cooldown;
-   `inhibitor_group` only when an inhib delta is present. Reuse the
-   already-computed `StateStore` deltas
-   ([state_store.py](../src/champ_assistant/state_store.py)) — that store
-   already deduplicates, so feed it.
+   time. Reuse `StateStore` deltas which already deduplicate.
 2. **Phase tags** — annotate each rule with the game-phase window it cares
    about (`early`, `mid`, `late`, `any`) and skip out-of-phase rules in
    bulk.
-3. Once 1+2 land, **measure** before considering Cython / numba / numpy
-   rewrites for the hot helpers in `_core.py`.
+3. Only after 1+2 land would Cython / numba / numpy rewrites of `_core.py`
+   helpers be worth measuring.
 
-The point is correctness first: `decision_engine` is on the in-game render
-path, but it's also the smartest part of the product (charter B). Don't
-optimize it blindly — measure with `performance_monitor.record_phase` per
-group.
-
-### 2.2 LCDA poll interval drift between code and docs
+### 2.2 LCDA poll interval drift between code and docs — RESOLVED
 
 `DEFAULT_POLL_INTERVAL = 2.0` in
-[lcda/source.py:38](../src/champ_assistant/lcda/source.py#L38) — actually
-0.5 Hz. The architecture doc says *"1 Hz HTTP poll"*
-([docs/ARCHITECTURE.md:65](ARCHITECTURE.md#L65)). Either is defensible, but
-both being claimed simultaneously isn't.
+[lcda/source.py:38](../src/champ_assistant/lcda/source.py#L38) — 0.5 Hz.
+The architecture doc was previously inconsistent (claimed 1 Hz); aligned
+to *"LcdaSource (0.5 Hz HTTP poll of localhost:2999 —
+DEFAULT_POLL_INTERVAL = 2.0 s)"* at
+[ARCHITECTURE.md:63](ARCHITECTURE.md#L63).
 
-**Fix:** decide deliberately. 1 Hz costs 2× the CPU on the localhost loop
-but gives recall/teamfight rules a tighter trigger. 2 s is fine for
-objectives. Make the choice tunable per rule group (see §2.1) and align the
-docs.
+**Choice rationale**: 0.5 Hz is the deliberate baseline. 1 Hz would cost
+2× the CPU on the localhost loop for recall/teamfight rules' trigger
+latency. The right place to revisit this is alongside §2.1 (per-rule-
+group cadence), so high-frequency rules like recall could opt up while
+objective rules stay at 2 s.
 
 ### 2.3 Lazy-import discipline is inconsistent
 
@@ -186,19 +197,23 @@ The summary log line is already wired
 ([__main__.py:43-56](../src/champ_assistant/__main__.py#L43-L56)) — assert
 it.
 
-### 2.4 `LcdaSnapshot` is a 17-field frozen dataclass allocated per tick
+### 2.4 `LcdaSnapshot` is a 17-field frozen dataclass allocated per tick — DEFERRED
 
 [lcda/source.py:46-83](../src/champ_assistant/lcda/source.py#L46-L83) — each
 tick allocates a new `LcdaSnapshot` plus several nested lists, plus
 ancillary objects (`ActiveCombatState`, `TiltState`, `GankAlert`, ...). At
-0.5–1 Hz this is fine; if §2.1's per-group cadence pushes some rules to 5+
-Hz, allocator pressure starts to matter.
+0.5 Hz this is one allocation pulse every 2 s; total cost dwarfed by the
+eval window itself (75 µs total — see §2.1).
 
-**Fix:** keep the frozen `LcdaSnapshot` (immutability is load-bearing for
-the rule engine) but split into a `Core` snapshot that always allocates and
-an `Extras` namespace that only allocates on the tick where the relevant
-sub-detector fires. Most ticks would skip allocating `gank_alert` /
-`tilt_state` / `enemy_spikes` entirely.
+**Decision:** *do not* refactor. The Core/Extras split is a high-cadence
+optimization, and §2.1 measurement says cadence is not the bottleneck.
+Re-measure if a future change pushes per-snapshot work into the
+millisecond range.
+
+**Fix kept here for posterity:** keep the frozen `LcdaSnapshot`
+(immutability is load-bearing for the rule engine) but split into a
+`Core` snapshot that always allocates and an `Extras` namespace that
+only allocates on the tick where the relevant sub-detector fires.
 
 ### 2.5 Bench harness gap
 
