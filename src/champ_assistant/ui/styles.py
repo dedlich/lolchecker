@@ -51,9 +51,12 @@ ACCENT_DIM:     Final[str] = "#234D7A"
 ACCENT_FAINT:   Final[str] = "rgba(77, 163, 255, 30)"
 
 DANGER:         Final[str] = "#FF6B6B"
+DANGER_BRIGHT:  Final[str] = "#FF8F8F"
 DANGER_DIM:     Final[str] = "#7D2F2F"
 WARNING:        Final[str] = "#FFB84A"
+WARNING_BRIGHT: Final[str] = "#FFCE80"
 SUCCESS:        Final[str] = "#7FCC7F"
+SUCCESS_BRIGHT: Final[str] = "#A5DDA5"
 INFO:           Final[str] = ACCENT
 
 # Team semantic colors — used by the scoreboard and any other widget
@@ -182,6 +185,19 @@ def gradient_panel_stylesheet(
         f" border: none;"
         f" border-radius: {r}px;"
         " }"
+    )
+
+
+def gradient_stripe_stylesheet(bright: str, base: str) -> str:
+    """Vertical gradient for thin progress / segment bars (damage-type
+    bar, power-spikes bar, etc). Top edge brighter, bottom darker —
+    reads as lit-from-above. v1.10.112 lifts the previously flat
+    stripes to give the stat blocks more visual presence."""
+    return (
+        "background: qlineargradient(x1:0, y1:0, x2:0, y2:1,"
+        f"  stop:0 {bright},"
+        f"  stop:1 {base});"
+        " border-radius: 3px;"
     )
 
 

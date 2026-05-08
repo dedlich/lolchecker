@@ -74,19 +74,30 @@ class RankPill(QLabel):
 
 
 class TierBadge(QLabel):
-    """Small colored label showing a champion strength tier (S+/S/A/B...)."""
+    """Small colored label showing a champion strength tier (S+/S/A/B...).
+
+    v1.10.112: lifted from flat fill + matching border to a subtle
+    color-tinted gradient + faint outer border in the same hue. The
+    tier itself reads as the headline color while the badge has a
+    pill-like depth instead of feeling like a wireframe outline."""
 
     def __init__(self, tier: str | None) -> None:
         super().__init__(tier or "—")
         self.setAlignment(Qt.AlignmentFlag.AlignCenter)
         color = styles.TIER_COLORS.get(tier or "", styles.TEXT_MUTED)
+        # Subtle vertical gradient using a tinted black background —
+        # darker top, even darker bottom — then the colored text + a
+        # faint colored border tie the badge to its tier.
         self.setStyleSheet(
             f"color: {color};"
-            f" background-color: rgba(255, 255, 255, 8);"
-            f" font-weight: 700; padding: 2px 8px;"
+            " background: qlineargradient(x1:0, y1:0, x2:0, y2:1,"
+            "  stop:0 rgba(255, 255, 255, 18),"
+            "  stop:1 rgba(0, 0, 0, 60));"
+            f" font-weight: 800; padding: 2px 8px;"
             f" border: 1px solid {color};"
             f" border-radius: 4px;"
             f" font-size: {styles.FS_LABEL}px;"
+            " letter-spacing: 0.6px;"
         )
         self.setFixedHeight(20)
 

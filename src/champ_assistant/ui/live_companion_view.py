@@ -247,11 +247,11 @@ class _DamageTypeBar(QWidget):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(4)
 
-        title = QLabel("Damage Type")
+        title = QLabel("DAMAGE TYPE")
         title.setStyleSheet(
             f"color: {styles.TEXT_MUTED};"
             f" font-size: {styles.FS_LABEL}px;"
-            " font-weight: 700; letter-spacing: 1.2px;"
+            " font-weight: 700; letter-spacing: 1.6px;"
         )
         layout.addWidget(title)
 
@@ -259,16 +259,18 @@ class _DamageTypeBar(QWidget):
         bars_row.setSpacing(8)
         bars_row.setContentsMargins(0, 0, 0, 0)
 
-        # Color stripes (0% AP : 100% AD baseline).
+        # Color stripes — vertical gradient (bright top, base bottom)
+        # so the stat block reads as lit-from-above instead of flat.
+        # v1.10.112.
         self._ap_stripe = QFrame()
-        self._ap_stripe.setFixedHeight(4)
+        self._ap_stripe.setFixedHeight(6)
         self._ap_stripe.setStyleSheet(
-            f"background-color: {styles.ACCENT}; border-radius: 2px;"
+            styles.gradient_stripe_stylesheet(styles.ACCENT_BRIGHT, styles.ACCENT)
         )
         self._ad_stripe = QFrame()
-        self._ad_stripe.setFixedHeight(4)
+        self._ad_stripe.setFixedHeight(6)
         self._ad_stripe.setStyleSheet(
-            f"background-color: {styles.DANGER}; border-radius: 2px;"
+            styles.gradient_stripe_stylesheet(styles.DANGER_BRIGHT, styles.DANGER)
         )
 
         bars_row.addWidget(self._ap_stripe, 1)
@@ -314,11 +316,11 @@ class _PowerSpikesBar(QWidget):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(4)
 
-        title = QLabel("Team Power Spikes")
+        title = QLabel("TEAM POWER SPIKES")
         title.setStyleSheet(
             f"color: {styles.TEXT_MUTED};"
             f" font-size: {styles.FS_LABEL}px;"
-            " font-weight: 700; letter-spacing: 1.2px;"
+            " font-weight: 700; letter-spacing: 1.6px;"
         )
         layout.addWidget(title)
 
@@ -326,11 +328,17 @@ class _PowerSpikesBar(QWidget):
         bars_row.setSpacing(4)
         bars_row.setContentsMargins(0, 0, 0, 0)
         self._stripes: list[QFrame] = []
-        for color in (styles.WARNING, styles.ACCENT, styles.SUCCESS):
+        # Vertical gradients so each phase segment lifts off the panel
+        # background instead of reading as a flat colored rectangle.
+        for bright, base in (
+            (styles.WARNING_BRIGHT, styles.WARNING),
+            (styles.ACCENT_BRIGHT, styles.ACCENT),
+            (styles.SUCCESS_BRIGHT, styles.SUCCESS),
+        ):
             stripe = QFrame()
-            stripe.setFixedHeight(4)
+            stripe.setFixedHeight(6)
             stripe.setStyleSheet(
-                f"background-color: {color}; border-radius: 2px;"
+                styles.gradient_stripe_stylesheet(bright, base)
             )
             bars_row.addWidget(stripe, 1)
             self._stripes.append(stripe)
