@@ -9,8 +9,10 @@ For user-facing intro see `../README.md`.
 ```
 ┌─────────────────────────────────────────────────────────────────┐
 │  UI (Qt6 / qasync)                                              │
-│   MainOverlay · PickCard · BanPanel · EnemyRow · LobbyStats    │
-│   RecommendationPanel · MinimapTimers · ScoreboardOverlay      │
+│   MainOverlay · LiveCompanionView (BansColumn / PicksColumn /  │
+│   BuildCard / ItemsPanel / GamePlanPanel / RosterPanel)        │
+│   RecommendationPanel · InsightPanel · MinimapTimersWidget     │
+│   ScoreboardWidget · SummonerTrackerPanel · PowerSpikePanel    │
 │   styles.py (closed visual contract)                            │
 ├─────────────────────────────────────────────────────────────────┤
 │  Application orchestration                                       │
@@ -46,15 +48,20 @@ LcuSource (websocket subscription on champ-select-v1-session topic)
     ▼
 ChampAssistant.consume(events)
     │  validates payload → ChampSelectSession (pydantic)
+    │  delegates to view_builder.build_session_view (pure fn) which
     │  derives: enemy_counters, enemy_keys/names, enemy_roles,
-    │           enemy_damage_profile, picks, gaps, ban_suggestions,
-    │           suggestion_builds (matchup-adapted), enemy_profiles,
-    │           ally_profiles
+    │           enemy_damage_profile, ally_damage_profile,
+    │           {ally,enemy}_phase_distribution, picks_counter /
+    │           picks_synergy, ban_suggestions_lane / _allround,
+    │           suggestion_builds (matchup-adapted), suggestion_build_reasons,
+    │           {enemy,ally}_profiles, my_champion_phase
     │  fans out async profile fetches → RiotApiClient
+    │  (subphase-gated: enemies during BAN_PICK, both teams during
+    │  FINALIZATION / loading — feeds the RosterPanel)
     ▼
-SessionView (frozen) → MainOverlay.update_view(view)
-    │  routes to: enemy rows, pick suggestions, ban panel, lobby stats,
-    │  recommendation panel
+SessionView (frozen Pydantic) → MainOverlay.update_view(view)
+    │  fans out to LiveCompanionView columns + RosterPanel
+    │  (visible only during finalization / loading subphase)
 ```
 
 ### In-game pipeline
@@ -71,11 +78,17 @@ on_snapshot()
     │  → decision_engine.evaluate(snapshot) → recommendations
     ▼
 StateStore listeners
-    │  → MainOverlay.update_lcda_snapshot
-    │  → MinimapTimersWidget.update_snapshot
-    │  → RecommendationPanel.set_recommendations
-    │  → ScoreboardOverlayController (gold diff)
-    │  → SummonerTracker (cooldown render)
+    │  → MainOverlay.update_lcda_snapshot (gates summoner/spike panels
+    │     via _panel_allowed reading user-toggle flags)
+    │  → MinimapTimersWidget.update_snapshot (skipped when
+    │     show_minimap_timers off — set_user_enabled gate)
+    │  → ScoreboardWidget.set_peek_visible (driven by game-start /
+    │     game-end transition; gated on show_scoreboard via
+    │     set_user_enabled)
+    │  → SummonerTrackerPanel.update_snapshot (cooldown render)
+    │  → PowerSpikePanel.update_snapshot
+    │  → decision_engine.evaluate → RecommendationPanel
+    │     + InsightPanel._latest_top (toggle target for Ctrl+Alt+I)
 ```
 
 The `StateStore` deduplicates updates — listeners only fire on actual changes, so a
@@ -89,7 +102,8 @@ no-op poll doesn't trigger repaints.
 network, no I/O. Testable in isolation. Examples:
 
 * `counters.lookup_counters(champion_key, role) -> list[CounterEntry]`
-* `picks.suggest_picks(session, counters, tags, ...) -> (suggestions, gaps)`
+* `picks.suggest_picks(role, my_team_keys, enemy_team_keys, gaps, tiers, counters, tags, ...) -> list[PickSuggestion]`
+* `composition.analyze_composition(my_team_keys, tags) -> list[CompositionGap]` (input to suggest_picks)
 * `ban_suggestions.suggest_bans(session, ..., my_role=..., limit=3)`
 * `build_adapter.adapt_build(base, role, enemy_team_keys, tags)`
 * `decision_engine.evaluate(snapshot) -> list[Recommendation]`
