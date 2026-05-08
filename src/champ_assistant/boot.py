@@ -636,6 +636,17 @@ def _run_with_ui(args: argparse.Namespace) -> int:
             _safe_start("telemetry", telemetry_recorder.start)
         else:
             telemetry_recorder.stop()
+        # Focus Mode: collapses the recommendation panel to the top-1
+        # alert. ``set_focus_mode`` is purpose-built for this — it
+        # re-renders immediately with the stored rec list so the
+        # change is visible without waiting for the next snapshot.
+        try:
+            recommendation_panel.set_focus_mode(new_state.focus_mode)
+        except NameError:
+            # In smoke tests this closure can fire before
+            # recommendation_panel is constructed. Real runtime always
+            # has it bound by the time Settings is reachable.
+            pass
         # Reset the prefetched-signature so the next snapshot kicks off
         # a fresh prefetch with the new credentials.
         assistant._game_plan_prefetched_for = ""
