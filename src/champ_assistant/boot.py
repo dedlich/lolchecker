@@ -665,11 +665,11 @@ def _run_with_ui(args: argparse.Namespace) -> int:
         # / show_minimap_timers still need a restart (those gate
         # construction in boot.py — deferred).
         overlay.apply_runtime_settings()
-        # Vision services — partial runtime support. If the service
-        # was constructed at boot (flag was on then), start/stop are
-        # idempotent and safe to flip per the new flag. If it was
-        # None at boot (flag was off), toggle-on still needs a restart
-        # because there's nothing to start.
+        # Vision services — full runtime toggle since v1.10.102's
+        # construct-then-start refactor (parallel to v1.10.99 widgets).
+        # Services are always constructed when Safe Mode is off, so
+        # start/stop both work cleanly. Safe Mode at boot still leaves
+        # both as None — that case really does need a restart.
         if vision_service is not None:
             if new_state.enable_auto_camp_detection and not startup_mode.safe:
                 _safe_start("vision", vision_service.start)
@@ -932,12 +932,15 @@ def _run_with_ui(args: argparse.Namespace) -> int:
 
     # ------------------------------------------------------------------
     # Vision subsystem (Stage A — color heuristic camp detection).
-    # Triple-gated: settings flag + Safe Mode off + Windows-only check
-    # inside MinimapCapture. Construction is cheap (no thread spawn);
-    # start() is the actual side-effect.
+    # Construct-then-start (v1.10.102): the service is always constructed
+    # so the ``enable_auto_camp_detection`` flag can be flipped at runtime
+    # via Settings without a restart. Construction is cheap — only the
+    # start() call spawns the worker thread / acquires the screen-capture
+    # handle. Safe Mode hard-blocks even construction (the prior crash
+    # may have been vision-related).
     # ------------------------------------------------------------------
     vision_service = None
-    if persisted.enable_auto_camp_detection and not startup_mode.safe:
+    if not startup_mode.safe:
         from champ_assistant.vision.observation_service import VisionObservationService
 
         def _vision_game_time() -> float | None:
@@ -956,22 +959,21 @@ def _run_with_ui(args: argparse.Namespace) -> int:
 
         # Diagnostics integration — counters appear in the [DIAG] line.
         diagnostics.attach_vision(vision_service)
-        _safe_start("vision", vision_service.start)
         lifecycle.register("vision", vision_service.stop)
-    else:
-        if not persisted.enable_auto_camp_detection:
+        if persisted.enable_auto_camp_detection:
+            _safe_start("vision", vision_service.start)
+        else:
             logging.getLogger(__name__).info(
-                "vision disabled (enable_auto_camp_detection=False in settings)"
+                "vision constructed but not started (enable_auto_camp_detection=False)"
             )
 
     # ------------------------------------------------------------------
     # Scoreboard visibility vision service — independent worker thread,
     # writes state.scoreboard_visible into the StateStore on transition.
-    # Same triple-gate as camp detection: settings + safe-mode-off +
-    # Windows-only check inside MinimapCapture.
+    # Same construct-then-start shape as camp detection (v1.10.102).
     # ------------------------------------------------------------------
     scoreboard_visibility_service = None
-    if persisted.enable_scoreboard_detection and not startup_mode.safe:
+    if not startup_mode.safe:
         from PyQt6.QtCore import Qt as _SBQt
         from champ_assistant.vision.scoreboard_visibility_service import (
             ScoreboardVisibilityService,
@@ -993,12 +995,13 @@ def _run_with_ui(args: argparse.Namespace) -> int:
             _on_scoreboard_visibility, _SBQt.ConnectionType.QueuedConnection,
         )
 
-        _safe_start("scoreboard_visibility", scoreboard_visibility_service.start)
         lifecycle.register("scoreboard_visibility", scoreboard_visibility_service.stop)
-    else:
-        if not persisted.enable_scoreboard_detection:
+        if persisted.enable_scoreboard_detection:
+            _safe_start("scoreboard_visibility", scoreboard_visibility_service.start)
+        else:
             logging.getLogger(__name__).info(
-                "scoreboard detection disabled (enable_scoreboard_detection=False)"
+                "scoreboard_visibility constructed but not started "
+                "(enable_scoreboard_detection=False)"
             )
 
     # ------------------------------------------------------------------
