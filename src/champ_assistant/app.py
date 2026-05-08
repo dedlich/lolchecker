@@ -150,10 +150,10 @@ class ChampAssistant:
             self._loading_screen_session = self._latest_session
             self._latest_session = None
             self._enemy_role_overrides.clear()
-            self._enemy_profiles_by_cell.clear()
-            self._ally_profiles_by_cell.clear()
-            if self._profile_service is not None:
-                self._profile_service.clear()
+            # Profile caches are NOT cleared here — RosterPanel needs
+            # them to render mains / WR / streak during the loading
+            # screen. They're dropped when the next session arrives
+            # (new game starts) or notify_game_active fires (LCDA live).
             # Champ-select just ended — we're either on the loading screen
             # (game accepted), or the user dodged. Either way, raise the
             # roster window. ``notify_game_active`` (LCDA-driven) and the
@@ -178,9 +178,17 @@ class ChampAssistant:
                 logger.warning("session_parse_failed: %s", exc)
                 self._dump_failed_payload(data)
                 return self._push_view(SessionView(connection_state=self._connection_state))
+            # Fresh champ-select arrived. If we were holding loading-
+            # screen data from a prior game (dodge → straight back to
+            # queue), drop the stale profile caches now so the new
+            # cell_id slots don't show the previous game's enemies.
+            if self._loading_screen_active:
+                self._enemy_profiles_by_cell.clear()
+                self._ally_profiles_by_cell.clear()
+                if self._profile_service is not None:
+                    self._profile_service.clear()
             self._latest_session = session
             self._connection_state = "connected"
-            # Fresh champ-select supersedes any lingering loading-screen flag.
             self._loading_screen_active = False
             self._loading_screen_session = None
             logger.info(
@@ -456,6 +464,12 @@ class ChampAssistant:
             return
         self._loading_screen_active = False
         self._loading_screen_session = None
+        # Game is live → drop the profile caches we kept around for the
+        # loading screen. Next champ-select will repopulate them.
+        self._enemy_profiles_by_cell.clear()
+        self._ally_profiles_by_cell.clear()
+        if self._profile_service is not None:
+            self._profile_service.clear()
         view = self._build_view(self._latest_session)
         self._push_view(view)
 
