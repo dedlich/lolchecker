@@ -605,6 +605,7 @@ def build_session_view(
     # My champion build — shown after the local player locks their pick.
     my_champion_key = ""
     my_champion_build = None
+    win_condition = None
     me = session.me
     if me is not None and me.champion_id and me.champion_id in deps.champions:
         locked_champ = deps.champions[me.champion_id]
@@ -612,6 +613,7 @@ def build_session_view(
         if my_role is not None:
             from .advisor.build_adapter import adapt_build
             enemy_keys_list = _team_keys(session.their_team, deps.champions)
+            ally_keys_list = _team_keys(session.my_team, deps.champions)
             base = deps.builds.build_for(locked_champ.key, my_role)
             adapted = adapt_build(
                 base, role=my_role,
@@ -622,6 +624,35 @@ def build_session_view(
                 my_champion_build = adapted.build
             elif base is not None:
                 my_champion_build = base
+
+            # Win condition — coaching anchor for this matchup. Built
+            # from the locked archetype + both teams. Stable through
+            # the whole game, surfaced in the GamePlan column.
+            # v1.10.119 closes the "feels like pro coaching" ask.
+            try:
+                from .advisor.win_condition import (
+                    archetype_from_tags,
+                    compute_win_condition,
+                )
+                champ_tags = (
+                    deps.tags.tags_for(locked_champ.key)
+                    or list(locked_champ.tags)
+                )
+                arch = archetype_from_tags(
+                    locked_champ.key, str(my_role), champ_tags,
+                )
+                win_condition = compute_win_condition(
+                    my_champion_key=locked_champ.key,
+                    archetype=arch,
+                    ally_team_keys=ally_keys_list,
+                    enemy_team_keys=enemy_keys_list,
+                    tags=deps.tags,
+                )
+            except (ImportError, AttributeError, ValueError, TypeError):
+                # WinCondition is a UX nicety — never block the rest
+                # of view_builder if its synthesis raises. The
+                # GamePlan placeholder degrades to the legacy text.
+                win_condition = None
 
     return SessionView(
         connection_state=deps.connection_state,
@@ -652,5 +683,6 @@ def build_session_view(
         my_champion_key=my_champion_key,
         my_champion_role=my_role,
         my_champion_phase=_phase_for_champion_key(my_champion_key, deps),
+        win_condition=win_condition,
         my_champion_build=my_champion_build,
     )

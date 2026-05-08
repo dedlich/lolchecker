@@ -1158,8 +1158,12 @@ def test_rule_build_swap_fires_with_top_swap() -> None:
     assert rec is not None
     assert rec.kind == "build_swap"
     assert rec.severity == "info"
-    assert "Bloodthirster" in rec.text
+    # v1.10.119 coach-voice rewrite: headline is the directive
+    # ("Mortal Reminder JETZT"), the skip item lives in the reason
+    # chain ("Skip Bloodthirster (vs 2 Sustain-Gegner)").
     assert "Mortal Reminder" in rec.text
+    assert "JETZT" in rec.text  # imperative urgency marker
+    assert any("Bloodthirster" in r for r in rec.reasons)
 
 
 def test_evaluate_runs_both_build_rules() -> None:

@@ -998,114 +998,184 @@ class _GamePlanPanel(QWidget):
         )
         frame_layout.setSpacing(styles.SPACING_GRID)
 
-        # Header — Game Plan + PLUS pill (matches screenshot's free vs
-        # paid framing; we don't actually have a paid tier, the pill is
-        # decorative for now).
+        # Header — Game Plan title (driven by WinCondition.archetype_label
+        # when available, falls back to "Game Plan").
         header = QHBoxLayout()
-        title = QLabel("Game Plan")
-        title.setStyleSheet(
+        self._title = QLabel("Game Plan")
+        self._title.setStyleSheet(
             f"color: {styles.TEXT_PRIMARY};"
             f" font-size: {styles.FS_HEADING}px; font-weight: 700;"
         )
-        header.addWidget(title)
+        header.addWidget(self._title)
         header.addStretch(1)
         frame_layout.addLayout(header)
 
-        # Phase tabs — Early/Mid/Late as toggle buttons. v1 just shows
-        # the currently-selected phase's label; the prose lives below.
-        tabs_row = QHBoxLayout()
-        tabs_row.setSpacing(6)
-        for phase in ("Early Game", "Mid Game", "Late Game"):
-            tab = QLabel(phase)
-            tab.setStyleSheet(
-                f"color: {styles.TEXT_MUTED};"
-                f" background: {styles.BG_TERTIARY};"
-                f" border: 1px solid {styles.BORDER};"
-                f" border-radius: {styles.RADIUS_SMALL}px;"
-                f" padding: 4px 10px;"
-                f" font-size: {styles.FS_CAPTION}px; font-weight: 700;"
-            )
-            tabs_row.addWidget(tab)
-        tabs_row.addStretch(1)
-        frame_layout.addLayout(tabs_row)
-
-        self._plan_body = QLabel(
-            "Prose game-plan advice will appear here once a champion is "
-            "locked. Wiring an LLM-generated phase plan (Early/Mid/Late) "
-            "is the next iteration; for v1.10.79 the layout is in place."
+        # WinCondition headline — the one-line plan in primary text.
+        # Wraps so longer headlines stay readable.
+        self._headline = QLabel(
+            "Lock in your champion to generate the game plan."
         )
+        self._headline.setWordWrap(True)
+        self._headline.setStyleSheet(
+            f"color: {styles.TEXT_PRIMARY};"
+            f" font-size: {styles.FS_BODY}px;"
+            f" font-weight: 700;"
+            f" padding: 4px 0 8px 0;"
+        )
+        frame_layout.addWidget(self._headline)
+
+        # Primary path — the "how" under the headline. Muted secondary
+        # so it sits under the headline as supporting text.
+        self._primary_path = QLabel("")
+        self._primary_path.setWordWrap(True)
+        self._primary_path.setStyleSheet(
+            f"color: {styles.TEXT_SECONDARY};"
+            f" font-size: {styles.FS_LABEL}px;"
+        )
+        frame_layout.addWidget(self._primary_path)
+
+        # Live LLM prose — appended below the static plan when a cached
+        # entry lands. Acts as the dynamic coaching layer on top of the
+        # static WinCondition.
+        self._plan_body = QLabel("")
         self._plan_body.setStyleSheet(
             f"color: {styles.TEXT_SECONDARY};"
             f" font-size: {styles.FS_BODY}px;"
+            f" padding-top: 6px;"
         )
         self._plan_body.setWordWrap(True)
         frame_layout.addWidget(self._plan_body)
 
-        frame_layout.addWidget(_section_label("Champion Power Spikes"))
-        self._spikes_line = _muted_label("Locked-champion phase scaling appears here.")
-        frame_layout.addWidget(self._spikes_line)
+        frame_layout.addWidget(_section_label("Power Spikes"))
+        self._spikes_block = QLabel(
+            "Locked-champion power spikes appear here."
+        )
+        self._spikes_block.setWordWrap(True)
+        self._spikes_block.setStyleSheet(
+            f"color: {styles.TEXT_SECONDARY};"
+            f" font-size: {styles.FS_LABEL}px;"
+        )
+        frame_layout.addWidget(self._spikes_block)
 
         frame_layout.addWidget(_section_label("Playing Against"))
-        self._against_line = _muted_label("Threat-summary appears once enemies are picked.")
-        frame_layout.addWidget(self._against_line)
+        self._against_block = QLabel(
+            "Threat-summary appears once enemies pick."
+        )
+        self._against_block.setWordWrap(True)
+        self._against_block.setStyleSheet(
+            f"color: {styles.TEXT_SECONDARY};"
+            f" font-size: {styles.FS_LABEL}px;"
+        )
+        frame_layout.addWidget(self._against_block)
+
+        # AVOID call-out — the one mistake that loses this game.
+        # Danger-tinted so it reads as a hard rule, not a tip.
+        frame_layout.addWidget(_section_label("Niemals"))
+        self._avoid_line = QLabel("")
+        self._avoid_line.setWordWrap(True)
+        self._avoid_line.setStyleSheet(
+            f"color: {styles.DANGER};"
+            f" font-size: {styles.FS_LABEL}px;"
+            f" font-weight: 700;"
+        )
+        frame_layout.addWidget(self._avoid_line)
 
         frame_layout.addStretch(1)
         outer.addWidget(self._frame)
 
     def update_panel(self, view: "SessionView") -> None:
         key = view.my_champion_key
-        # Game plan body — three states:
-        #   1. Cached LLM prose available → show it
-        #   2. Champion locked AND LLM enabled → "Generating…"
-        #   3. Champion locked AND LLM disabled → setup hint
-        #   4. No champion → pre-lock placeholder
+        wc = view.win_condition
+
+        # Title — driven by WinCondition's archetype label when
+        # available so the title reads as "Mid-Lane Assassin" instead
+        # of the generic "Game Plan".
+        if wc and wc.archetype_label:
+            self._title.setText(wc.archetype_label)
+        else:
+            self._title.setText("Game Plan")
+
+        # Headline + path — the structured plan from win_condition.
+        # When there's no plan yet (pre-lock-in or synthesis failed)
+        # we show a short pre-lock prompt and clear the supporting
+        # lines so the panel doesn't carry stale text.
+        if wc:
+            self._headline.setText(wc.headline)
+            self._primary_path.setText(wc.primary_path)
+        elif key:
+            # Locked but plan synthesis failed (rare — defensive).
+            self._headline.setText(f"{key} — Plan wird geladen…")
+            self._primary_path.setText("")
+        else:
+            self._headline.setText(
+                "Lock in deinen Champion — der Game Plan wird automatisch erstellt."
+            )
+            self._primary_path.setText("")
+
+        # Live LLM prose — shown UNDER the static plan when available.
+        # Acts as the dynamic coaching layer; static plan stays stable.
         if view.game_plan_text:
             self._plan_body.setText(view.game_plan_text)
+            self._plan_body.show()
         elif key and view.game_plan_enabled:
             self._plan_body.setText(
-                f"Generating game plan for {key}… (lands on the next "
-                "snapshot once the LLM responds)."
+                f"Live-Coaching-Prosa für {key} wird generiert…"
             )
-        elif key and not view.game_plan_enabled:
-            self._plan_body.setText(
-                "Configure an LLM provider in Settings → API Keys to "
-                "generate matchup-aware game plans (OpenRouter / Groq / "
-                "Gemini — free tiers work)."
-            )
+            self._plan_body.show()
         else:
-            self._plan_body.setText(
-                "Lock in your champion to generate a matchup-aware game "
-                "plan covering win condition, key matchup, and tempo."
+            # Without an LLM key we already have the static plan above —
+            # don't add LLM-config noise to the panel.
+            self._plan_body.setText("")
+            self._plan_body.hide()
+
+        # Power Spikes — bullet list from win_condition.spikes when
+        # available, falls back to the legacy single-line summary.
+        if wc and wc.spikes:
+            self._spikes_block.setText(
+                "\n".join(f"• {s}" for s in wc.spikes)
+            )
+        elif key:
+            self._spikes_block.setText(self._spike_summary(key, view))
+        else:
+            self._spikes_block.setText(
+                "Locked-champion power spikes appear here."
             )
 
-        # Champion Power Spikes — deterministic level/item thresholds
-        # surfaced from the static spike model. No LLM needed for this.
-        if key:
-            self._spikes_line.setText(self._spike_summary(key, view))
-        else:
-            self._spikes_line.setText(
-                "Locked-champion phase scaling appears here."
+        # Playing Against — threat lines from win_condition.threats.
+        # Falls back to a comma-joined enemy list when win_condition
+        # didn't classify any threat (e.g. pre-pick state).
+        if wc and wc.threats:
+            self._against_block.setText(
+                "\n".join(f"• {t}" for t in wc.threats)
             )
+        else:
+            session = view.session
+            enemy_names: list[str] = []
+            if session is not None:
+                for member in session.their_team[:5]:
+                    if not member.champion_id:
+                        continue
+                    key_e = view.enemy_keys.get(member.champion_id, "")
+                    if key_e:
+                        enemy_names.append(key_e)
+            if enemy_names:
+                self._against_block.setText(
+                    f"Gegner: {', '.join(enemy_names[:5])}"
+                )
+            else:
+                self._against_block.setText(
+                    "Threat-summary erscheint nach Picks."
+                )
 
-        # Threat summary — list locked-in enemies (a proxy until we
-        # have real per-enemy threat scoring).
-        session = view.session
-        threats = []
-        if session is not None:
-            for member in session.their_team[:5]:
-                if not member.champion_id:
-                    continue
-                key_e = view.enemy_keys.get(member.champion_id, "")
-                if key_e:
-                    threats.append(key_e)
-        if threats:
-            self._against_line.setText(
-                f"Enemy threats locked in: {', '.join(threats[:5])}."
-            )
+        # AVOID call-out — the single biggest mistake. Hidden when no
+        # plan exists yet so the panel isn't dominated by an empty
+        # red line.
+        if wc:
+            self._avoid_line.setText(wc.avoid)
+            self._avoid_line.show()
         else:
-            self._against_line.setText(
-                "Threat-summary appears once enemies are picked."
-            )
+            self._avoid_line.setText("")
+            self._avoid_line.hide()
 
     @staticmethod
     def _spike_summary(key: str, view: "SessionView") -> str:

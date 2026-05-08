@@ -334,15 +334,18 @@ def rule_situational_build(
     snapshot: "LcdaSnapshot",
     build_result: object,
 ) -> Recommendation | None:
-    """Recommend situational items based on game state and enemy team comp.
+    """Coach the next legendary buy based on the live matchup.
 
-    Fires after the first 2 minutes when enemy champions are confirmed.
-    ``build_result`` is a ``BuildResult`` from the build engine; passed in
-    by ``evaluate`` so the rule stays pure — no async I/O.
+    Pulls the top-scored situational item plus its WHY (the engine's
+    own ``+24 vs 3 AP-Gegner (MR)`` string) and renders both as a
+    decisive directive: ``<Item> JETZT (<why>)``. Less crowded than
+    the prior 3-item list — pro coaching gives ONE call at a time.
 
-    Suppressed early game and when no situational items are computed.
+    Fires from 2:00 onward; before that the matchup is unresolved and
+    the standard build is the right path.
     """
-    from ..build_engine import BuildResult  # local import avoids circular
+    from .. import coach_voice  # local import avoids circular
+    from ..build_engine import BuildResult
 
     if not isinstance(build_result, BuildResult):
         return None
@@ -355,24 +358,27 @@ def rule_situational_build(
     if not situational:
         return None
 
-    top = situational[:3]
+    top = situational[0]
 
-    context_lines = [
-        r for s in top
-        for r in s.reasons
-        if any(kw in r for kw in ("Gegner", "Sustain", "Tank", "Penetration", "Golddefizit"))
-    ]
+    # The engine emits human-readable WHY strings like
+    # "+24 vs 3 AP-Gegner (MR)". Strip the leading "+N " and use the
+    # rest as the consequence clause.
+    consequence = ""
+    for r in top.reasons:
+        if any(kw in r for kw in ("Gegner", "Sustain", "Tank", "Penetration")):
+            cleaned = r.split(" ", 1)[1] if r.startswith("+") else r
+            consequence = cleaned.strip()
+            break
 
-    item_list = " / ".join(s.item_name for s in top)
-    if context_lines:
-        headline = context_lines[0]
-        text = f"Situational: {item_list} — {headline}"
-    else:
-        text = f"Situational Items: {item_list}"
-
-    all_reasons = tuple(
-        r for s in top for r in s.reasons[:2]
-    )
+    try:
+        text = coach_voice.directive(
+            top.item_name,
+            consequence=consequence or None,
+            urgency="now",
+        )
+    except ValueError:
+        # Fallback: strip the consequence to fit MAX_LENGTH.
+        text = coach_voice.directive(top.item_name, urgency="now")
 
     return Recommendation(
         text=text,
@@ -382,7 +388,7 @@ def rule_situational_build(
         risk="LOW",
         ttl_s=120.0,
         kind="situational_build",
-        reasons=all_reasons,
+        reasons=tuple(top.reasons[:3]),
     )
 
 
@@ -390,20 +396,18 @@ def rule_build_swap(
     snapshot: "LcdaSnapshot",
     build_result: object,
 ) -> Recommendation | None:
-    """Surface a "skip X, buy Y instead" recommendation when the
-    standard build's choice scored materially worse than an alternative
-    under the live matchup.
+    """Coach a "skip the standard item, buy this instead" call when
+    the matchup demoted a planned legendary.
 
-    Like ``rule_situational_build``, this runs on the same 2-min cadence
-    and reads ``BuildResult`` (passed in by ``evaluate``). The actual
-    swap calculation lives in ``build_engine.compute_swap_suggestions``
-    which diffs the neutral-baseline ranking vs the contextual one —
-    this rule is just the in-game surface.
+    The diff itself is built by ``build_engine.compute_swap_suggestions``
+    (neutral-baseline scoring vs contextual). This rule renders the
+    top swap in coach voice: skip + replacement + a one-clause WHY.
 
-    Top 1 swap by score-delta is chosen. Stays silent when no
-    suggestions exist (early game, balanced matchup, or no score gap).
+    Top 1 by score-delta. Silent before 2:00 and when there are no
+    swaps to surface (balanced matchup or no score gap).
     """
-    from ..build_engine import BuildResult  # local import avoids circular
+    from .. import coach_voice  # local import avoids circular
+    from ..build_engine import BuildResult
 
     if not isinstance(build_result, BuildResult):
         return None
@@ -417,11 +421,18 @@ def rule_build_swap(
         return None
 
     top = swaps[0]
-    text = f"Swap: {top.skip_item} → {top.replacement}"
-    reasons = (
-        f"Skip {top.skip_item} ({top.reason})",
-        f"Buy {top.replacement} instead — score Δ +{top.score_delta:.0f}",
-    )
+    consequence = f"statt {top.skip_item}, {top.reason}"
+    try:
+        text = coach_voice.directive(
+            top.replacement,
+            consequence=consequence,
+            urgency="now",
+        )
+    except ValueError:
+        # Either too long or missing imperative — fall back to
+        # action-only call. Item name + JETZT always passes the
+        # imperative check via the urgency marker.
+        text = coach_voice.directive(top.replacement, urgency="now")
 
     return Recommendation(
         text=text,
@@ -431,5 +442,8 @@ def rule_build_swap(
         risk="LOW",
         ttl_s=120.0,
         kind="build_swap",
-        reasons=reasons,
+        reasons=(
+            f"Skip {top.skip_item} ({top.reason})",
+            f"{top.replacement} kontert direkt — score Δ +{top.score_delta:.0f}",
+        ),
     )

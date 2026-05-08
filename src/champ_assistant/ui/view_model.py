@@ -12,6 +12,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from ..advisor.ban_suggestions import BanSuggestion
 from ..advisor.picks import PickSuggestion
+from ..advisor.win_condition import WinCondition
 from ..data.models import ChampionBuild, ChampSelectSession, CounterEntry, Role
 from ..profiling.profile import EnemyProfile
 
@@ -133,6 +134,13 @@ class SessionView(BaseModel):
     Same heuristic as ``ally_phase_distribution`` — Early-Game /
     Lane-Bully → early, Late-Game / Hyper-Carry / Scaling → late, all
     others → mid. Added in v1.10.100."""
+
+    win_condition: WinCondition | None = None
+    """Pro-coaching anchor for the locked matchup. Computed once at
+    lock-in by ``view_builder._compute_win_condition`` from archetype +
+    enemy team. Drives the GamePlan column's structured plan
+    (headline / spikes / threats / avoid). ``None`` before lock-in or
+    when synthesis fails — UI falls back to the legacy placeholder."""
 
     game_plan_text: str = ""
     """LLM-generated game-plan paragraph for the locked champion in the
