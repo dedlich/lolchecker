@@ -178,11 +178,13 @@ class ChampAssistant:
                 logger.warning("session_parse_failed: %s", exc)
                 self._dump_failed_payload(data)
                 return self._push_view(SessionView(connection_state=self._connection_state))
-            # Fresh champ-select arrived. If we were holding loading-
-            # screen data from a prior game (dodge → straight back to
-            # queue), drop the stale profile caches now so the new
-            # cell_id slots don't show the previous game's enemies.
-            if self._loading_screen_active:
+            # Fresh champ-select arrived. Drop any stale profile caches
+            # so the new cell_id slots don't render the previous game's
+            # players. Two trigger conditions cover every entry into a
+            # new draft: dodge → re-queue (loading_screen_active still
+            # set), and normal game end → re-queue (latest_session is
+            # None because notify_game_active cleared it).
+            if self._latest_session is None or self._loading_screen_active:
                 self._enemy_profiles_by_cell.clear()
                 self._ally_profiles_by_cell.clear()
                 if self._profile_service is not None:
