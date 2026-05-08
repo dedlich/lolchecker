@@ -167,6 +167,11 @@ class MainOverlay(QMainWindow):
         # plumbing keeps working without rewiring boot.py.
         self._live_companion.pick_hover_requested.connect(self.pick_hover_requested.emit)
         self._live_companion.ban_hover_requested.connect(self.ban_hover_requested.emit)
+        # Clicking an enemy portrait cycles their role override. The
+        # boot.py wire ``overlay.enemy_role_clicked → assistant.cycle_enemy_role_override``
+        # has lived through the LiveCompanion redesign with no emitter —
+        # re-attaching the source here in v1.10.105 closes that gap.
+        self._live_companion.enemy_role_clicked.connect(self.enemy_role_clicked.emit)
 
         # The legacy "Your Build" visual panel is fully duplicated by
         # LiveCompanion's center column (build header, runes row, items

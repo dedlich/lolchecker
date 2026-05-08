@@ -315,6 +315,27 @@ def _compute_enemy_damage_profile(
     return out
 
 
+def _compute_enemy_counter_tips(
+    session: ChampSelectSession, deps: ViewBuilderDeps,
+) -> dict[int, str]:
+    """Per-enemy one-line counter-play tip keyed by cell_id. Drives
+    the LiveCompanion enemy-portrait tooltip. Empty string for any
+    enemy whose tags don't match a curated tip rule."""
+    from .advisor.counter_tips import counter_tip_for_tags
+    out: dict[int, str] = {}
+    for enemy in session.their_team:
+        if enemy.champion_id == 0:
+            continue
+        champ = deps.champions.get(enemy.champion_id)
+        if champ is None:
+            continue
+        tags = deps.tags.tags_for(champ.key) or champ.tags
+        tip = counter_tip_for_tags(tags)
+        if tip:
+            out[enemy.cell_id] = tip
+    return out
+
+
 def _compute_ally_damage_profile(
     session: ChampSelectSession, deps: ViewBuilderDeps,
 ) -> dict[int, str]:
@@ -522,6 +543,7 @@ def build_session_view(
     enemy_roles = _compute_enemy_roles(session, deps)
     enemy_damage_profile = _compute_enemy_damage_profile(session, deps)
     ally_damage_profile = _compute_ally_damage_profile(session, deps)
+    enemy_counter_tips = _compute_enemy_counter_tips(session, deps)
     ally_phase_distribution = _team_phase_distribution(session.my_team, deps)
     enemy_phase_distribution = _team_phase_distribution(session.their_team, deps)
     suggestions = _compute_picks(session, deps)
@@ -613,6 +635,7 @@ def build_session_view(
         enemy_roles=enemy_roles,
         enemy_role_overridden=set(deps.enemy_role_overrides.keys()),
         enemy_damage_profile=enemy_damage_profile,
+        enemy_counter_tips=enemy_counter_tips,
         ally_damage_profile=ally_damage_profile,
         ally_phase_distribution=ally_phase_distribution,
         enemy_phase_distribution=enemy_phase_distribution,

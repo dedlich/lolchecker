@@ -50,6 +50,13 @@ class SessionView(BaseModel):
     Surfaced by EnemyRow as a small badge so the player sees the team's
     damage mix at a glance and can prioritize MR vs Armor accordingly."""
 
+    enemy_counter_tips: dict[int, str] = Field(default_factory=dict)
+    """Map enemy cell_id → one-line counter-play tip ("High burst —
+    keep distance, ward flanks..."). Drives the LiveCompanion enemy-
+    portrait tooltip. Empty string when no tags resolve to a curated
+    tip — UI falls back to no tooltip rather than a generic placeholder.
+    Added in v1.10.105."""
+
     ally_damage_profile: dict[int, str] = Field(default_factory=dict)
     """Per-ally counterpart of ``enemy_damage_profile`` — drives the
     LiveCompanion ally-side "Damage Type" bar. Added in v1.10.85 to

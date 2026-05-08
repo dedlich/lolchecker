@@ -39,7 +39,7 @@ from collections.abc import Callable, Sequence
 from typing import TYPE_CHECKING
 
 from PyQt6.QtCore import Qt, QSize, pyqtSignal
-from PyQt6.QtGui import QPixmap
+from PyQt6.QtGui import QMouseEvent, QPixmap
 from PyQt6.QtWidgets import (
     QFrame,
     QHBoxLayout,
@@ -69,8 +69,37 @@ _PORTRAIT_PX = 36
 _PORTRAIT_SLOT_PX = 40  # icon + 2px halo + 2px gap
 
 
+class _PortraitSlot(QLabel):
+    """One portrait in a ``_TeamStrip``. Carries a slot index so the
+    parent strip can re-emit clicks with the right cell. Click handler
+    is opt-in — ally strip leaves it disconnected."""
+
+    clicked = pyqtSignal(int)
+
+    def __init__(self, slot_index: int) -> None:
+        super().__init__()
+        self._slot_index = slot_index
+
+    def mousePressEvent(self, event: QMouseEvent | None) -> None:
+        if event is not None and event.button() == Qt.MouseButton.LeftButton:
+            self.clicked.emit(self._slot_index)
+        super().mousePressEvent(event)
+
+
 class _TeamStrip(QWidget):
-    """Five champion portraits in a row, used twice (allies + enemies)."""
+    """Five champion portraits in a row, used twice (allies + enemies).
+
+    The enemy strip emits ``slot_clicked(cell_id)`` so the user can
+    cycle a manual role override (Auto → TOP → JUNGLE → MID → BOT →
+    SUPPORT → Auto). Tooltips render per-portrait counter-play tips
+    when the parent populates ``tooltips``. Ally strip leaves both
+    untouched — no click handler, empty tooltips.
+    """
+
+    slot_clicked = pyqtSignal(int)
+    """Emits the cell_id of the clicked portrait. Connected from
+    ``LiveCompanionView`` → ``MainOverlay.enemy_role_clicked`` only on
+    the enemy strip."""
 
     def __init__(self, label: str, *, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -90,9 +119,13 @@ class _TeamStrip(QWidget):
         portraits_row.setSpacing(2)
         portraits_row.setContentsMargins(0, 0, 0, 0)
 
-        self._slots: list[QLabel] = []
-        for _ in range(5):
-            slot = QLabel()
+        self._slots: list[_PortraitSlot] = []
+        # Maps slot index → cell_id for the most recent set_team call;
+        # populated then before the click signal fires so the lookup
+        # always sees fresh data.
+        self._cell_ids: list[int] = [-1] * 5
+        for i in range(5):
+            slot = _PortraitSlot(slot_index=i)
             slot.setFixedSize(QSize(_PORTRAIT_PX, _PORTRAIT_PX))
             slot.setAlignment(Qt.AlignmentFlag.AlignCenter)
             slot.setStyleSheet(
@@ -102,14 +135,40 @@ class _TeamStrip(QWidget):
                 f" color: {styles.TEXT_MUTED};"
                 f" font-size: {styles.FS_CAPTION}px;"
             )
+            slot.clicked.connect(self._on_slot_clicked)
             portraits_row.addWidget(slot)
             self._slots.append(slot)
 
         layout.addLayout(portraits_row)
 
-    def set_team(self, keys: list[str], icon_lookup: IconLookup) -> None:
+    def enable_clicks(self) -> None:
+        """Mark each slot as clickable so the cursor + hover state
+        signal interactivity. Called once on the enemy strip."""
+        for slot in self._slots:
+            slot.setCursor(Qt.CursorShape.PointingHandCursor)
+
+    def set_team(
+        self,
+        keys: list[str],
+        icon_lookup: IconLookup,
+        *,
+        cell_ids: list[int] | None = None,
+        tooltips: list[str] | None = None,
+    ) -> None:
         """Render up to 5 portraits. ``keys`` is the ordered champion-key list;
-        ``icon_lookup(key) -> QPixmap | None`` resolves the icon."""
+        ``icon_lookup(key) -> QPixmap | None`` resolves the icon.
+
+        ``cell_ids`` (optional) maps each slot index to the matching
+        ``TeamMember.cell_id`` so click events emit the right id. When
+        omitted, click events emit ``-1`` (effectively a noop on the
+        receiver). ``tooltips`` is the parallel per-slot tip text;
+        empty / missing entries clear the tooltip on that slot."""
+        ids = list(cell_ids) if cell_ids is not None else [-1] * 5
+        tips = list(tooltips) if tooltips is not None else [""] * 5
+        # Pad to 5 so index access is always safe.
+        ids = (ids + [-1] * 5)[:5]
+        tips = (tips + [""] * 5)[:5]
+        self._cell_ids = ids
         for i, slot in enumerate(self._slots):
             if i < len(keys) and keys[i]:
                 pix = icon_lookup(keys[i])
@@ -120,13 +179,19 @@ class _TeamStrip(QWidget):
                         Qt.TransformationMode.SmoothTransformation,
                     ))
                     slot.setText("")
-                    continue
-                # Fallback to first letter when icon hasn't loaded yet.
-                slot.setPixmap(QPixmap())
-                slot.setText(keys[i][:1].upper())
+                else:
+                    # Fallback to first letter when icon hasn't loaded yet.
+                    slot.setPixmap(QPixmap())
+                    slot.setText(keys[i][:1].upper())
             else:
                 slot.setPixmap(QPixmap())
                 slot.setText("")
+            slot.setToolTip(tips[i])
+
+    def _on_slot_clicked(self, slot_index: int) -> None:
+        cell_id = self._cell_ids[slot_index] if 0 <= slot_index < len(self._cell_ids) else -1
+        if cell_id >= 0:
+            self.slot_clicked.emit(cell_id)
 
 
 class _DamageTypeBar(QWidget):
@@ -252,6 +317,13 @@ class _SummaryRow(QWidget):
     """The full row under the title: ally team | spikes | damage | vs |
     damage | spikes | enemy team."""
 
+    enemy_role_clicked = pyqtSignal(int)
+    """Emits the cell_id of the clicked enemy portrait. Bubbled by
+    LiveCompanionView up to MainOverlay so the orchestrator's
+    ``cycle_enemy_role_override`` handler picks it up. Added in
+    v1.10.105 — clickable enemy portraits restore a feature retired
+    when EnemyRow widgets were dropped in the LiveCompanion redesign."""
+
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         outer = QHBoxLayout(self)
@@ -263,6 +335,10 @@ class _SummaryRow(QWidget):
 
         self._ally_strip = _TeamStrip("Your Team")
         self._enemy_strip = _TeamStrip("Enemy Team")
+        # Enemy portraits are clickable: cycles through the role
+        # override states. Tooltip surfaces the per-enemy counter tip.
+        self._enemy_strip.enable_clicks()
+        self._enemy_strip.slot_clicked.connect(self.enemy_role_clicked.emit)
         self._ally_spikes = _PowerSpikesBar()
         self._enemy_spikes = _PowerSpikesBar()
         self._ally_damage = _DamageTypeBar()
@@ -307,7 +383,18 @@ class _SummaryRow(QWidget):
         ally_keys = self._team_keys(session.my_team, view)
         enemy_keys = self._team_keys(session.their_team, view)
         self._ally_strip.set_team(ally_keys, icon_lookup)
-        self._enemy_strip.set_team(enemy_keys, icon_lookup)
+        # Enemy strip carries cell_ids (so clicks emit the right one)
+        # and per-slot counter-tip tooltips.
+        enemy_cell_ids = [m.cell_id for m in session.their_team[:5]]
+        enemy_tooltips = [
+            view.enemy_counter_tips.get(m.cell_id, "")
+            for m in session.their_team[:5]
+        ]
+        self._enemy_strip.set_team(
+            enemy_keys, icon_lookup,
+            cell_ids=enemy_cell_ids,
+            tooltips=enemy_tooltips,
+        )
 
         # Damage-type split — count members per profile, render as percentage.
         ap_a, ad_a = self._damage_split(session.my_team, view, ally_side=True)
@@ -921,6 +1008,10 @@ class LiveCompanionView(QWidget):
 
     pick_hover_requested = pyqtSignal(str)
     ban_hover_requested = pyqtSignal(str)
+    enemy_role_clicked = pyqtSignal(int)
+    """Bubbled from ``_SummaryRow.enemy_role_clicked`` when the user
+    clicks an enemy portrait. MainOverlay re-emits up to the orchestrator
+    via its own ``enemy_role_clicked`` signal."""
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -935,6 +1026,7 @@ class LiveCompanionView(QWidget):
 
         outer.addWidget(self._build_header())
         self._summary_row = _SummaryRow()
+        self._summary_row.enemy_role_clicked.connect(self.enemy_role_clicked.emit)
         outer.addWidget(self._summary_row)
 
         # Body — three-column layout matching the screenshot: build card +
