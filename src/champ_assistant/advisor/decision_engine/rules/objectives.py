@@ -96,8 +96,7 @@ def rule_drake_give_up(snapshot: "LcdaSnapshot") -> Recommendation | None:
     if gold > -GOLD_DEFICIT_THRESHOLD:
         return None
     return Recommendation(
-        text=f"Drache ({int(remaining)}s) abgeben — Side-Wellen pushen, "
-             f"Gold-Diff aufholen",
+        text=f"Drache ({int(remaining)}s) abgeben — Side-Wellen pushen",
         severity="warn",
         category="objective",
         confidence=0.80,
@@ -122,8 +121,7 @@ def rule_baron_priority(snapshot: "LcdaSnapshot") -> Recommendation | None:
     if gold < -GOLD_LEAD_THRESHOLD:
         return None
     return Recommendation(
-        text=f"Baron in {int(remaining)}s — Vision-Pinks setzen, "
-             f"Side-Wellen prep, Ults checken",
+        text=f"Baron in {int(remaining)}s — Pinks setzen, Ults checken",
         severity="alert",
         category="objective",
         confidence=0.88,
@@ -133,6 +131,7 @@ def rule_baron_priority(snapshot: "LcdaSnapshot") -> Recommendation | None:
             f"Baron spawnt in {int(remaining)}s",
             f"Team-Gold-Diff: {gold:+d}",
             "Baron-Buff = Game-Winner — Setup-Phase kritisch",
+            "Side-Wellen prep, Vision sweep",
         ),
     )
 

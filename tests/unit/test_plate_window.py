@@ -92,9 +92,13 @@ def test_fires_mid_window() -> None:
 
 
 def test_message_mentions_plate_value() -> None:
+    """v1.10.131 trim: plate-value detail moved from headline (which
+    overran the 60-char in-game cap at ~95 chars) into the reasons
+    chain so the InsightPanel still surfaces it on expand. Headline
+    is the directive only; reasons carry the WHY."""
     rec = rule_plate_window(_Snap(game_time=PLATE_WINDOW_OPEN_S + 10))
     assert rec is not None
-    assert "160g" in rec.text
+    assert "160g" in " ".join(rec.reasons)
 
 
 # ---------------------------------------------------------------------------

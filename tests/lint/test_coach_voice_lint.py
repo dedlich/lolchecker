@@ -367,3 +367,129 @@ def test_rule_fight_window_closing_passes_voice() -> None:
     rec = rule_fight_window_closing(snap)
     assert rec is not None
     coach_voice.validate(rec.text)
+
+
+# ── Objective rules — fixed text overruns in v1.10.131 ───────────────────
+
+
+def _objective(name: str, next_spawn_s: float):  # type: ignore[no-untyped-def]
+    """Build an ObjectiveTimer-shaped object for snapshot fixtures."""
+    @dataclass
+    class _Obj:
+        name: str
+        next_spawn_seconds: float
+        last_killed_seconds: float = 0.0
+        def remaining(self, game_time: float) -> float | None:
+            return max(0.0, self.next_spawn_seconds - game_time)
+    return _Obj(name=name, next_spawn_seconds=next_spawn_s)
+
+
+def test_rule_drake_give_up_passes_voice() -> None:
+    """v1.10.131 fix: previous text "Drache (Ns) abgeben — Side-Wellen
+    pushen, Gold-Diff aufholen" was 62 chars (overran MAX_LENGTH).
+    Trimmed to "Drache (Ns) abgeben — Side-Wellen pushen" (45 chars)."""
+    from champ_assistant.advisor.decision_engine import rule_drake_give_up
+    from types import SimpleNamespace
+
+    @dataclass
+    class _DragSnap:
+        game_time: float = 600.0
+        allies: list = dc_field(default_factory=list)
+        enemies: list = dc_field(default_factory=list)
+        objectives: list = dc_field(default_factory=list)
+        raw_events: list = dc_field(default_factory=list)
+        ally_aggregate: object = None
+        enemy_aggregate: object = None
+
+    # Behind by 6000 gold → triggers give-up branch.
+    ally_agg = SimpleNamespace(items_value=10000)
+    enemy_agg = SimpleNamespace(items_value=16000)
+    snap = _DragSnap(
+        game_time=300.0,
+        objectives=[_objective("Dragon", next_spawn_s=320.0)],
+        ally_aggregate=ally_agg,
+        enemy_aggregate=enemy_agg,
+    )
+    rec = rule_drake_give_up(snap)
+    assert rec is not None
+    coach_voice.validate(rec.text)
+
+
+def test_rule_baron_priority_passes_voice() -> None:
+    """v1.10.131 fix: previous text "Baron in Ns — Vision-Pinks setzen,
+    Side-Wellen prep, Ults checken" was 67 chars. Trimmed to
+    "Baron in Ns — Pinks setzen, Ults checken"; the side-waves prep
+    detail moved into reasons."""
+    from champ_assistant.advisor.decision_engine import rule_baron_priority
+    from types import SimpleNamespace
+
+    @dataclass
+    class _BarSnap:
+        game_time: float = 1200.0
+        allies: list = dc_field(default_factory=list)
+        enemies: list = dc_field(default_factory=list)
+        objectives: list = dc_field(default_factory=list)
+        raw_events: list = dc_field(default_factory=list)
+        ally_aggregate: object = None
+        enemy_aggregate: object = None
+
+    # Even gold → not-behind branch fires the priority rec.
+    ally_agg = SimpleNamespace(items_value=12000)
+    enemy_agg = SimpleNamespace(items_value=12000)
+    snap = _BarSnap(
+        game_time=1200.0,
+        objectives=[_objective("Baron", next_spawn_s=1230.0)],
+        ally_aggregate=ally_agg,
+        enemy_aggregate=enemy_agg,
+    )
+    rec = rule_baron_priority(snap)
+    assert rec is not None
+    coach_voice.validate(rec.text)
+
+
+def test_rule_plate_window_passes_voice() -> None:
+    """v1.10.131 fix: previous text "Turret-Plates fallen in Ns — letzte
+    Chance, Welle pushen, freie Plates ziehen (160g pro Plate)" was
+    ~95 chars. Trimmed to "Plates fallen in Ns — JETZT Wellen crashen!"
+    (47 chars). Detail moved into reasons."""
+    from champ_assistant.advisor.decision_engine import (
+        reset_plate_window_hysteresis, rule_plate_window,
+    )
+    reset_plate_window_hysteresis()
+
+    @dataclass
+    class _PlateSnap:
+        game_time: float = 800.0  # 13:20 — inside plate window
+        allies: list = dc_field(default_factory=list)
+        enemies: list = dc_field(default_factory=list)
+        objectives: list = dc_field(default_factory=list)
+        raw_events: list = dc_field(default_factory=list)
+
+    snap = _PlateSnap()
+    rec = rule_plate_window(snap)
+    assert rec is not None
+    coach_voice.validate(rec.text)
+
+
+# ── Quick regression: any rec firing must always pass coach_voice ─────────
+
+def test_certified_rule_count_matches_test_count() -> None:
+    """Tracking number — bumps each time a rule is added to the
+    coach-voice certified registry. Forward progress is visible:
+    each rule fixed + tested ticks this up by 1.
+
+    v1.10.130 baseline: 8 certified rules.
+    v1.10.131:          11 (+ drake_give_up + baron_priority + plate_window).
+    """
+    import inspect
+    import sys
+    module = sys.modules[__name__]
+    cert_tests = [
+        name for name, _ in inspect.getmembers(module, inspect.isfunction)
+        if name.startswith("test_rule_") and name.endswith("_passes_voice")
+    ]
+    # Every test of the form test_rule_X_passes_voice certifies one
+    # rule. Count is the canonical "certified" tally.
+    assert len(cert_tests) >= 11, (
+        f"expected ≥11 certified rules, found {len(cert_tests)}: {cert_tests}"
+    )

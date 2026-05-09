@@ -430,10 +430,7 @@ def rule_plate_window(snapshot: "LcdaSnapshot") -> Recommendation | None:
 
     remaining = int(PLATE_WINDOW_CLOSE_S - game_time)
     return Recommendation(
-        text=(
-            f"Turret-Plates fallen in {remaining}s — letzte Chance, "
-            "Welle pushen, freie Plates ziehen (160g pro Plate)"
-        ),
+        text=f"Plates fallen in {remaining}s — JETZT Wellen crashen!",
         severity="info",
         category="objective",
         confidence=0.85,
