@@ -534,6 +534,29 @@ class ChampAssistant:
             )
             return
 
+        # One-shot dump of the full gameflow response so we can see every
+        # field LCU exposes. Riot rejected the puuids we passed with
+        # "Exception decrypting" — but their API likely accepts gameName
+        # / tagLine via account-v1 if the LCU surfaces them. Dump once
+        # per app run to avoid filling the log dir with duplicates.
+        if not getattr(self, "_gameflow_payload_dumped", False):
+            try:
+                import json as _json
+                from datetime import datetime as _dt
+                from . import app_paths as _app_paths
+                log_dir = _app_paths.log_dir()
+                log_dir.mkdir(parents=True, exist_ok=True)
+                stamp = _dt.now().strftime("%Y%m%d_%H%M%S")
+                dump_path = log_dir / f"gameflow_dump_{stamp}.json"
+                dump_path.write_text(
+                    _json.dumps(data, indent=2, default=str),
+                    encoding="utf-8",
+                )
+                self._gameflow_payload_dumped = True
+                logger.info("gameflow_payload_dumped path=%s", dump_path)
+            except OSError as exc:
+                logger.info("gameflow_payload_dump_failed: %s", exc)
+
         game_data = data.get("gameData") or {}
         members_by_champ_id: dict[int, dict[str, object]] = {}
         for team_key in ("teamOne", "teamTwo"):
