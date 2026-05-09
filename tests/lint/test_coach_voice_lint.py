@@ -199,3 +199,171 @@ def test_rule_build_swap_short_item_name_keeps_consequence() -> None:
     assert rec is not None
     assert "QSS" in rec.text
     assert "JETZT" in rec.text
+
+
+# ── Certified-rules registry ─────────────────────────────────────────────
+#
+# Every rule in this list is pinned to coach_voice.validate() — the
+# parametrized test below fires the rule with a representative snapshot
+# and asserts the output text passes the voice contract. Adding a rule
+# here is the deliberate "this rule is coach-voice certified" step;
+# breaking the voice contract on a certified rule fails CI.
+#
+# Two registered already via the more focused tests above
+# (rule_situational_build, rule_build_swap). Below registry covers
+# the rules that build text dynamically from snapshot data —
+# certifying them required first trimming any text that overran the
+# 60-char limit (recall_check paths 3 + 4 in v1.10.130).
+
+
+def _make_combat_state(
+    *, hp_pct: float = 0.7, mana_pct: float = 0.8,
+    gold: float = 500.0, is_mana_user: bool = True,
+) -> object:
+    """Minimal active-combat state for personal-rule fixtures."""
+    @dataclass
+    class _State:
+        hp_pct: float = 0.7
+        mana_pct: float = 0.8
+        gold: float = 500.0
+        is_mana_user: bool = True
+    return _State(hp_pct=hp_pct, mana_pct=mana_pct, gold=gold, is_mana_user=is_mana_user)
+
+
+@dataclass
+class _Player:
+    """Snapshot player fixture. ``respawn_timer`` defaults to 0.0 (not
+    None) so ``_alive_count`` treats the snapshot as carrying live
+    respawn data — without that the helper falls back to
+    ``len(players)`` and the alive-count differential rules can't
+    fire from the fixture."""
+    is_alive: bool = True
+    respawn_timer: float = 0.0
+    champion_name: str = ""
+
+
+def _dead_player(*, respawn_timer: float = 15.0, champion_name: str = "") -> _Player:
+    return _Player(is_alive=False, respawn_timer=respawn_timer, champion_name=champion_name)
+
+
+@dataclass
+class _SnapWithPlayers:
+    """Snapshot fixture that drives combat + recall + power-spike rules."""
+    game_time: float = 600.0
+    allies: list = dc_field(default_factory=list)
+    enemies: list = dc_field(default_factory=list)
+    objectives: list = dc_field(default_factory=list)
+    raw_events: list = dc_field(default_factory=list)
+    new_spikes: list = dc_field(default_factory=list)
+    enemy_spikes: list = dc_field(default_factory=list)
+    active_combat: object = None
+    active_summoner: str = ""
+    ally_aggregate: object = None
+    enemy_aggregate: object = None
+
+
+def test_rule_recall_check_critical_hp_passes_voice() -> None:
+    """Path 1 — HP < 30 % → "RECALL JETZT, ein Trade tötet dich"-style."""
+    from champ_assistant.advisor.decision_engine import (
+        reset_recall_hysteresis, rule_recall_check,
+    )
+    reset_recall_hysteresis()
+    state = _make_combat_state(hp_pct=0.7)  # arm hysteresis above HP_RECALL_REARM
+    rule_recall_check(_SnapWithPlayers(active_combat=state))  # arm pass
+    state2 = _make_combat_state(hp_pct=0.20, gold=300.0)
+    rec = rule_recall_check(_SnapWithPlayers(active_combat=state2))
+    assert rec is not None
+    coach_voice.validate(rec.text)
+
+
+def test_rule_recall_check_resource_path_passes_voice() -> None:
+    """Path 2 — HP/mana low + back-worth gold."""
+    from champ_assistant.advisor.decision_engine import (
+        reset_recall_hysteresis, rule_recall_check,
+    )
+    reset_recall_hysteresis()
+    state_arm = _make_combat_state(hp_pct=0.7, mana_pct=0.8, gold=400.0)
+    rule_recall_check(_SnapWithPlayers(active_combat=state_arm))
+    state_fire = _make_combat_state(hp_pct=0.45, mana_pct=0.20, gold=1100.0)
+    rec = rule_recall_check(_SnapWithPlayers(active_combat=state_fire))
+    assert rec is not None
+    coach_voice.validate(rec.text)
+
+
+def test_rule_recall_check_gold_path_passes_voice() -> None:
+    """Path 3 — gold ≥ Component-Spike threshold + safe HP. Fixed
+    in v1.10.130: was 62 chars (overran MAX_LENGTH)."""
+    from champ_assistant.advisor.decision_engine import (
+        reset_recall_hysteresis, rule_recall_check,
+    )
+    reset_recall_hysteresis()
+    state_arm = _make_combat_state(hp_pct=0.9, gold=500.0)
+    rule_recall_check(_SnapWithPlayers(active_combat=state_arm))
+    state_fire = _make_combat_state(hp_pct=0.9, gold=1300.0)
+    rec = rule_recall_check(_SnapWithPlayers(active_combat=state_fire))
+    assert rec is not None
+    coach_voice.validate(rec.text)
+
+
+def test_rule_recall_check_mana_path_passes_voice() -> None:
+    """Path 4 — mana < depleted threshold. Fixed in v1.10.130: was 63
+    chars (overran MAX_LENGTH)."""
+    from champ_assistant.advisor.decision_engine import (
+        reset_recall_hysteresis, rule_recall_check,
+    )
+    reset_recall_hysteresis()
+    state_arm = _make_combat_state(hp_pct=0.95, mana_pct=0.8)
+    rule_recall_check(_SnapWithPlayers(active_combat=state_arm))
+    state_fire = _make_combat_state(hp_pct=0.95, mana_pct=0.10)
+    rec = rule_recall_check(_SnapWithPlayers(active_combat=state_fire))
+    assert rec is not None
+    coach_voice.validate(rec.text)
+
+
+def test_rule_numbers_disadvantage_passes_voice() -> None:
+    """4v5 — KEINE Fights bis Respawn."""
+    from champ_assistant.advisor.decision_engine import rule_numbers_disadvantage
+    snap = _SnapWithPlayers(
+        allies=[_dead_player()] + [_Player()] * 4,
+        enemies=[_Player()] * 5,
+    )
+    rec = rule_numbers_disadvantage(snap)
+    assert rec is not None
+    coach_voice.validate(rec.text)
+
+
+def test_rule_numbers_advantage_passes_voice() -> None:
+    """5v3 — JETZT Pressure, Obj forcen!"""
+    from champ_assistant.advisor.decision_engine import rule_numbers_advantage
+    snap = _SnapWithPlayers(
+        allies=[_Player()] * 5,
+        enemies=[_dead_player(), _dead_player()] + [_Player()] * 3,
+    )
+    rec = rule_numbers_advantage(snap)
+    assert rec is not None
+    coach_voice.validate(rec.text)
+
+
+def test_rule_ace_detected_passes_voice() -> None:
+    """ACE! Alle 5 Feinde tot — PUSHEN zum GG!"""
+    from champ_assistant.advisor.decision_engine import rule_ace_detected
+    snap = _SnapWithPlayers(
+        allies=[_Player()] * 5,
+        enemies=[_dead_player()] * 5,
+    )
+    rec = rule_ace_detected(snap)
+    assert rec is not None
+    coach_voice.validate(rec.text)
+
+
+def test_rule_fight_window_closing_passes_voice() -> None:
+    """Jetzt pushen — Yasuo zurück in 5s!"""
+    from champ_assistant.advisor.decision_engine import rule_fight_window_closing
+    snap = _SnapWithPlayers(
+        allies=[_Player()] * 5,
+        enemies=[_dead_player(respawn_timer=5.0, champion_name="Yasuo")]
+                + [_Player()] * 4,
+    )
+    rec = rule_fight_window_closing(snap)
+    assert rec is not None
+    coach_voice.validate(rec.text)

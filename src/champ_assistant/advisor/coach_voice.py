@@ -193,4 +193,31 @@ def _has_imperative_marker(text: str) -> bool:
     return False
 
 
-__all__ = ["directive", "status_line", "MAX_LENGTH"]
+def validate(text: str) -> None:
+    """Assert that an already-built recommendation line passes the
+    voice contract. Used by the certified-rules registry so existing
+    good text (rules that built strings before coach_voice landed) can
+    still be pinned without rewriting through ``directive`` / ``status_line``.
+
+    Same checks the builders enforce:
+      * Non-empty, ≤ ``MAX_LENGTH`` chars.
+      * Carries an imperative marker (urgency token, leading verb,
+        or all-caps action).
+
+    Raises ``ValueError`` with a descriptive message on failure so the
+    test that calls validate gets a useful regression assertion.
+    """
+    if not text:
+        raise ValueError("coach_voice.validate: text is empty")
+    if len(text) > MAX_LENGTH:
+        raise ValueError(
+            f"coach_voice.validate: text exceeds {MAX_LENGTH} chars: {text!r}"
+        )
+    if not _has_imperative_marker(text):
+        raise ValueError(
+            "coach_voice.validate: text lacks imperative voice — "
+            f"{text!r}. Use a recognized verb / urgency marker."
+        )
+
+
+__all__ = ["directive", "status_line", "validate", "MAX_LENGTH"]

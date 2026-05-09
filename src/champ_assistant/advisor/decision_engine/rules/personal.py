@@ -173,7 +173,7 @@ def rule_recall_check(snapshot: "LcdaSnapshot") -> Recommendation | None:
     ):
         h.gold = False
         return Recommendation(
-            text=f"{int(gold)}g — Recall-Fenster, Component-Spike kaufen + sicher zurück",
+            text=f"{int(gold)}g — Recall, Component-Spike kaufen",
             severity="info",
             category="tempo",
             confidence=0.70,
@@ -193,7 +193,7 @@ def rule_recall_check(snapshot: "LcdaSnapshot") -> Recommendation | None:
     ):
         h.mana = False
         return Recommendation(
-            text=f"Mana {int(mana_pct*100)}% — Gegner-All-In-Fenster offen, Welle freezen + warten",
+            text=f"Mana {int(mana_pct*100)}% — freezen + warten, kein Trade",
             severity="info",
             category="safety",
             confidence=0.65,
