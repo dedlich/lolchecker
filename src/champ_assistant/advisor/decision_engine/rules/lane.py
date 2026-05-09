@@ -169,20 +169,49 @@ def rule_lane_level_advantage(snapshot: "LcdaSnapshot") -> Recommendation | None
 
 
 def rule_lane_pressure(snapshot: "LcdaSnapshot") -> Recommendation | None:
-    """Enemy outer or inner turrets down → push that lane for objectives.
+    """Enemy turrets down → push that lane for objectives.
 
-    Fully open lane (both outer + inner fallen) signals an inhib threat
-    and forces enemy rotations — use it to enable drake/baron vision.
-    Partial open (only outer) is an info nudge to send waves.
+    Three tiers of lane openness, in priority order:
+      P3 (inhib turret) down → Inhib BUILDING is exposed; siege NOW.
+      P1 + P2 down (lane open to inhib) → forces enemy rotations.
+      P1 only (outer down) → info nudge to send waves.
+
+    v1.10.132: previously the rule only counted P1+P2, so when the
+    enemy P3 inhib turret fell the rec STILL said "Lane offen bis
+    Inhib" — implying the inhib turret was still standing. Now the
+    P3 case has its own dedicated message.
     """
     active_team = (getattr(snapshot, "active_team", "") or "")
     if not active_team:
         return None
-    turrets_down = _enemy_turrets_down(snapshot)
-    if not turrets_down:
+    inhib_turrets_down = _enemy_turrets_down(snapshot, tiers=("P3",))
+    p1p2_down = _enemy_turrets_down(snapshot)  # default P1+P2
+    if not inhib_turrets_down and not p1p2_down:
         return None
-    fully_open = [lane for lane, n in turrets_down.items() if n >= 2]
-    partially_open = [lane for lane, n in turrets_down.items() if n == 1]
+
+    # P3 is the highest-priority surface: inhib BUILDING is exposed.
+    # Sieging it gives super-minions which is the closing tempo
+    # engine pre-baron. Override any lower-tier message.
+    inhib_open_lanes = [lane for lane, n in inhib_turrets_down.items() if n >= 1]
+    if inhib_open_lanes:
+        lanes_str = " + ".join(sorted(inhib_open_lanes))
+        return Recommendation(
+            text=f"{lanes_str}-Inhib offen — Welle pushen, Inhib forcen!",
+            severity="alert",
+            category="lane",
+            confidence=0.88,
+            risk="MEDIUM",
+            ttl_s=60.0,
+            kind="lane_open",
+            reasons=(
+                f"Enemy {lanes_str}: Inhib-Turm bereits gefallen",
+                "Inhib-Building exposed — Super-Minions = Siege-Tempo",
+                "Vision für Baron / Drake parallel setzen",
+            ),
+        )
+
+    fully_open = [lane for lane, n in p1p2_down.items() if n >= 2]
+    partially_open = [lane for lane, n in p1p2_down.items() if n == 1]
     if fully_open:
         lanes_str = " + ".join(sorted(fully_open))
         return Recommendation(
@@ -195,7 +224,7 @@ def rule_lane_pressure(snapshot: "LcdaSnapshot") -> Recommendation | None:
             kind="lane_open",
             reasons=(
                 f"Enemy {lanes_str}: Outer + Inner Tower fallen",
-                "Inhib angreifbar — zwingt Rotationen",
+                "Inhib-Turm angreifbar — zwingt Rotationen",
                 "Super-Minions nach Inhib = passiver Pressure",
             ),
         )
@@ -494,10 +523,15 @@ def rule_lane_opponent_mia(snapshot: "LcdaSnapshot") -> Recommendation | None:
 
     if severity == "warn":
         text = f"{name} {mia}s weg — gankt anderswo. {advice}"
-        risk, ttl_s, confidence = "MEDIUM", 25.0, 0.78
+        risk, ttl_s, confidence = "MEDIUM", 15.0, 0.78
     else:
+        # v1.10.132: shorter TTL on the info tier (was 18s). The user
+        # report "I see the champ already and the message still pops
+        # up or stays" was driven partly by stale info-tier alerts
+        # lingering after the enemy had reappeared. 8s lets the rec
+        # fade quickly once the underlying alert is gone.
         text = f"{name} weg ({mia}s) — {advice}"
-        risk, ttl_s, confidence = "LOW", 18.0, 0.70
+        risk, ttl_s, confidence = "LOW", 8.0, 0.70
 
     return Recommendation(
         text=text,

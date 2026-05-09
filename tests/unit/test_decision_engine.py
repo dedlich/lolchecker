@@ -830,6 +830,42 @@ def test_lane_pressure_silent_without_active_team() -> None:
     assert rule_lane_pressure(snap) is None
 
 
+def test_lane_pressure_p3_inhib_turret_down_overrides_lower_tiers() -> None:
+    """v1.10.132 fix: when P3 (inhib turret) falls, the rec must say
+    "Inhib offen" — not "Lane offen bis Inhib", which previously
+    fired because the rule only counted P1+P2 and P3 was invisible
+    to it. User report: "turret down says be first turret, inhib
+    turret down."""
+    snap = _Snap(
+        active_team="ORDER",
+        raw_events=[
+            _turret_killed_event("Turret_TChaos_L0_P1_Base"),
+            _turret_killed_event("Turret_TChaos_L0_P2_Base"),
+            _turret_killed_event("Turret_TChaos_L0_P3_Base"),
+        ],
+    )
+    rec = rule_lane_pressure(snap)
+    assert rec is not None
+    assert "Inhib offen" in rec.text, (
+        f"P3-down case must surface inhib-exposed message, got: {rec.text!r}"
+    )
+    assert rec.severity == "alert"
+
+
+def test_lane_pressure_p3_only_no_p1p2_still_fires_inhib_message() -> None:
+    """Defensive: even if only P3 has been logged (rare but possible
+    when LCDA event truncation drops earlier kills), the inhib-turret
+    message must still fire — never fall through to "outer down"."""
+    snap = _Snap(
+        active_team="ORDER",
+        raw_events=[_turret_killed_event("Turret_TChaos_L1_P3_Base")],
+    )
+    rec = rule_lane_pressure(snap)
+    assert rec is not None
+    assert "Inhib offen" in rec.text
+    assert rec.severity == "alert"
+
+
 # ----------------------------------------------------------------------
 # rule_ace_detected
 # ----------------------------------------------------------------------

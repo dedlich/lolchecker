@@ -40,6 +40,7 @@ def _run(
     prev_last_cs_at: dict | None = None,
     prev_cs: dict | None = None,
     prev_alive: dict | None = None,
+    raw_events: list | None = None,
 ):
     return detect_lane_opponent_mia(
         active_position=active_position,
@@ -48,6 +49,7 @@ def _run(
         prev_last_cs_at=prev_last_cs_at or {},
         prev_cs=prev_cs or {},
         prev_alive=prev_alive or {},
+        raw_events=raw_events,
     )
 
 
@@ -368,3 +370,83 @@ def test_lane_mia_survives_normal_tilt_warn() -> None:
     recs = [_rec("tilt", "warn"), _rec("lane_mia", "info")]
     result = _suppress_dominated(recs)
     assert any(r.kind == "lane_mia" for r in result)
+
+
+# ---------------------------------------------------------------------------
+# Combat-event reset (v1.10.132 — closes "I see the champ but the
+# message still pops up" report)
+# ---------------------------------------------------------------------------
+
+def test_combat_event_resets_mia_clock() -> None:
+    """If the lane opponent appears in a recent combat event (kill /
+    multikill), they were visible to someone — reset the MIA clock so
+    the rec doesn't fire."""
+    enemy = _Enemy(champion_name="Yasuo", creep_score=50)
+    # First tick within the laning window: anchor the clock at t=200
+    # (must be ≥ LANE_PHASE_START_S=90 so the phase guard doesn't
+    # short-circuit before any state is recorded).
+    alert, last_seen, cs, alive = _run(
+        enemies=[enemy], game_time=200.0,
+    )
+    assert alert is None
+    # 35 s later, no CS gained — but Yasuo just got a kill mid-game.
+    # A normal MIA detection would fire (info threshold = 30 s).
+    # Combat-event reset should clear the clock.
+    enemy_no_cs = _Enemy(champion_name="Yasuo", creep_score=50)
+    alert, *_ = _run(
+        enemies=[enemy_no_cs],
+        game_time=240.0,
+        prev_last_cs_at=last_seen,
+        prev_cs=cs,
+        prev_alive=alive,
+        raw_events=[
+            {"EventName": "ChampionKill",
+             "KillerName": "Yasuo", "VictimName": "OtherPlayer",
+             "EventTime": 235.0},
+        ],
+    )
+    assert alert is None, (
+        "lane opponent appeared in a combat event — MIA clock should "
+        "be reset, no rec should fire"
+    )
+
+
+def test_combat_event_as_victim_also_resets_clock() -> None:
+    """Symmetry — being killed counts as visible too."""
+    enemy = _Enemy(champion_name="Yasuo", creep_score=50)
+    _, last_seen, cs, alive = _run(enemies=[enemy], game_time=200.0)
+    alert, *_ = _run(
+        enemies=[enemy],
+        game_time=240.0,
+        prev_last_cs_at=last_seen,
+        prev_cs=cs,
+        prev_alive=alive,
+        raw_events=[
+            {"EventName": "ChampionKill",
+             "KillerName": "OtherPlayer", "VictimName": "Yasuo",
+             "EventTime": 235.0},
+        ],
+    )
+    assert alert is None
+
+
+def test_unrelated_combat_event_does_not_reset_clock() -> None:
+    """A kill involving someone OTHER than the lane opponent must NOT
+    reset their clock — we still want the MIA rec to fire."""
+    enemy = _Enemy(champion_name="Yasuo", creep_score=50)
+    _, last_seen, cs, alive = _run(enemies=[enemy], game_time=200.0)
+    alert, *_ = _run(
+        enemies=[enemy],
+        game_time=240.0,
+        prev_last_cs_at=last_seen,
+        prev_cs=cs,
+        prev_alive=alive,
+        raw_events=[
+            {"EventName": "ChampionKill",
+             "KillerName": "Garen", "VictimName": "Caitlyn",
+             "EventTime": 235.0},
+        ],
+    )
+    # Yasuo wasn't in the kill — info-tier MIA fires (240 s ≥ 30 s).
+    assert alert is not None
+    assert alert.opponent_name == "Yasuo"

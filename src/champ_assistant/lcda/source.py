@@ -211,6 +211,9 @@ class LcdaSource:
 
         # Lane-opponent MIA — uses LivePlayer enemy_players (already
         # parsed) so creep_score is accessible without re-parsing.
+        # Pass raw events so the detector can reset the MIA clock on
+        # combat-event participation (v1.10.132 — closes the "I see
+        # the champ but the message still pops up" report).
         lane_alert, new_lane_seen, new_lane_cs, new_lane_alive = (
             detect_lane_opponent_mia(
                 active_position=active_position,
@@ -219,6 +222,7 @@ class LcdaSource:
                 prev_last_cs_at=self._enemy_lane_seen,
                 prev_cs=self._enemy_lane_cs,
                 prev_alive=self._enemy_lane_alive,
+                raw_events=events,
             )
         )
         self._enemy_lane_seen = new_lane_seen

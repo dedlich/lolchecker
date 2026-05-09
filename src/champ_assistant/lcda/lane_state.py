@@ -90,15 +90,23 @@ def detect_lane_opponent_mia(
     prev_last_cs_at: dict[str, float],
     prev_cs: dict[str, int],
     prev_alive: dict[str, bool],
+    raw_events: list[dict] | None = None,
 ) -> tuple[LaneOpponentMia | None, dict[str, float], dict[str, int], dict[str, bool]]:
     """One-tick lane-MIA check. Returns ``(alert, …new state…)``.
 
     State carried across snapshots:
-    * ``last_cs_at`` — game-time when each enemy's CS last went up.
-      Drives the MIA computation. Reset on dead→alive transition so
-      a fresh respawn doesn't start the clock from pre-death.
+    * ``last_cs_at`` — game-time when each enemy's CS last went up
+      OR when they last appeared in a combat event (any side). Drives
+      the MIA computation. Reset on dead→alive transition so a fresh
+      respawn doesn't start the clock from pre-death.
     * ``cs`` — last seen CS, used to detect deltas.
     * ``alive`` — was-alive last tick, used to detect respawn.
+
+    ``raw_events`` (optional) is the snapshot's recent combat-event list.
+    Any enemy who appears as KillerName or VictimName resets their
+    last_cs_at — the user clearly *saw* them on the map, so a rec
+    saying "X is missing from lane" would be wrong. This closes the
+    "I can see the champ but the message still pops up" report.
 
     Caller passes back the returned dicts on the next call. Empty dicts
     are fine for the first call.
@@ -109,6 +117,21 @@ def detect_lane_opponent_mia(
     # Phase guard — outside the laning window the signal is noise.
     if not (LANE_PHASE_START_S <= game_time <= LANE_PHASE_END_S):
         return None, prev_last_cs_at, prev_cs, prev_alive
+
+    # Build a "saw them on the map" set from recent combat events. Any
+    # enemy who killed / was killed / dealt damage on a champion
+    # counts as visible to someone on the team (kill events broadcast
+    # globally even when the user wasn't directly looking at the kill).
+    seen_in_combat: set[str] = set()
+    if raw_events:
+        for e in raw_events:
+            evt = e.get("EventName") or ""
+            if evt not in {"ChampionKill", "Multikill"}:
+                continue
+            for field in ("KillerName", "VictimName"):
+                v = e.get(field)
+                if isinstance(v, str) and v:
+                    seen_in_combat.add(v)
 
     # Update state for every enemy this tick (not just the lane opponent —
     # cheap, and lets us track role swaps correctly without rebuilding state).
@@ -134,6 +157,13 @@ def detect_lane_opponent_mia(
             # misread as absence on a midgame join.
             new_last_cs_at[name] = game_time
         elif cs > prev:
+            new_last_cs_at[name] = game_time
+
+        # Combat-event participation also counts as "we know where
+        # they are" — even if their CS hasn't ticked in 30 s, if they
+        # were JUST in a fight we shouldn't tell the user they're
+        # missing. Closes the "I see the champ already" report.
+        if name in seen_in_combat:
             new_last_cs_at[name] = game_time
 
         new_cs[name] = cs
