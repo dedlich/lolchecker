@@ -174,6 +174,26 @@ class RiotApiClient:
         data = await self._get(self._platform, path)
         return self._summoner_from(data)
 
+    async def active_game_participants(self, puuid: str) -> list[dict[str, Any]]:
+        """Spectator-v5: list of every participant in the puuid's current
+        active match. Returns ``[]`` on 404 (no active game) or any
+        other error. Each entry carries the participant's real
+        ``puuid`` and ``championId`` — that's the bridge we need from
+        a champ-select cell_id to a Riot Web API-resolvable puuid,
+        because ``/lol-gameflow/v1/session`` only exposes synthetic
+        UUID-format puuids that the public API rejects.
+        """
+        path = f"/lol/spectator/v5/active-games/by-summoner/{puuid}"
+        try:
+            data = await self._get(self._platform, path)
+        except RiotApiError as exc:
+            logger.info("spectator_active_game_failed: %s", exc)
+            return []
+        participants = data.get("participants") if isinstance(data, dict) else None
+        if not isinstance(participants, list):
+            return []
+        return [p for p in participants if isinstance(p, dict)]
+
     @staticmethod
     def _summoner_from(data: Any) -> SummonerInfo:
         return SummonerInfo(

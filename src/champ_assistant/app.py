@@ -585,75 +585,88 @@ class ChampAssistant:
         )
         gameflow_champ_ids = sorted(members_by_champ_id.keys())
         scheduled = 0
-        # Re-open the LCU client for the per-summoner lookups. Gameflow
-        # exposes only a synthetic UUID-format ``puuid`` that Riot's
-        # public API rejects (``Bad Request - Exception decrypting``);
-        # the real puuid lives behind ``/lol-summoner/v2/summoners/{id}``
-        # which the local League client is allowed to resolve. This is
-        # the same path Blitz / OP.GG use for loading-screen rosters.
+
+        # Step 1 — get our OWN real puuid via the LCU. The local
+        # ``current-summoner`` endpoint exposes the user's real
+        # 78-character encrypted puuid (in contrast to the synthetic
+        # UUID puuids gameflow surfaces for opponents).
+        my_puuid = ""
         async with LcuClient(lockfile) as lcu:
-            for member in list(session.my_team) + list(session.their_team):
-                if member.cell_id == local_cell:
-                    skipped_local += 1
-                    continue
-                if member.champion_id == 0:
-                    skipped_no_champ += 1
-                    continue
-                gameflow_member = members_by_champ_id.get(member.champion_id)
-                if gameflow_member is None:
-                    skipped_no_match += 1
-                    continue
-                sid = gameflow_member.get("summonerId")
-                if not (isinstance(sid, int) and sid > 0):
-                    continue
-                # Resolve the real puuid via the LCU summoner endpoint.
-                try:
-                    s_resp = await lcu.get(
-                        f"/lol-summoner/v2/summoners/{sid}"
-                    )
-                except LcuClientError as exc:
-                    logger.info(
-                        "summoner_lookup_failed sid=%d: %s", sid, exc,
-                    )
-                    continue
-                if s_resp.status_code != 200:
-                    logger.info(
-                        "summoner_lookup_status sid=%d status=%d",
-                        sid, s_resp.status_code,
-                    )
-                    continue
-                try:
-                    s_data = s_resp.json()
-                except ValueError:
-                    continue
-                real_puuid = s_data.get("puuid")
-                # Real Riot puuids are 78-character encrypted strings.
-                # Synthetic UUIDs (the obfuscated ones we got from
-                # gameflow) have dashes and are 36 chars — reject so
-                # we don't repeat the API failure.
-                if not (isinstance(real_puuid, str) and len(real_puuid) > 60):
-                    logger.info(
-                        "summoner_lookup_synthetic_puuid sid=%d puuid_len=%d",
-                        sid, len(real_puuid or ""),
-                    )
-                    continue
-                try:
-                    synthetic = TeamMember.model_validate({
-                        "cellId": member.cell_id,
-                        "championId": member.champion_id,
-                        "summonerId": sid,
-                        "puuid": real_puuid,
-                    })
-                except ValidationError as exc:
-                    logger.info(
-                        "gameflow_synth_member_failed cell=%d: %s",
-                        member.cell_id, exc,
-                    )
-                    continue
-                self._schedule_profile_fetch(
-                    synthetic, is_ally=member.cell_id in ally_cells,
+            try:
+                cs_resp = await lcu.get("/lol-summoner/v1/current-summoner")
+                if cs_resp.status_code == 200:
+                    cs_data = cs_resp.json()
+                    candidate = cs_data.get("puuid") if isinstance(cs_data, dict) else None
+                    if isinstance(candidate, str) and len(candidate) > 60:
+                        my_puuid = candidate
+            except (LcuClientError, ValueError) as exc:
+                logger.info("current_summoner_lookup_failed: %s", exc)
+        if not my_puuid:
+            logger.info("gameflow_fetch_aborted reason=no_local_puuid")
+            return
+
+        # Step 2 — Riot Web API spectator-v5 returns every participant
+        # in our active match with their REAL puuid + championId. Five
+        # retries spaced 2s apart because the spectator service can lag
+        # the gameflow phase flip by a few seconds.
+        participants_by_champ_id: dict[int, dict[str, object]] = {}
+        if self._profile_service is None:
+            logger.info("gameflow_fetch_aborted reason=no_profile_service")
+            return
+        riot_client = getattr(self._profile_service, "_client", None)
+        if riot_client is None:
+            logger.info("gameflow_fetch_aborted reason=no_riot_client")
+            return
+        for spec_attempt in range(5):
+            participants = await riot_client.active_game_participants(my_puuid)
+            for entry in participants:
+                cid = entry.get("championId")
+                puuid = entry.get("puuid")
+                if isinstance(cid, int) and cid > 0 and \
+                        isinstance(puuid, str) and len(puuid) > 60:
+                    participants_by_champ_id[cid] = entry
+            if participants_by_champ_id:
+                break
+            await asyncio.sleep(2.0)
+        if not participants_by_champ_id:
+            logger.info(
+                "spectator_no_active_game attempts=5",
+            )
+            return
+
+        # Step 3 — map cell_id → real puuid via championId. gameflow's
+        # cell-side mapping isn't strictly needed anymore, but keep
+        # iterating over the champ-select session so we honor cell-
+        # local skip rules and the is_ally classification.
+        for member in list(session.my_team) + list(session.their_team):
+            if member.cell_id == local_cell:
+                skipped_local += 1
+                continue
+            if member.champion_id == 0:
+                skipped_no_champ += 1
+                continue
+            spec_member = participants_by_champ_id.get(member.champion_id)
+            if spec_member is None:
+                skipped_no_match += 1
+                continue
+            real_puuid = str(spec_member.get("puuid") or "")
+            try:
+                synthetic = TeamMember.model_validate({
+                    "cellId": member.cell_id,
+                    "championId": member.champion_id,
+                    "summonerId": None,
+                    "puuid": real_puuid,
+                })
+            except ValidationError as exc:
+                logger.info(
+                    "gameflow_synth_member_failed cell=%d: %s",
+                    member.cell_id, exc,
                 )
-                scheduled += 1
+                continue
+            self._schedule_profile_fetch(
+                synthetic, is_ally=member.cell_id in ally_cells,
+            )
+            scheduled += 1
 
         logger.info(
             "gameflow_fetch_done resolved=%d scheduled=%d "
