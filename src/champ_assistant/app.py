@@ -452,8 +452,14 @@ class ChampAssistant:
             )
             cache[member.cell_id] = profile
             # Re-render so the freshly fetched profile shows up in the UI.
-            if self._latest_session is not None:
-                self._push_view(self._build_view(self._latest_session))
+            # During the loading screen, ``_latest_session`` is None (LCU
+            # has already deleted the champ-select session), so we have
+            # to fall through to the cached ``_loading_screen_session``
+            # — otherwise the RosterWindow keeps rendering empty rows
+            # even after profiles finish fetching.
+            active_session = self._latest_session or self._loading_screen_session
+            if active_session is not None:
+                self._push_view(self._build_view(active_session))
         except Exception as exc:  # noqa: BLE001
             logger.info(
                 "profile_fetch_failed cell=%d ally=%s: %s",
