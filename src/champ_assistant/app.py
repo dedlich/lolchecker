@@ -163,6 +163,17 @@ class ChampAssistant:
             # them to render mains / WR / streak during the loading
             # screen. They're dropped when the next session arrives
             # (new game starts) or notify_game_active fires (LCDA live).
+            # Gameflow's ``gameData.teamOne/teamTwo`` only refreshes
+            # to the current game once gameflow.phase transitions out
+            # of ``ChampSelect`` — which happens right around now.
+            # Fire the puuid-recovery fetch from here so it sees the
+            # new game's roster, not the previous one.
+            if not self._gameflow_fetch_dispatched:
+                self._gameflow_fetch_dispatched = True
+                self._profile_coalescer.schedule(
+                    "gameflow_session_fetch",
+                    self._fetch_gameflow_session_ids,
+                )
             # Champ-select just ended — we're either on the loading screen
             # (game accepted), or the user dodged. Either way, raise the
             # roster window. ``notify_game_active`` (LCDA-driven) and the
@@ -383,16 +394,14 @@ class ChampAssistant:
         # ``/lol-champ-select/v1/session`` privacy-strips puuid +
         # summoner_id from all 9 non-local cells, so the loop above
         # only fetches our own profile (and we skip it). Gameflow
-        # session is the supported LCU endpoint that DOES expose both
-        # teams' IDs from FINALIZATION onward — fire a one-shot at
-        # that phase to recover them.
-        if subphase in ("finalization", "loading") and \
-                not self._gameflow_fetch_dispatched:
-            self._gameflow_fetch_dispatched = True
-            self._profile_coalescer.schedule(
-                "gameflow_session_fetch",
-                self._fetch_gameflow_session_ids,
-            )
+        # session would be the canonical replacement, but its
+        # ``gameData.teamOne/teamTwo`` payload still reflects the
+        # PREVIOUS game while gameflow.phase == "ChampSelect" — we
+        # confirmed this in v1.10.128: ``session_champ_ids`` and
+        # ``gameflow_champ_ids`` shared only 2 of 10 entries because
+        # gameflow was still serving the just-finished match.
+        # Fire the gameflow fetch on champ-select-end instead (see
+        # ``handle_event`` ``session_ended`` branch).
 
     def _schedule_profile_fetch(
         self,
@@ -453,12 +462,14 @@ class ChampAssistant:
         # Inflight discard handled by the Coalescer wrapper.
 
     async def _fetch_gameflow_session_ids(self) -> None:
-        """One-shot fetch of ``/lol-gameflow/v1/session`` to recover the
-        puuid + summoner_id for every cell — values that are stripped
-        from ``/lol-champ-select/v1/session`` for privacy. Maps the
-        gameflow team rosters back to champ-select cell_ids by
-        ``championId`` (unambiguous in 5v5) and schedules profile
-        fetches for the resolved IDs.
+        """Recover puuids stripped from champ-select via the gameflow
+        session endpoint. Polls the LCU up to a small fixed budget
+        because gameflow's ``gameData.teamOne/teamTwo`` only repopulates
+        with the *current* match once ``gameflow.phase`` transitions out
+        of ``ChampSelect`` — fetching too early returns stale data from
+        the previous game (verified in v1.10.128 logs: only 2 of 10
+        championIds matched because gameflow was still serving the
+        just-finished match).
         """
         from champ_assistant.lcu.client import LcuClient, LcuClientError
         from champ_assistant.lcu.lockfile import (
@@ -467,7 +478,9 @@ class ChampAssistant:
             parse_lockfile,
         )
 
-        session = self._latest_session
+        # Use the cached just-deleted session for cell→champ-id mapping.
+        # ``_latest_session`` is None at this point (session_ended path).
+        session = self._loading_screen_session or self._latest_session
         if session is None:
             return
         try:
@@ -476,19 +489,43 @@ class ChampAssistant:
             logger.info("gameflow_fetch_skipped reason=lockfile_missing")
             return
 
-        try:
-            async with LcuClient(lockfile) as lcu:
-                response = await lcu.get("/lol-gameflow/v1/session")
-        except LcuClientError as exc:
-            logger.info("gameflow_fetch_failed: %s", exc)
-            return
-        if response.status_code != 200:
-            logger.info("gameflow_fetch_status status=%d", response.status_code)
-            return
-        try:
-            data = response.json()
-        except ValueError as exc:
-            logger.info("gameflow_fetch_decode_failed: %s", exc)
+        # Poll up to 10 times spaced 1s apart — the gameflow phase flip
+        # from ChampSelect → GameStart usually lands within 2-4s of the
+        # champ-select-session delete event. 10s budget is generous and
+        # bounded; if it never transitions we abandon silently.
+        FRESH_PHASES = {"GameStart", "InProgress"}
+        data: dict[str, object] | None = None
+        attempts = 0
+        async with LcuClient(lockfile) as lcu:
+            for attempt in range(10):
+                attempts = attempt + 1
+                try:
+                    response = await lcu.get("/lol-gameflow/v1/session")
+                except LcuClientError as exc:
+                    logger.info("gameflow_fetch_failed: %s", exc)
+                    return
+                if response.status_code != 200:
+                    logger.info(
+                        "gameflow_fetch_status status=%d",
+                        response.status_code,
+                    )
+                    return
+                try:
+                    payload = response.json()
+                except ValueError as exc:
+                    logger.info("gameflow_fetch_decode_failed: %s", exc)
+                    return
+                phase = payload.get("phase")
+                if phase in FRESH_PHASES:
+                    data = payload
+                    break
+                # Stale phase — wait for the LCU to flip then retry.
+                await asyncio.sleep(1.0)
+        if data is None:
+            logger.info(
+                "gameflow_fetch_phase_never_fresh attempts=%d",
+                attempts,
+            )
             return
 
         game_data = data.get("gameData") or {}
