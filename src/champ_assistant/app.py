@@ -591,18 +591,60 @@ class ChampAssistant:
         # 78-character encrypted puuid (in contrast to the synthetic
         # UUID puuids gameflow surfaces for opponents).
         my_puuid = ""
+        cs_status = -1
+        cs_keys: list[str] = []
+        cs_puuid_len = 0
         async with LcuClient(lockfile) as lcu:
             try:
                 cs_resp = await lcu.get("/lol-summoner/v1/current-summoner")
+                cs_status = cs_resp.status_code
                 if cs_resp.status_code == 200:
                     cs_data = cs_resp.json()
-                    candidate = cs_data.get("puuid") if isinstance(cs_data, dict) else None
-                    if isinstance(candidate, str) and len(candidate) > 60:
-                        my_puuid = candidate
+                    if isinstance(cs_data, dict):
+                        cs_keys = sorted(cs_data.keys())
+                        candidate = cs_data.get("puuid")
+                        if isinstance(candidate, str):
+                            cs_puuid_len = len(candidate)
+                            if len(candidate) > 60:
+                                my_puuid = candidate
+                        # One-shot dump so we can inspect every field
+                        # the endpoint exposes (only when the puuid
+                        # didn't pass the length check — successful
+                        # runs don't need the dump noise).
+                        if not my_puuid and not getattr(
+                            self, "_current_summoner_dumped", False,
+                        ):
+                            try:
+                                import json as _json
+                                from datetime import datetime as _dt
+                                from . import app_paths as _app_paths
+                                log_dir = _app_paths.log_dir()
+                                log_dir.mkdir(parents=True, exist_ok=True)
+                                stamp = _dt.now().strftime("%Y%m%d_%H%M%S")
+                                dump_path = log_dir / (
+                                    f"current_summoner_dump_{stamp}.json"
+                                )
+                                dump_path.write_text(
+                                    _json.dumps(cs_data, indent=2, default=str),
+                                    encoding="utf-8",
+                                )
+                                self._current_summoner_dumped = True
+                                logger.info(
+                                    "current_summoner_dumped path=%s",
+                                    dump_path,
+                                )
+                            except OSError as exc:
+                                logger.info(
+                                    "current_summoner_dump_failed: %s", exc,
+                                )
             except (LcuClientError, ValueError) as exc:
                 logger.info("current_summoner_lookup_failed: %s", exc)
         if not my_puuid:
-            logger.info("gameflow_fetch_aborted reason=no_local_puuid")
+            logger.info(
+                "gameflow_fetch_aborted reason=no_local_puuid "
+                "status=%d keys=%s puuid_len=%d",
+                cs_status, cs_keys, cs_puuid_len,
+            )
             return
 
         # Step 2 — Riot Web API spectator-v5 returns every participant
