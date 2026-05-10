@@ -44,11 +44,11 @@ class RosterWindow(FloatingWidget):
 
     KEY = "roster_window"
     DEFAULT_POS = (200, 120)
-    DEFAULT_SIZE = (520, 460)
+    DEFAULT_SIZE = (540, 620)
 
     def __init__(self) -> None:
         super().__init__()
-        self.setMinimumSize(420, 360)
+        self.setMinimumSize(540, 620)
         outer = QVBoxLayout(self)
         outer.setContentsMargins(
             styles.SPACING_LOOSE, styles.SPACING_LOOSE,

@@ -19,9 +19,10 @@ from collections.abc import Callable
 from typing import TYPE_CHECKING
 
 from PyQt6.QtCore import Qt
-from PyQt6.QtGui import QPixmap
+from PyQt6.QtGui import QFontMetrics, QPixmap
 from PyQt6.QtWidgets import (
     QFrame,
+    QGridLayout,
     QHBoxLayout,
     QLabel,
     QVBoxLayout,
@@ -39,9 +40,11 @@ IconLookup = Callable[[str], "QPixmap | None"]
 NameLookup = Callable[[int], str]
 KeyLookup = Callable[[int], str]
 
-PORTRAIT_PX = 28
+PORTRAIT_PX = 40
 MAINS_ICON_PX = 16
 MAX_MAINS_ICONS = 3
+NAME_COL_PX = 160
+STATS_COL_PX = 110
 
 
 class _RosterRow(QFrame):
@@ -52,9 +55,16 @@ class _RosterRow(QFrame):
     def __init__(self) -> None:
         super().__init__()
         self.setProperty("card", True)
-        layout = QHBoxLayout(self)
-        layout.setContentsMargins(12, 8, 12, 8)
-        layout.setSpacing(8)
+        # Two-line grid: portrait spans both rows on the left, name +
+        # mains stack in the middle column, stats span both rows on the
+        # right. Fixed widths on the name and stats columns prevent the
+        # long ``GameName#TagLine`` strings from pushing the stats label
+        # off the edge of the row (v1.10.139 user report: "names overlap,
+        # only 1 WR shows").
+        grid = QGridLayout(self)
+        grid.setContentsMargins(12, 6, 12, 6)
+        grid.setHorizontalSpacing(10)
+        grid.setVerticalSpacing(2)
 
         self._portrait = QLabel()
         self._portrait.setFixedSize(PORTRAIT_PX, PORTRAIT_PX)
@@ -64,15 +74,15 @@ class _RosterRow(QFrame):
             f" border-radius: {styles.RADIUS_SMALL}px;"
             f" border: 1px solid {styles.BORDER};"
         )
-        layout.addWidget(self._portrait)
+        grid.addWidget(self._portrait, 0, 0, 2, 1)  # rowspan 2
 
         self._name = QLabel("—")
         self._name.setStyleSheet(
             f"color: {styles.TEXT_PRIMARY};"
             f" font-size: {styles.FS_BODY}px; font-weight: 600;"
         )
-        self._name.setMinimumWidth(120)
-        layout.addWidget(self._name)
+        self._name.setFixedWidth(NAME_COL_PX)
+        grid.addWidget(self._name, 0, 1)
 
         # Mains: up to 3 small champion icons. Fallback to text when
         # the icon prefetch hasn't caught a champion yet (rare).
@@ -83,8 +93,14 @@ class _RosterRow(QFrame):
         self._mains_text.setStyleSheet(
             f"color: {styles.TEXT_MUTED}; font-size: {styles.FS_LABEL}px;"
         )
-        layout.addLayout(self._mains_layout)
-        layout.addWidget(self._mains_text, 1)
+        mains_container = QWidget()
+        mains_container.setFixedWidth(NAME_COL_PX)
+        mains_box = QHBoxLayout(mains_container)
+        mains_box.setContentsMargins(0, 0, 0, 0)
+        mains_box.setSpacing(4)
+        mains_box.addLayout(self._mains_layout)
+        mains_box.addWidget(self._mains_text, 1)
+        grid.addWidget(mains_container, 1, 1)
 
         # Stats: "73% WR · W3" or empty when no profile data.
         self._stats = QLabel("")
@@ -96,8 +112,10 @@ class _RosterRow(QFrame):
             f" font-family: {styles.FONT_MONO};"
             f" font-size: {styles.FS_LABEL}px;"
         )
-        self._stats.setMinimumWidth(110)
-        layout.addWidget(self._stats)
+        self._stats.setFixedWidth(STATS_COL_PX)
+        grid.addWidget(self._stats, 0, 2, 2, 1)  # rowspan 2
+
+        grid.setColumnStretch(1, 1)
 
     def populate(
         self,
@@ -141,6 +159,11 @@ class _RosterRow(QFrame):
             display_name = profile.summoner_name
         elif champion_key:
             display_name = champion_key
+        if display_name:
+            metrics = QFontMetrics(self._name.font())
+            display_name = metrics.elidedText(
+                display_name, Qt.TextElideMode.ElideRight, NAME_COL_PX - 4,
+            )
         self._name.setText(display_name or "—")
 
         # Mains: up to 3 small icons OR text fallback. ``top_champions``
