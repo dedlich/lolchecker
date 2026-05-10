@@ -174,6 +174,35 @@ class RiotApiClient:
         data = await self._get(self._platform, path)
         return self._summoner_from(data)
 
+    async def puuid_by_riot_id(self, game_name: str, tag_line: str) -> str:
+        """Resolve a Riot ID (``GameName#TagLine``) to a real
+        78-character puuid. Riot's LCU now privacy-strips puuids for
+        every account — even the local player's — so the LCU surfaces
+        only synthetic UUIDs. ``account-v1/by-riot-id`` is the supported
+        public endpoint that decrypts the Riot ID into a real puuid we
+        can pass to spectator / mastery / league endpoints. URL-encodes
+        both segments to handle spaces and special characters in
+        display names. Returns ``""`` on any failure so callers can
+        fall back gracefully.
+        """
+        from urllib.parse import quote
+        encoded_name = quote(game_name, safe="")
+        encoded_tag = quote(tag_line, safe="")
+        path = (
+            f"/riot/account/v1/accounts/by-riot-id/"
+            f"{encoded_name}/{encoded_tag}"
+        )
+        try:
+            data = await self._get(self._regional, path)
+        except RiotApiError as exc:
+            logger.info("account_by_riot_id_failed: %s", exc)
+            return ""
+        if isinstance(data, dict):
+            puuid = data.get("puuid")
+            if isinstance(puuid, str) and len(puuid) > 60:
+                return puuid
+        return ""
+
     async def active_game_participants(self, puuid: str) -> list[dict[str, Any]]:
         """Spectator-v5: list of every participant in the puuid's current
         active match. Returns ``[]`` on 404 (no active game) or any

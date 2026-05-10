@@ -586,64 +586,47 @@ class ChampAssistant:
         gameflow_champ_ids = sorted(members_by_champ_id.keys())
         scheduled = 0
 
-        # Step 1 — get our OWN real puuid via the LCU. The local
-        # ``current-summoner`` endpoint exposes the user's real
-        # 78-character encrypted puuid (in contrast to the synthetic
-        # UUID puuids gameflow surfaces for opponents).
-        my_puuid = ""
-        cs_status = -1
-        cs_keys: list[str] = []
-        cs_puuid_len = 0
+        # Step 1 — read the local player's Riot ID (gameName + tagLine)
+        # from the LCU, then resolve it to a REAL 78-char puuid via
+        # Riot's ``account-v1/by-riot-id``. Riot now privacy-strips
+        # every puuid the LCU exposes — even our own — so the only
+        # public path back to a real puuid is the Riot ID handshake.
+        # v1.10.137 dump confirmed ``puuid_len=36`` (synthetic UUID)
+        # but ``gameName`` + ``tagLine`` are populated.
+        my_game_name = ""
+        my_tag_line = ""
         async with LcuClient(lockfile) as lcu:
             try:
                 cs_resp = await lcu.get("/lol-summoner/v1/current-summoner")
-                cs_status = cs_resp.status_code
                 if cs_resp.status_code == 200:
                     cs_data = cs_resp.json()
                     if isinstance(cs_data, dict):
-                        cs_keys = sorted(cs_data.keys())
-                        candidate = cs_data.get("puuid")
-                        if isinstance(candidate, str):
-                            cs_puuid_len = len(candidate)
-                            if len(candidate) > 60:
-                                my_puuid = candidate
-                        # One-shot dump so we can inspect every field
-                        # the endpoint exposes (only when the puuid
-                        # didn't pass the length check — successful
-                        # runs don't need the dump noise).
-                        if not my_puuid and not getattr(
-                            self, "_current_summoner_dumped", False,
-                        ):
-                            try:
-                                import json as _json
-                                from datetime import datetime as _dt
-                                from . import app_paths as _app_paths
-                                log_dir = _app_paths.log_dir()
-                                log_dir.mkdir(parents=True, exist_ok=True)
-                                stamp = _dt.now().strftime("%Y%m%d_%H%M%S")
-                                dump_path = log_dir / (
-                                    f"current_summoner_dump_{stamp}.json"
-                                )
-                                dump_path.write_text(
-                                    _json.dumps(cs_data, indent=2, default=str),
-                                    encoding="utf-8",
-                                )
-                                self._current_summoner_dumped = True
-                                logger.info(
-                                    "current_summoner_dumped path=%s",
-                                    dump_path,
-                                )
-                            except OSError as exc:
-                                logger.info(
-                                    "current_summoner_dump_failed: %s", exc,
-                                )
+                        my_game_name = str(cs_data.get("gameName") or "")
+                        my_tag_line = str(cs_data.get("tagLine") or "")
             except (LcuClientError, ValueError) as exc:
                 logger.info("current_summoner_lookup_failed: %s", exc)
+        if not (my_game_name and my_tag_line):
+            logger.info(
+                "gameflow_fetch_aborted reason=no_local_riot_id "
+                "game_name=%r tag_line=%r",
+                my_game_name, my_tag_line,
+            )
+            return
+
+        if self._profile_service is None:
+            logger.info("gameflow_fetch_aborted reason=no_profile_service")
+            return
+        riot_client = getattr(self._profile_service, "_client", None)
+        if riot_client is None:
+            logger.info("gameflow_fetch_aborted reason=no_riot_client")
+            return
+
+        my_puuid = await riot_client.puuid_by_riot_id(my_game_name, my_tag_line)
         if not my_puuid:
             logger.info(
-                "gameflow_fetch_aborted reason=no_local_puuid "
-                "status=%d keys=%s puuid_len=%d",
-                cs_status, cs_keys, cs_puuid_len,
+                "gameflow_fetch_aborted reason=riot_id_resolution_failed "
+                "game_name=%r tag_line=%r",
+                my_game_name, my_tag_line,
             )
             return
 
@@ -652,13 +635,6 @@ class ChampAssistant:
         # retries spaced 2s apart because the spectator service can lag
         # the gameflow phase flip by a few seconds.
         participants_by_champ_id: dict[int, dict[str, object]] = {}
-        if self._profile_service is None:
-            logger.info("gameflow_fetch_aborted reason=no_profile_service")
-            return
-        riot_client = getattr(self._profile_service, "_client", None)
-        if riot_client is None:
-            logger.info("gameflow_fetch_aborted reason=no_riot_client")
-            return
         for spec_attempt in range(5):
             participants = await riot_client.active_game_participants(my_puuid)
             for entry in participants:
