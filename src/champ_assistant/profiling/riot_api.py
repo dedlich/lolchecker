@@ -174,6 +174,26 @@ class RiotApiClient:
         data = await self._get(self._platform, path)
         return self._summoner_from(data)
 
+    async def riot_id_by_puuid(self, puuid: str) -> tuple[str, str]:
+        """Resolve a puuid to its current Riot ID (``GameName#TagLine``).
+        Riot's ``summoner-v4`` returns an empty ``name`` field for any
+        account that migrated to the Riot ID system (i.e. all modern
+        accounts), so the public source of truth for display names is
+        ``account-v1/by-puuid``. Returns ``("", "")`` on failure so
+        callers can fall back to a placeholder.
+        """
+        path = f"/riot/account/v1/accounts/by-puuid/{puuid}"
+        try:
+            data = await self._get(self._regional, path)
+        except RiotApiError as exc:
+            logger.info("account_by_puuid_failed: %s", exc)
+            return ("", "")
+        if isinstance(data, dict):
+            game_name = str(data.get("gameName") or "")
+            tag_line = str(data.get("tagLine") or "")
+            return (game_name, tag_line)
+        return ("", "")
+
     async def puuid_by_riot_id(self, game_name: str, tag_line: str) -> str:
         """Resolve a Riot ID (``GameName#TagLine``) to a real
         78-character puuid. Riot's LCU now privacy-strips puuids for

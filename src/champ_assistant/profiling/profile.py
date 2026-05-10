@@ -258,6 +258,13 @@ class ProfileService:
         rank_task = asyncio.create_task(
             self._client.league_entries_by_puuid(summoner.puuid)
         )
+        # Riot ID is the source of truth for display names since the
+        # gameName/tagLine migration. ``summoner-v4`` returns an empty
+        # ``name`` field for every modern account, which is why the
+        # roster panel was rendering raw puuids.
+        riot_id_task = asyncio.create_task(
+            self._client.riot_id_by_puuid(summoner.puuid)
+        )
 
         try:
             mastery = await mastery_task
@@ -292,8 +299,20 @@ class ProfileService:
                 losses=chosen.losses,
             )
 
+        try:
+            game_name, tag_line = await riot_id_task
+        except RiotApiError as exc:
+            logger.info("profile_riot_id_failed: %s", exc)
+            game_name, tag_line = ("", "")
+        if game_name and tag_line:
+            display_name = f"{game_name}#{tag_line}"
+        elif game_name:
+            display_name = game_name
+        else:
+            display_name = summoner.name or cache_key
+
         profile = EnemyProfile(
-            summoner_name=summoner.name or cache_key,
+            summoner_name=display_name,
             level=summoner.level,
             top_champions=[
                 TopChampion(
