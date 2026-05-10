@@ -107,9 +107,11 @@ def test_row_loss_streak_renders_with_l_prefix(qt_app) -> None:
 
 
 def test_row_no_profile_renders_empty_stats(qt_app) -> None:
-    """Pre-fetch state — row exists but stats line is blank. Champion
-    key is the fallback name (TeamMember itself doesn't carry a
-    display name in our LCU pipeline)."""
+    """Pre-fetch state — row exists but stats line is blank. Name
+    shows ``Loading…`` as a neutral placeholder; we deliberately do
+    NOT fall back to the champion key here because that visually
+    duplicates the locked champion's name on the row (v1.10.143 fix
+    for the "champ name and player name overlap" report)."""
     row = _RosterRow()
     row.populate(
         member=TeamMember(cellId=1, championId=86),
@@ -119,7 +121,7 @@ def test_row_no_profile_renders_empty_stats(qt_app) -> None:
         champion_keys={86: "Garen"},
     )
     assert row._stats.text() == ""
-    assert row._name.text() == "Garen"
+    assert row._name.text() == "Loading…"
 
 
 def test_row_mains_text_fallback_when_icons_missing(qt_app) -> None:

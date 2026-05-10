@@ -154,17 +154,23 @@ class _RosterRow(QFrame):
         # TeamMember itself doesn't carry the display name — only the
         # opaque summoner_id / puuid — so the fallback after that is
         # the champion key.
+        # When the profile fetch hasn't landed (or fell through the
+        # rate-limit + fallback chain in profile.py and produced a
+        # ``puuid:<full>`` cache_key as ``summoner_name``), show a
+        # neutral placeholder rather than the champion key. Otherwise
+        # the row prints "MasterYi" both as the locked champion (next
+        # to the portrait, via the role pill) and as the player name —
+        # the "overlap" the user reported in v1.10.142.
         display_name = ""
-        if profile is not None and profile.summoner_name:
+        if profile is not None and profile.summoner_name and \
+                not profile.summoner_name.startswith("puuid:"):
             display_name = profile.summoner_name
-        elif champion_key:
-            display_name = champion_key
         if display_name:
             metrics = QFontMetrics(self._name.font())
             display_name = metrics.elidedText(
                 display_name, Qt.TextElideMode.ElideRight, NAME_COL_PX - 4,
             )
-        self._name.setText(display_name or "—")
+        self._name.setText(display_name or "Loading…")
 
         # Mains: up to 3 small icons OR text fallback. ``top_champions``
         # is already mastery-sorted descending in profile fetching.
