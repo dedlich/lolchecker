@@ -56,6 +56,12 @@ class EnemyProfile:
     wins: int = 0
     losses: int = 0
     streak: int = 0  # positive = win streak, negative = loss streak
+    last_10_wins: int = 0
+    last_10_losses: int = 0
+    """Wins / losses over the *most recent* 10 ranked-solo matches —
+    the slice users glance at on the loading screen ("how is this
+    person doing right now?"). The full ``wins`` / ``losses`` counts
+    span 20 matches and feed the longer-horizon ``win_rate``."""
     rank: RankBadge = field(default_factory=RankBadge)
     role_winrates: dict[str, tuple[int, int]] = field(default_factory=dict)
     """``{role: (wins, losses)}`` over the last ~20 ranked-solo matches.
@@ -69,6 +75,13 @@ class EnemyProfile:
         if total == 0:
             return None
         return self.wins / total
+
+    @property
+    def last_10_win_rate(self) -> float | None:
+        total = self.last_10_wins + self.last_10_losses
+        if total == 0:
+            return None
+        return self.last_10_wins / total
 
     @property
     def main_role(self) -> str | None:
@@ -277,6 +290,10 @@ class ProfileService:
             logger.info("profile_summaries_failed: %s", exc)
             summaries = []
         wins, losses, streak = streak_from_summaries(summaries)
+        # Last-10 slice powers the loading-screen "current form" stat.
+        last_10 = summaries[:10]
+        last_10_wins = sum(1 for s in last_10 if s.get("win") is True)
+        last_10_losses = sum(1 for s in last_10 if s.get("win") is False)
         role_winrates = role_winrate_from_summaries(summaries)
 
         rank = RankBadge()
@@ -325,6 +342,8 @@ class ProfileService:
             wins=wins,
             losses=losses,
             streak=streak,
+            last_10_wins=last_10_wins,
+            last_10_losses=last_10_losses,
             rank=rank,
             role_winrates=role_winrates,
         )

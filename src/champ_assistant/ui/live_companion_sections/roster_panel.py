@@ -44,7 +44,7 @@ PORTRAIT_PX = 40
 MAINS_ICON_PX = 16
 MAX_MAINS_ICONS = 3
 NAME_COL_PX = 160
-STATS_COL_PX = 110
+STATS_COL_PX = 150
 
 
 class _RosterRow(QFrame):
@@ -200,11 +200,24 @@ class _RosterRow(QFrame):
         else:
             self._mains_text.setText("Mains: —")
 
-        # Stats — winrate · streak
+        # Stats — last-10 winrate · current streak. Last-10 reads as
+        # "current form" (loading-screen glanceable), more useful than
+        # the longer 20-game window for the user's question of "is this
+        # opponent hot or cold right now".
         if profile is not None and profile.has_data:
             stats_bits: list[str] = []
-            if profile.win_rate is not None:
-                stats_bits.append(f"{int(round(profile.win_rate * 100))}% WR")
+            l10 = profile.last_10_win_rate
+            if l10 is not None:
+                wr = int(round(l10 * 100))
+                stats_bits.append(
+                    f"{wr}% L10 ({profile.last_10_wins}W/"
+                    f"{profile.last_10_losses}L)"
+                )
+            elif profile.win_rate is not None:
+                # Fallback to the 20-game window when we don't have
+                # a populated last-10 slice (e.g. legacy fixtures).
+                wr = int(round(profile.win_rate * 100))
+                stats_bits.append(f"{wr}% WR")
             if profile.streak:
                 marker = "W" if profile.streak > 0 else "L"
                 stats_bits.append(f"{marker}{abs(profile.streak)}")
