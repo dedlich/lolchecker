@@ -174,15 +174,15 @@ class ChampAssistant:
                     "gameflow_session_fetch",
                     self._fetch_gameflow_session_ids,
                 )
-            # Champ-select just ended — we're either on the loading screen
-            # (game accepted), or the user dodged. Either way, raise the
-            # roster window. ``notify_game_active`` (LCDA-driven) and the
-            # next ``session`` event clear it. Worst case: a dodge keeps
-            # the window up until the next champ-select, which is fine —
-            # it's a separate top-level window the user can close.
-            self._loading_screen_active = True
+            # The roster window is gated on ``loading_screen_active``,
+            # but we DON'T flip it on here — that fires too early
+            # (champ-select session deletes a few seconds before the
+            # actual loading screen renders). The gameflow-session
+            # fetch runs the polling loop that detects the
+            # ``GameStart`` phase transition, and *that's* where the
+            # flag gets set, so the roster appears in lockstep with
+            # the loading screen the user sees.
             view = self._build_view(self._loading_screen_session)
-            view = view.model_copy(update={"loading_screen_active": True})
         elif event_type == "connected":
             logger.info("orchestrator_state state=connected")
             self._connection_state = "connected"
@@ -524,6 +524,15 @@ class ChampAssistant:
                 phase = payload.get("phase")
                 if phase in FRESH_PHASES:
                     data = payload
+                    # Loading screen is now actually rendering — flip
+                    # the flag so RosterWindow.update_view shows the
+                    # panel in sync with what the user sees on-screen.
+                    if not self._loading_screen_active:
+                        self._loading_screen_active = True
+                        if self._loading_screen_session is not None:
+                            self._push_view(self._build_view(
+                                self._loading_screen_session,
+                            ))
                     break
                 # Stale phase — wait for the LCU to flip then retry.
                 await asyncio.sleep(1.0)
@@ -631,11 +640,18 @@ class ChampAssistant:
             return
 
         # Step 2 — Riot Web API spectator-v5 returns every participant
-        # in our active match with their REAL puuid + championId. Five
-        # retries spaced 2s apart because the spectator service can lag
-        # the gameflow phase flip by a few seconds.
+        # in our active match with their REAL puuid + championId. The
+        # spectator service only starts serving data once the match
+        # transitions to ``InProgress`` — that can lag the LCU's
+        # ``session_ended`` event by 10-30 seconds while the match
+        # server boots. v1.10.138 hit 404 in 10s; bump the budget to
+        # ~60s (30 attempts × 2s) so we ride the entire loading
+        # screen until the data lands. Each attempt is just one HTTP
+        # call so the retries are cheap.
+        SPECTATOR_MAX_ATTEMPTS = 30
+        SPECTATOR_DELAY_S = 2.0
         participants_by_champ_id: dict[int, dict[str, object]] = {}
-        for spec_attempt in range(5):
+        for spec_attempt in range(SPECTATOR_MAX_ATTEMPTS):
             participants = await riot_client.active_game_participants(my_puuid)
             for entry in participants:
                 cid = entry.get("championId")
@@ -644,11 +660,16 @@ class ChampAssistant:
                         isinstance(puuid, str) and len(puuid) > 60:
                     participants_by_champ_id[cid] = entry
             if participants_by_champ_id:
+                logger.info(
+                    "spectator_resolved attempts=%d participants=%d",
+                    spec_attempt + 1, len(participants_by_champ_id),
+                )
                 break
-            await asyncio.sleep(2.0)
+            await asyncio.sleep(SPECTATOR_DELAY_S)
         if not participants_by_champ_id:
             logger.info(
-                "spectator_no_active_game attempts=5",
+                "spectator_no_active_game attempts=%d",
+                SPECTATOR_MAX_ATTEMPTS,
             )
             return
 

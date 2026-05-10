@@ -181,17 +181,30 @@ class RiotApiClient:
         accounts), so the public source of truth for display names is
         ``account-v1/by-puuid``. Returns ``("", "")`` on failure so
         callers can fall back to a placeholder.
+
+        Retries on 429 (rate-limit) up to ~9s of total backoff because
+        the loading-screen path fires this 9 times in a tight burst —
+        Riot's dev-key rate limit is 20/s and the previous one-shot
+        path silently dropped 6 of 9 names per game.
         """
+        import asyncio as _asyncio
         path = f"/riot/account/v1/accounts/by-puuid/{puuid}"
-        try:
-            data = await self._get(self._regional, path)
-        except RiotApiError as exc:
-            logger.info("account_by_puuid_failed: %s", exc)
+        for attempt in range(4):
+            try:
+                data = await self._get(self._regional, path)
+            except RiotApiError as exc:
+                # Only retry on rate-limit; 4xx/network errors won't fix
+                # themselves with a wait.
+                if "rate-limited" in str(exc) and attempt < 3:
+                    await _asyncio.sleep(1.0 + attempt * 1.5)
+                    continue
+                logger.info("account_by_puuid_failed: %s", exc)
+                return ("", "")
+            if isinstance(data, dict):
+                game_name = str(data.get("gameName") or "")
+                tag_line = str(data.get("tagLine") or "")
+                return (game_name, tag_line)
             return ("", "")
-        if isinstance(data, dict):
-            game_name = str(data.get("gameName") or "")
-            tag_line = str(data.get("tagLine") or "")
-            return (game_name, tag_line)
         return ("", "")
 
     async def puuid_by_riot_id(self, game_name: str, tag_line: str) -> str:
